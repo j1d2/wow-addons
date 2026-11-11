@@ -1,0 +1,4 @@
+<Bindings>
+	<!-- The game's Key Bindings menu shows this under Unmaker. One key press disenchants one item. -->
+	<Binding name="CLICK UnmakerNextButton:LeftButton" header="UNMAKER"/>
+</Bindings>

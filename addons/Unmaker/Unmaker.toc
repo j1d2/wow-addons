@@ -9,3 +9,4 @@
 ## ExcludeLoadGameType: standard, classic
 
 UnmakerRules.lua
+Unmaker.lua
