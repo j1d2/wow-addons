@@ -24,11 +24,12 @@ jobs:
         with:
           persist-credentials: false
 
-      # Ubuntu's own packages only: the Lua 5.1 the game uses, and shellcheck.
-      - name: Install lua5.1 and shellcheck
+      # Ubuntu's own packages only: the Lua 5.1 the game uses, shellcheck, and zip for the
+      # release packaging test.
+      - name: Install lua5.1, shellcheck, zip and unzip
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends lua5.1 shellcheck
+          sudo apt-get install -y --no-install-recommends lua5.1 shellcheck zip unzip
 
       - name: All gates (scripts/check.sh)
         run: scripts/check.sh

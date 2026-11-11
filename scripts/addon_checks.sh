@@ -8,9 +8,11 @@
 #            never listed, and every non-test .lua is listed
 #   policy   no call to an API that RULES.md forbids (post, buy, bid, cancel, run code from text),
 #            and no change to Blizzard's auction window (read or hook it only)
+#   version  each addon's <Name>.toc has a "## Version: X.Y.Z" (semver), and its CHANGELOG.md
+#            has a "## [X.Y.Z]" section for it, so every release has notes
 #   tests    each addon has at least one *_test.lua, and all of them pass under lua5.1
 #
-# Usage: scripts/addon_checks.sh [--root DIR] <syntax|globals|toc|policy|tests|all>
+# Usage: scripts/addon_checks.sh [--root DIR] <syntax|globals|toc|policy|version|tests|all>
 # Environment: LUA (default lua5.1), LUAC (default luac5.1)
 set -euo pipefail
 
@@ -34,6 +36,9 @@ readonly BANNED_API='C_AuctionHouse\.(PostItem|PostCommodity|PlaceBid|CancelAuct
 # AuctionHouseFrameSellTab) is flagged unless it only reads.
 readonly HOUSE_CALL='AuctionHouseFrame[A-Za-z0-9_.]*:[A-Za-z_]+'
 readonly HOUSE_READS=':(IsShown|IsVisible|GetRight|GetLeft|GetTop|GetBottom|GetWidth|GetHeight|GetDisplayMode|GetItem)$'
+
+# MAJOR.MINOR.PATCH with no leading zeros, the form release tags use (see package_addon.sh).
+readonly SEMVER='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
 
 failures=0
 
@@ -136,6 +141,42 @@ check_policy() {
     done < <(lua_files)
 }
 
+#######################################
+# Check each addon's version: <Name>.toc has a "## Version: X.Y.Z" line in semver form, and
+# the addon's CHANGELOG.md has a "## [X.Y.Z]" section for it.
+# Globals:
+#   SEMVER
+#   failures (counted through problem)
+# Outputs:
+#   Writes each problem to stdout.
+#######################################
+check_version() {
+    local dir name toc version changelog
+    while IFS= read -r dir; do
+        name="$(basename "$dir")"
+        toc="$dir/$name.toc"
+        [[ -f "$toc" ]] || continue  # the toc check reports a missing .toc
+        version="$(sed -n -E 's/\r$//; s/^## Version:[[:space:]]*([^[:space:]]+)[[:space:]]*$/\1/p' "$toc" \
+            | head -n 1)"
+        if [[ -z "$version" ]]; then
+            problem "$(rel "$toc")" "has no '## Version: X.Y.Z' line"
+            continue
+        fi
+        if [[ ! "$version" =~ $SEMVER ]]; then
+            problem "$(rel "$toc")" "version '$version' is not X.Y.Z"
+            continue
+        fi
+        changelog="$dir/CHANGELOG.md"
+        if [[ ! -f "$changelog" ]]; then
+            problem "$(rel "$dir")" "has no CHANGELOG.md"
+            continue
+        fi
+        grep -q -x -F -- "## [$version]" "$changelog" \
+            || grep -q -F -- "## [$version] " "$changelog" \
+            || problem "$(rel "$changelog")" "has no '## [$version]' section for the .toc version"
+    done < <(addon_dirs)
+}
+
 check_tests() {
     local dir test count out
     while IFS= read -r dir; do
@@ -159,16 +200,18 @@ case "${1:-}" in
     globals) check_globals ;;
     toc) check_toc ;;
     policy) check_policy ;;
+    version) check_version ;;
     tests) check_tests ;;
     all)
         check_syntax
         check_globals
         check_toc
         check_policy
+        check_version
         check_tests
         ;;
     *)
-        echo "usage: $0 [--root DIR] <syntax|globals|toc|policy|tests|all>" >&2
+        echo "usage: $0 [--root DIR] <syntax|globals|toc|policy|version|tests|all>" >&2
         exit 2
         ;;
 esac

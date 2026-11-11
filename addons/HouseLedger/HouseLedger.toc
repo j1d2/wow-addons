@@ -2,7 +2,7 @@
 ## Title: HouseLedger
 ## Notes: Scan the auction house once, keep the prices, show the last price on item mouseovers.
 ## Author: j1d2
-## Version: 0.2.0
+## Version: 0.3.0
 ## X-License: Apache-2.0
 ## SavedVariables: HouseLedgerDB
 ## AllowLoadGameType: forever

@@ -13,21 +13,22 @@ The first part covers every addon. Then each addon has its own section: [HouseLe
 
 ## Setup
 
-You need `lua5.1`, `luac5.1` and `shellcheck` from your system's package manager. Nothing else is installed: no package managers, no libraries.
+[docs/development.md](docs/development.md) lists the tools for Linux, Windows (WSL 2) and macOS, and shows how to link an addon into the game. Then:
 
 ```bash
 scripts/install_hooks.sh   # once per clone: pre-commit, commit-msg and pre-push hooks
 scripts/check.sh           # the full gate: what the hooks and CI run
 ```
 
-To try an addon in game, link its folder into the client's `Interface/AddOns` folder (see the README), then `/reload`.
-
 ## How we work
 
 - **Tests first.** Write a failing test, then the code. Tests live next to the addon as `*_test.lua`, run under `lua5.1`, and are never listed in the `.toc`. Code that needs the game API gets a small fake of that API inside its test.
 - **Pure logic in its own file**, with no game API calls, so it can be tested offline. UI and events go in a separate file.
 - **No new globals.** Use `local`. A SavedVariables table is the exception; list it in `scripts/allowed-globals.txt`.
-- **Comments** explain why, and functions get a short `---` doc comment with their arguments.
+- **Comments** explain why, not what. Every function gets a doc comment:
+  - Lua: [LDoc](https://lunarmodules.github.io/ldoc/manual/manual.md) style. A `---` summary line, then `-- @param name what it is` and `-- @return what comes back`.
+  - Bash: the function header from [Google's Shell Style Guide](https://google.github.io/styleguide/shellguide.html#function-comments). A summary, then `Globals:`, `Arguments:`, `Outputs:` and `Returns:` as they apply.
+- **Language style:** Lua 5.1 as the game runs it, `local` everywhere, and early returns over deep nesting. Bash per Google's Shell Style Guide: `set -euo pipefail`, quoted variables, `[[ ]]` tests, and clean `shellcheck`.
 - **No third-party code or libraries.** Write it yourself. Don't copy code, names or art from other addons or from Blizzard's interface files. Reading them to learn how something works is fine.
 - **One click, one action.** Nothing posts, buys, bids or cancels. Nothing sends a request on its own timer.
 
@@ -46,17 +47,19 @@ The repo may be public one day, so no file or commit message may hold personal o
 
 - Conventional commits: `feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`. The message says why, not just what. The `commit-msg` hook checks the subject.
 - Small, focused commits. Never skip a hook (`--no-verify`), amend a pushed commit, or force-push. If a hook fails, fix the problem and make a new commit.
+- Changed something a player will notice? Add a line under `## [Unreleased]` in that addon's `CHANGELOG.md`.
 - Open a PR into `main`. `main` is protected: every change lands through a PR, and CI (`scripts/check.sh`) must pass first. Say in the PR whether the change was tried in game.
 - On your first merged PR, add your GitHub handle to [CONTRIBUTORS.md](CONTRIBUTORS.md). Handles only.
 
 ## Adding a new addon
 
-1. Make `addons/<Name>/` with `<Name>.toc` (`## Interface: 16001`, `## X-License: Apache-2.0`) listing its files in load order.
+1. Make `addons/<Name>/` with `<Name>.toc` (`## Interface: 16001`, `## Version: 0.1.0`, `## X-License: Apache-2.0`) listing its files in load order. Use only letters, digits and `_` in `<Name>`, because release tags are `<Name>-vX.Y.Z`.
 2. Put game-free logic in its own file with a `*_test.lua` beside it. Frames and events go in a second file.
 3. Add its SavedVariables table to `scripts/allowed-globals.txt`.
 4. Check every game API it uses against Blizzard's interface source for the Forever client.
 5. Add a README section like HouseLedger's: TL;DR first (five bullets at most), a screenshot, then how to use it and what it does not do. Add a row to the README's addon table.
 6. Add a section to this file for it, and to `RULES.md` if it touches a limited game system.
+7. Add `CHANGELOG.md` with an `## [Unreleased]` section and a `## [0.1.0]` section. The `version` check needs the `.toc` version there.
 
 The gate finds every folder under `addons/` on its own. No script change is needed.
 
@@ -83,7 +86,7 @@ An auction house price history. Read the auction house part of [`RULES.md`](RULE
 - The tabs switch Blizzard's tabs through the game's secure click, so the window is protected in combat. Moves, shows and tab changes wait for combat to end.
 - Saved data changes need a migration in `PriceLedger.EnsureDB` and a test that loads the old layout.
 
-**Trying it in game:** link the folder (see the README), `/reload`, and turn on Lua errors with `/console scriptErrors 1`. Say in the PR what you checked: Scan, a search, a row click, a Sell drop, and the tooltip.
+**Trying it in game:** link the folder (see [docs/development.md](docs/development.md#try-an-addon-in-game)), `/reload`, and turn on Lua errors with `/console scriptErrors 1`. Say in the PR what you checked: Scan, a search, a row click, a Sell drop, and the tooltip.
 
 ---
 

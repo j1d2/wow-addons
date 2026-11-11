@@ -22,17 +22,19 @@ These are unofficial player addons. They are not affiliated with, endorsed by, o
 
 ## Install
 
-1. Quit the game. New addon folders are picked up on the next launch.
-2. On this page, click **Code**, then **Download ZIP**, and unzip it.
-3. Copy the addon's folder (for example `addons/HouseLedger`) into `<WoW folder>/_forever_/Interface/AddOns/`. The folder that holds the `.toc` file goes straight into `AddOns`.
-4. Start the game and enable the addon on the character screen's **AddOns** list.
+1. Download the addon's latest zip, such as `HouseLedger-0.3.0.zip`, from [Releases](https://github.com/j1d2/wow-addons/releases).
+2. Unzip it to get the addon's folder, such as `HouseLedger`.
+   - **Windows 11:** right-click the zip, choose **Extract All**, and open the new folder. The `HouseLedger` folder is inside it.
+   - **macOS:** double-click the zip.
+   - **Linux:** `unzip HouseLedger-0.3.0.zip`
+3. Open the game's AddOns folder. In the Battle.net app, select World of Warcraft, click the gear next to **Play**, and choose **Show in Explorer** (Windows) or **Show in Finder** (macOS). Then open `_forever_`, `Interface`, `AddOns`. If `Interface` or `AddOns` isn't there yet, create it. The usual places:
+   - **Windows 11:** `C:\Program Files (x86)\World of Warcraft\_forever_\Interface\AddOns`
+   - **macOS:** `/Applications/World of Warcraft/_forever_/Interface/AddOns`
+   - **Linux (Wine, Lutris and the like):** the same `World of Warcraft/_forever_/Interface/AddOns` path inside your Wine prefix's `Program Files (x86)`
+4. Quit the game, then move the addon's folder into `AddOns`. The `.toc` file must sit one level down: `AddOns/HouseLedger/HouseLedger.toc`, not `AddOns/HouseLedger-0.3.0/HouseLedger/HouseLedger.toc`.
+5. Start the game. On the character screen, click **AddOns** and make sure the addon is ticked.
 
-Working on the code? Link the folder instead, so edits load with `/reload`. Run this from the repo root:
-
-```bash
-ln -s "$PWD/addons/HouseLedger" \
-  "<WoW folder>/_forever_/Interface/AddOns/HouseLedger"
-```
+**Updating:** quit the game, delete the old addon folder, and move the new one in. Saved prices are kept, because the game stores them in its own `WTF` folder, not in the addon's folder.
 
 ---
 
@@ -85,20 +87,7 @@ Its Buy and Sell tabs switch Blizzard's tabs too, and the reverse.
 
 ## Development
 
-One gate runs every check: Lua syntax, tests, TOC files, accidental globals, the `RULES.md` API limits, file hygiene, shell lint and a privacy and secret scan. The git hooks and CI both run it.
-
-```bash
-scripts/install_hooks.sh   # once per clone
-scripts/check.sh           # run it yourself any time
-```
-
-It needs `lua5.1`, `luac5.1` and `shellcheck`.
-
-- [CONTRIBUTING.md](CONTRIBUTING.md): the workflow, with notes for each addon.
-- [AGENTS.md](AGENTS.md): the rules AI coding agents follow here.
-- [security/README.md](security/README.md): the scans and the repository settings.
-- [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md): how we treat each other in issues and pull requests.
-- [SECURITY.md](SECURITY.md): report a security or privacy problem privately.
+Want to change an addon or build your own? [docs/development.md](docs/development.md) covers the tools for Linux, Windows (WSL 2) and macOS, the checks, trying an addon in game, and releases. [CONTRIBUTING.md](CONTRIBUTING.md) covers how we work.
 
 ## Trademarks and copyright
 

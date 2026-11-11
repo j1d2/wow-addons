@@ -31,8 +31,10 @@ good_addon() {
     [[ ! -d "$ROOT" ]] || rm -r "$ROOT"
     mkdir -p "$ROOT/addons/Demo" "$ROOT/scripts"
     printf 'DemoDB\n' >"$ROOT/scripts/allowed-globals.txt"
-    printf '## Interface: 16001\n## Title: Demo\n## SavedVariables: DemoDB\n\nDemo.lua\n' \
+    printf '## Interface: 16001\n## Title: Demo\n## Version: 1.0.0\n## SavedVariables: DemoDB\n\nDemo.lua\n' \
         >"$ROOT/addons/Demo/Demo.toc"
+    printf '# Changelog\n\n## [Unreleased]\n\n## [1.0.0] - 2026-11-10\n\n- First.\n' \
+        >"$ROOT/addons/Demo/CHANGELOG.md"
     printf 'local Demo = {}\n_G.Demo = Demo\nDemoDB = DemoDB or {}\n' >"$ROOT/addons/Demo/Demo.lua"
     printf 'assert(1 + 1 == 2)\nio.write("all passed\\n")\n' >"$ROOT/addons/Demo/demo_test.lua"
 }
@@ -123,6 +125,39 @@ printf '%s\n' 'local function Go(frame)' \
 run_check policy
 [[ $status -eq 0 ]]
 check "policy: reading, anchoring to and hooking Blizzard's auction window pass" $?
+
+# Each addon is versioned on its own: semver in the .toc, with a CHANGELOG.md section.
+good_addon
+sed -i '/^## Version/d' "$ROOT/addons/Demo/Demo.toc"
+run_check version
+[[ $status -eq 1 && "$out" == *"Demo.toc: has no '## Version: X.Y.Z' line"* ]]
+check "version: missing Version line is caught" $?
+
+for bad in 1.0 1.0.0.0 v1.0.0 01.0.0 1.0.0-beta; do
+    good_addon
+    sed -i "s/^## Version: .*/## Version: $bad/" "$ROOT/addons/Demo/Demo.toc"
+    run_check version
+    [[ $status -eq 1 && "$out" == *"Demo.toc: version '$bad' is not X.Y.Z"* ]]
+    check "version: '$bad' is caught" $?
+done
+
+good_addon
+rm "$ROOT/addons/Demo/CHANGELOG.md"
+run_check version
+[[ $status -eq 1 && "$out" == *"addons/Demo: has no CHANGELOG.md"* ]]
+check "version: missing CHANGELOG.md is caught" $?
+
+good_addon
+sed -i 's/^## Version: .*/## Version: 1.1.0/' "$ROOT/addons/Demo/Demo.toc"
+run_check version
+[[ $status -eq 1 && "$out" == *"CHANGELOG.md: has no '## [1.1.0]' section for the .toc version"* ]]
+check "version: .toc version with no changelog section is caught" $?
+
+good_addon
+printf '\n## [1.0.0]x\n' >>"$ROOT/addons/Demo/CHANGELOG.md"
+sed -i 's/^## \[1.0.0\] - 2026-11-10$/## [1.0.0]/' "$ROOT/addons/Demo/CHANGELOG.md"
+run_check version
+check "version: a bare '## [X.Y.Z]' heading counts" "$status"
 
 good_addon
 printf 'error("boom")\n' >"$ROOT/addons/Demo/demo_test.lua"
