@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# Runs scripts/check.sh on the newest commit of each branch being pushed, exported as a clean
+# copy. Earlier commits in the push were already checked by pre-commit when they were made.
+# Never skip it with --no-verify. Install once per clone: scripts/install_hooks.sh
+set -euo pipefail
+
+top="$(git rev-parse --show-toplevel)"
+gitdir="$(git rev-parse --absolute-git-dir)"
+zero="0000000000000000000000000000000000000000"
+
+unset_git=()
+while IFS= read -r name; do
+    unset_git+=(-u "$name")
+done < <(compgen -e | grep '^GIT_' || true)
+
+snapshot=""
+cleanup() { [[ -z "$snapshot" || ! -d "$snapshot" ]] || rm -r "$snapshot"; }
+trap cleanup EXIT
+
+checked=" "
+# stdin: <local ref> <local sha> <remote ref> <remote sha>, one line per ref.
+while read -r _local_ref local_sha _remote_ref _remote_sha; do
+    # A deleted branch has nothing to check; the same commit is checked once.
+    [[ "$local_sha" != "$zero" && "$checked" != *" $local_sha "* ]] || continue
+    checked+="$local_sha "
+    snapshot="$(mktemp -d "$gitdir/pre-push.XXXXXX")"
+    git archive "$local_sha" | tar -x -C "$snapshot"
+    echo "pre-push: checking ${local_sha:0:12}"
+    (
+        cd "$snapshot"
+        env "${unset_git[@]}" \
+            PRIVACY_SCAN_NO_GIT=1 HYGIENE_NO_GIT=1 \
+            PRIVACY_DENYLIST="$top/security/privacy-denylist.local" \
+            scripts/check.sh
+    )
+    rm -r "$snapshot"
+    snapshot=""
+done

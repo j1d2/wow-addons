@@ -1,0 +1,13 @@
+# Copy this file to security/privacy-denylist.local (git ignores that name) and list the real
+# names that must never appear in a file or commit message: account folder, character names,
+# realm, computer username, and so on. One per line; matching ignores case. Lines starting
+# with # are comments.
+#
+# The privacy scan, the git hooks and scripts/check.sh read the .local file. It is never
+# committed, so the names stay on your machine. CI does not have it; the generic rules in
+# scripts/privacy_scan.sh still run there.
+#
+# Examples (placeholders, replace them):
+# MyAccountName
+# MyMainCharacter
+# my-computer-username

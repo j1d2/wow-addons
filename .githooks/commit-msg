@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# Commit message gate: conventional-commit subject, and the privacy scan on the message text
+# (commit messages are public too if the repo is ever shared).
+# Install once per clone: scripts/install_hooks.sh
+set -euo pipefail
+
+message_file="$1"
+top="$(git rev-parse --show-toplevel)"
+clean="$(mktemp "$(git rev-parse --absolute-git-dir)/commit-msg.XXXXXX")"
+trap 'rm "$clean"' EXIT
+
+# Drop git's comment lines and everything below the scissors line (commit -v).
+sed -e '/^# ------------------------ >8 ------------------------$/,$d' -e '/^#/d' \
+    "$message_file" >"$clean"
+
+subject="$(grep -m 1 -v -E '^[[:space:]]*$' "$clean" || true)"
+readonly SUBJECT_RULE='^(feat|fix|docs|refactor|test|chore)(\([a-z0-9._/-]+\))?!?: [^[:space:]].*'
+
+if [[ "$subject" =~ ^(Merge|Revert)\  ]]; then
+    : # git's own merge and revert subjects are fine
+elif [[ ! "$subject" =~ $SUBJECT_RULE ]]; then
+    echo "commit-msg: the subject must start with feat:, fix:, docs:, refactor:, test: or chore:" >&2
+    echo "  example: fix: start the 15-minute scan wait at the click" >&2
+    exit 1
+fi
+if [[ ${#subject} -gt 72 ]]; then
+    echo "commit-msg: keep the subject to 72 characters (it has ${#subject})." >&2
+    exit 1
+fi
+
+PRIVACY_DENYLIST="$top/security/privacy-denylist.local" \
+    "$top/scripts/privacy_scan.sh" --text "$clean" >/dev/null

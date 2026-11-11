@@ -1,0 +1,5 @@
+# Globals an addon file may write (luac's SETGLOBAL), one per line.
+# Everything else must be local. Tables set through _G.Name are explicit and not listed here.
+
+# HouseLedger: SavedVariables table from HouseLedger.toc
+HouseLedgerDB

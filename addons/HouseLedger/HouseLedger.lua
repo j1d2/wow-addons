@@ -1,0 +1,1488 @@
+--[[
+Personal auction-house helper for WoW Forever.
+
+Search: one click sends one browse query, and only when Blizzard's
+throttle says another query is allowed.
+
+Scan: one click asks for the whole house once. Blizzard allows that
+about every 15 minutes. Listings are read across frames. The lowest
+buyout per item is saved on this computer and shown on item mouseovers.
+Seller names are not saved.
+
+This addon does not post, buy, bid, or cancel, and it does not scan
+when the auction house opens.
+]]
+
+local ADDON_NAME = "HouseLedger"
+
+local HouseLedger = {}
+_G[ADDON_NAME] = HouseLedger
+
+local MIN_SEARCH_LENGTH = 2
+-- Stay under the roughly 2000 replicate reads per frame that start
+-- getting dropped. count, buyout, and item id are already filled in.
+local READ_BATCH = 500
+-- Long enough for a full-house reply. time() is whole seconds and can
+-- make a short deadline expire early.
+local ANSWER_WAIT = 60
+-- Space between Blizzard's auction house window and this one.
+local PIN_GAP = 4
+
+-- Window size. The height follows Blizzard's auction house window (538
+-- in its XML). The width fills the room to the right of it, between
+-- these limits; the screen clamp slides a too-wide window back on.
+local HOUSE_HEIGHT = 538
+local FRAME_WIDTH_MIN = 440
+local FRAME_WIDTH_MAX = 640
+local SCREEN_MARGIN = 8
+-- Below this width the Avg 7d column is hidden; a row click still
+-- shows the averages in the details block.
+local TYPICAL_MIN_WIDTH = 560
+
+-- Under the list: the details block for a clicked row (a title and the
+-- five lines of PriceLedger.WindowLines), then two status lines.
+local STATUS_HEIGHT = 48
+local DETAIL_LINES = 5
+local DETAIL_LINE_HEIGHT = 15
+local DETAIL_HEIGHT = (DETAIL_LINES + 1) * DETAIL_LINE_HEIGHT + 10
+
+-- The results list sits in the template's inset, between the search
+-- bar (60 from the top) and the details block.
+local LIST_TOP = 60
+local LIST_BOTTOM = STATUS_HEIGHT + DETAIL_HEIGHT
+local HEADER_HEIGHT = 26
+local ROW_HEIGHT = 18
+-- (538 - 60 - 148 - 26) / 18 = 16 rows.
+local VISIBLE_ROWS = math.floor((HOUSE_HEIGHT - LIST_TOP - LIST_BOTTOM - HEADER_HEIGHT) / ROW_HEIGHT)
+local WHEEL_STEP = 3
+
+local COLUMN_WIDTH = { price = 96, avail = 48, typical = 96, trend = 72 }
+local COLUMN_GAP = 6
+local ICON_SIZE = 16
+-- Shown until the game has loaded an item's icon.
+local QUESTION_MARK_ICON = 134400
+local PORTRAIT_ICON = "Interface\\Icons\\INV_Misc_Coin_02"
+
+local QUALITY_FILTERS = {
+    Enum.AuctionHouseFilter.PoorQuality,
+    Enum.AuctionHouseFilter.CommonQuality,
+    Enum.AuctionHouseFilter.UncommonQuality,
+    Enum.AuctionHouseFilter.RareQuality,
+    Enum.AuctionHouseFilter.EpicQuality,
+}
+
+local PRICE_SORT = {
+    { sortOrder = Enum.AuctionHouseSortOrder.Price, reverseSort = false },
+    { sortOrder = Enum.AuctionHouseSortOrder.Name, reverseSort = false },
+}
+local SELL_SORT = {
+    { sortOrder = Enum.AuctionHouseSortOrder.Price, reverseSort = false },
+}
+
+local BUY_TAB = 1
+local SELL_TAB = 2
+-- Sell panel lines, top to bottom: key and label.
+local SELL_LINES = {
+    { "low", "Lowest now" },
+    { "atLow", "Up at that price" },
+    { "total", "Up in all" },
+    -- Labels of these five are filled from PriceLedger.WindowLines.
+    { "w1", "1 day" },
+    { "w3", "3 days" },
+    { "w7", "7 days" },
+    { "w14", "14 days" },
+    { "spread", "Std dev, earlier scans" },
+    { "based", "Based on" },
+    { "trend", "Trend vs 7-day avg" },
+}
+local SELL_LINE_HEIGHT = 20
+local BUY_HELP = "Type an item name. One click sends one search."
+local DETAIL_HINT = "Click a row for its saved prices over 1, 3, 7 and 14 days."
+-- The Sell lines filled in order from PriceLedger.WindowLines.
+local WINDOW_KEYS = { "w1", "w3", "w7", "w14", "spread" }
+local SELL_PROMPT = "Drop an item from your bags here"
+local SELL_HELP = "Drop an item from your bags. One drop sends one search. Nothing is saved."
+local EMPTY_SLOT_TEXTURE = "Interface\\Buttons\\UI-EmptySlot"
+
+local frame
+local searchBox
+local statusText
+local scanText
+local scanButton
+local buyPanel
+local sellPanel
+local header
+-- The item on the Sell tab (dropped here, or put in Blizzard's Sell
+-- window), until the next one. Never saved.
+local pendingSell
+local rows = {}
+-- Last browse results and how far the list is scrolled. Scrolling and
+-- clicking only re-read these; they never ask the house again.
+local results = {}
+local scrollOffset = 0
+
+local scanState = "idle"
+local readToken = 0
+local waitStarted = 0
+local acceptAnswerUntil = 0
+local holdStatusUntil = 0
+local scanHouseKey
+local tooltipsHooked = false
+-- Blizzard's auction window is followed through hooksecurefunc, set once.
+local houseHooked = false
+-- Our tabs are secure click buttons pointed at Blizzard's tabs, set once.
+local tabsLinked = false
+local currentTab = BUY_TAB
+-- The tabs make the window protected: in combat the game blocks addon
+-- changes to it. These mark what to catch up on when combat ends.
+local afterCombat = false
+local buildAfterCombat = false
+
+--- True while the game blocks addon changes to protected frames.
+local function InCombat()
+    return type(InCombatLockdown) == "function" and InCombatLockdown() == true
+end
+
+--- True when the game would block an addon change to this frame now:
+--- in combat, and the game counts the frame as protected. The game is
+--- asked rather than assumed; without IsProtected, assume it is.
+local function Locked(region)
+    if not InCombat() then
+        return false
+    end
+    return type(region.IsProtected) ~= "function" or region:IsProtected() == true
+end
+
+local function SetStatus(text)
+    if statusText then
+        statusText:SetText(text)
+    end
+end
+
+local function SetScanStatus(text, holdSeconds)
+    if scanText then
+        scanText:SetText(text)
+    end
+    if holdSeconds and holdSeconds > 0 then
+        holdStatusUntil = time() + holdSeconds
+    end
+end
+
+--- Shows a copper amount the way the game does: gold, silver and copper,
+--- each with its coin icon. GetMoneyString is Blizzard's own formatter on
+--- Forever, which has no GetCoinTextureString. It switches to "1g 2s 3c"
+--- text when the player has colorblind mode on. If it is ever missing, the
+--- plain-text version from PriceLedger keeps the price readable.
+---   copper: whole copper, or nil
+--- Returns the text, or "-" for no price.
+local function CopperToText(copper)
+    if not copper or copper <= 0 then
+        return "-"
+    end
+    if GetMoneyString then
+        return GetMoneyString(copper, true)
+    end
+    return HouseLedgerPrice.CoinText(copper)
+end
+
+local function RemainingText(seconds)
+    seconds = math.ceil(seconds)
+    if seconds >= 60 then
+        return string.format("%d min", math.ceil(seconds / 60))
+    end
+    return string.format("%d sec", seconds)
+end
+
+local function RealmLabel()
+    if type(GetRealmName) ~= "function" then
+        return "Forever"
+    end
+    local name = GetRealmName()
+    if type(name) ~= "string" or name == "" then
+        return "Forever"
+    end
+    return name
+end
+
+local function PlayerHouseKey()
+    local side = "Unknown"
+    if type(UnitFactionGroup) == "function" then
+        side = UnitFactionGroup("player") or "Unknown"
+    end
+    return HouseLedgerPrice.HouseKey(side, RealmLabel())
+end
+
+--- The auctioneer you have open. A goblin house has no Alliance or
+--- Horde faction group, so those scans are stored on their own.
+local function CurrentScanKey()
+    local side
+    if type(UnitExists) == "function" and UnitExists("npc") and type(UnitFactionGroup) == "function" then
+        local npcSide = UnitFactionGroup("npc")
+        if npcSide == "Alliance" or npcSide == "Horde" then
+            side = npcSide
+        else
+            side = "Neutral"
+        end
+    elseif type(UnitFactionGroup) == "function" then
+        side = UnitFactionGroup("player")
+    end
+    return HouseLedgerPrice.HouseKey(side, RealmLabel())
+end
+
+local function Clock()
+    if type(GetTime) == "function" then
+        return GetTime()
+    end
+    return time()
+end
+
+local function EnableScanButton()
+    if scanButton then
+        scanButton:Enable()
+    end
+end
+
+local function RefreshIdleScanLine()
+    if scanState ~= "idle" or time() < holdStatusUntil then
+        return
+    end
+    local wait = HouseLedgerPrice.SecondsUntil(HouseLedgerDB.replicateAt, time())
+    local key = PlayerHouseKey()
+    local house = HouseLedgerDB.houses and HouseLedgerDB.houses[key]
+    local priced = 0
+    if type(house) == "table" and type(house.items) == "table" then
+        for _ in pairs(house.items) do
+            priced = priced + 1
+        end
+    end
+    local label = HouseLedgerPrice.HouseLabel(key)
+    if wait > 0 and priced > 0 then
+        SetScanStatus(string.format(
+            "%d prices for %s. Next scan in %s.",
+            priced, label, RemainingText(wait)
+        ))
+        return
+    end
+    if priced > 0 then
+        SetScanStatus(string.format("%d prices for %s. Scan is ready.", priced, label))
+        return
+    end
+    if wait > 0 then
+        SetScanStatus("Next scan in " .. RemainingText(wait) .. ".")
+        return
+    end
+    SetScanStatus("No prices saved yet. Click Scan once.")
+end
+
+--- Name, icon and quality color for a result. The game may not have
+--- loaded the item yet; ITEM_KEY_ITEM_INFO_RECEIVED redraws the rows.
+local function ItemLook(itemKey)
+    local info = itemKey and C_AuctionHouse.GetItemKeyInfo(itemKey)
+    if info and info.itemName and info.itemName ~= "" then
+        return info.itemName, info.iconFileID or QUESTION_MARK_ICON, info.quality
+    end
+    local itemID = itemKey and itemKey.itemID
+    if itemID then
+        return "item " .. itemID, QUESTION_MARK_ICON, nil
+    end
+    return "unknown item", QUESTION_MARK_ICON, nil
+end
+
+--- Saved stats for an item at the player's own house, or nil.
+local function SavedStats(itemID)
+    local saved = HouseLedgerPrice.Lookup(HouseLedgerDB, itemID, PlayerHouseKey())
+    return saved and saved.stats
+end
+
+local function FillRow(row, result)
+    local name, icon, quality = ItemLook(result.itemKey)
+    row.result = result
+    row.nameText:SetText(name)
+    local r, g, b = 1, 1, 1
+    if quality and C_Item and type(C_Item.GetItemQualityColor) == "function" then
+        r, g, b = C_Item.GetItemQualityColor(quality)
+    end
+    row.nameText:SetTextColor(r, g, b)
+    row.icon:SetTexture(icon)
+    row.priceText:SetText(CopperToText(result.minPrice))
+    row.availText:SetText(tostring(result.totalQuantity or 0))
+
+    local stats = SavedStats(result.itemKey and result.itemKey.itemID)
+    row.typicalText:SetText(stats and stats.typical and CopperToText(stats.typical) or "-")
+    -- Judge the live price, not the last scan's: that is what you would pay.
+    local verdict = HouseLedgerPrice.Judge(stats, result.minPrice)
+    local mark = HouseLedgerPrice.TrendText(verdict, "buyer")
+    if mark == "" then
+        mark = HouseLedgerPrice.SteadyText(verdict)
+    end
+    if verdict.deal then
+        mark = mark .. " " .. HouseLedgerPrice.DEAL_ICON
+    end
+    row.trendText:SetText(mark)
+    row:Show()
+end
+
+local function RenderRows()
+    for index = 1, VISIBLE_ROWS do
+        local result = results[scrollOffset + index]
+        if result then
+            FillRow(rows[index], result)
+        else
+            rows[index].result = nil
+            rows[index]:Hide()
+        end
+    end
+    if #results == 0 then
+        SetStatus("No results.")
+        return
+    end
+    local last = math.min(#results, scrollOffset + VISIBLE_ROWS)
+    local text = string.format("Showing %d-%d of %d.", scrollOffset + 1, last, #results)
+    if type(C_AuctionHouse.HasFullBrowseResults) == "function" and not C_AuctionHouse.HasFullBrowseResults() then
+        text = text .. " The house has more; narrow the search."
+    end
+    SetStatus(text)
+end
+
+--- Empties the details block under the Buy list.
+local function ClearDetails()
+    buyPanel.detailTitle:SetText(DETAIL_HINT)
+    for _, line in ipairs(buyPanel.detailLines) do
+        line.left:SetText("")
+        line.right:SetText("")
+    end
+end
+
+local function ShowResults()
+    results = C_AuctionHouse.GetBrowseResults() or {}
+    scrollOffset = 0
+    -- The clicked row may not be in the new list.
+    ClearDetails()
+    RenderRows()
+end
+
+--- Mouse wheel over the list. Moves through results already received.
+local function Scroll(rowsDown)
+    local maxOffset = math.max(0, #results - VISIBLE_ROWS)
+    local offset = math.min(maxOffset, math.max(0, scrollOffset + rowsDown))
+    if offset ~= scrollOffset then
+        scrollOffset = offset
+        RenderRows()
+    end
+end
+
+--- A row click: its saved stats in the details block. Reads saved data
+--- only; the house is not asked anything.
+local function ShowRowDetails(row)
+    if row.result == nil then
+        return
+    end
+    ClearDetails()
+    local name = ItemLook(row.result.itemKey)
+    local stats = SavedStats(row.result.itemKey and row.result.itemKey.itemID)
+    if stats == nil then
+        buyPanel.detailTitle:SetText(name .. ": no saved prices yet. Click Scan.")
+        return
+    end
+    buyPanel.detailTitle:SetText(name .. ", " .. HouseLedgerPrice.CountText(stats))
+    local lines = HouseLedgerPrice.WindowLines(stats, CopperToText) or {}
+    for index, line in ipairs(buyPanel.detailLines) do
+        local source = lines[index]
+        line.left:SetText(source and source.left or "")
+        line.right:SetText(source and source.right or "")
+    end
+end
+
+local function ShowRowTooltip(row)
+    local itemKey = row.result and row.result.itemKey
+    if itemKey == nil or GameTooltip == nil then
+        return
+    end
+    GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
+    local requiredLevel
+    if type(C_AuctionHouse.GetItemKeyRequiredLevel) == "function" then
+        requiredLevel = C_AuctionHouse.GetItemKeyRequiredLevel(itemKey)
+    end
+    GameTooltip:SetItemKey(itemKey.itemID, itemKey.itemLevel, itemKey.itemSuffix, requiredLevel)
+    GameTooltip:Show()
+end
+
+local function HideRowTooltip()
+    if GameTooltip then
+        GameTooltip:Hide()
+    end
+end
+
+local function HouseIsOpen()
+    return AuctionHouseFrame and AuctionHouseFrame:IsShown()
+end
+
+local function SetSellStatus(text)
+    if sellPanel then
+        sellPanel.statusText:SetText(text)
+    end
+end
+
+local function ClearSellValues()
+    for _, line in ipairs(SELL_LINES) do
+        sellPanel.labels[line[1]]:SetText(line[2])
+        sellPanel.values[line[1]]:SetText("-")
+    end
+    sellPanel.hint:SetText("")
+end
+
+--- Shows the live listings for the dropped item next to its saved stats.
+--- Colors are the seller's view: a higher price is good news.
+---   summary: from PriceLedger.LowestListing, or nil for none listed
+---   complete: false when the house sent only the first part of a long list
+local function ShowSellResults(summary, complete)
+    local values = sellPanel.values
+    ClearSellValues()
+    local stats = SavedStats(pendingSell.itemID)
+    if stats then
+        local lines = HouseLedgerPrice.WindowLines(stats, CopperToText) or {}
+        for index, key in ipairs(WINDOW_KEYS) do
+            if lines[index] then
+                sellPanel.labels[key]:SetText(lines[index].left)
+                values[key]:SetText(lines[index].right)
+            end
+        end
+        values.based:SetText(HouseLedgerPrice.CountText(stats))
+    else
+        values.based:SetText("No saved prices yet")
+    end
+    if summary == nil then
+        SetSellStatus("No one is selling " .. pendingSell.name .. " right now.")
+        return
+    end
+    values.low:SetText(CopperToText(summary.low))
+    values.atLow:SetText(tostring(summary.atLow))
+    values.total:SetText(HouseLedgerPrice.ListingText(summary))
+    local verdict = HouseLedgerPrice.Judge(stats, summary.low)
+    local trend = HouseLedgerPrice.TrendText(verdict, "seller")
+    if trend == "" then
+        trend = HouseLedgerPrice.SteadyText(verdict)
+    end
+    values.trend:SetText(trend ~= "" and trend or "-")
+    if verdict.deal then
+        sellPanel.hint:SetText(HouseLedgerPrice.DEAL_ICON
+            .. " The lowest is far under its 7-day average. Waiting may sell for more.")
+    end
+    local text = "Lowest of " .. HouseLedgerPrice.ListingText(summary) .. " for " .. pendingSell.name .. "."
+    if complete == false then
+        -- Asking for the rest would be another query; leave that to a new drop.
+        text = text .. " The house has more; these are the first ones."
+    end
+    SetSellStatus(text)
+end
+
+--- False only when the house says the list is not complete.
+local function IsComplete(check, ...)
+    if type(check) ~= "function" then
+        return true
+    end
+    return check(...) ~= false
+end
+
+local function OnCommodityResults(itemID)
+    if pendingSell == nil or not pendingSell.commodity or itemID ~= pendingSell.itemID then
+        return
+    end
+    local listings = {}
+    for index = 1, C_AuctionHouse.GetNumCommoditySearchResults(itemID) or 0 do
+        -- Only price and quantity are read; owners stay in the result.
+        local result = C_AuctionHouse.GetCommoditySearchResultInfo(itemID, index)
+        if result then
+            listings[#listings + 1] = { result.unitPrice, result.quantity }
+        end
+    end
+    ShowSellResults(HouseLedgerPrice.LowestListing(listings),
+        IsComplete(C_AuctionHouse.HasFullCommoditySearchResults, itemID))
+end
+
+local function OnItemResults(itemKey)
+    if pendingSell == nil or pendingSell.commodity then
+        return
+    end
+    if type(itemKey) ~= "table" or itemKey.itemID ~= pendingSell.itemID then
+        return
+    end
+    -- Our own search: read with the key that was sent; for gear it covers
+    -- every variant. A followed item: Blizzard may search again on its
+    -- own (after a post) with another key, so read with the key these
+    -- results came back for.
+    local searchKey = pendingSell.followed and itemKey or pendingSell.itemKey
+    local listings = {}
+    for index = 1, C_AuctionHouse.GetNumItemSearchResults(searchKey) or 0 do
+        local result = C_AuctionHouse.GetItemSearchResultInfo(searchKey, index)
+        -- A listing with no buyout is bid-only and is left out.
+        if result and result.buyoutAmount and result.quantity and result.quantity > 0 then
+            listings[#listings + 1] = {
+                HouseLedgerPrice.UnitCopper(result.buyoutAmount, result.quantity),
+                result.quantity,
+            }
+        end
+    end
+    ShowSellResults(HouseLedgerPrice.LowestListing(listings),
+        IsComplete(C_AuctionHouse.HasFullItemSearchResults, searchKey))
+end
+
+--- The search key Blizzard's Sell tab uses for gear: item level and
+--- suffix 0, so every variant of the item comes back in one list.
+--- Args:
+---   itemKey: the item's own key; it is not changed
+--- Returns:
+---   a new item key
+local function AnyVariantKey(itemKey)
+    return {
+        itemID = itemKey.itemID,
+        itemLevel = 0,
+        itemSuffix = 0,
+        battlePetSpeciesID = itemKey.battlePetSpeciesID or 0,
+    }
+end
+
+--- Puts an item on the Sell tab with empty values until its prices come in.
+--- Args:
+---   readKey: the key its item search results are read with
+---   name, icon: what to show for it
+---   commodity: true for a stackable item (commodity results)
+---   followed: true when the item came from Blizzard's Sell window
+local function StartPendingSell(readKey, name, icon, commodity, followed)
+    pendingSell = {
+        itemID = readKey.itemID, itemKey = readKey, name = name,
+        commodity = commodity, followed = followed == true,
+    }
+    sellPanel.itemName:SetText(name)
+    sellPanel.icon:SetTexture(icon)
+    ClearSellValues()
+end
+
+--- An item dropped on the Sell slot: one drop, one search for that item.
+--- The item goes straight back to its bag slot; only its id is read.
+local function DropItem()
+    local location = C_Cursor and C_Cursor.GetCursorItem and C_Cursor.GetCursorItem()
+    if location == nil then
+        return
+    end
+    local name = C_Item.GetItemName(location) or "This item"
+    local icon = C_Item.GetItemIcon(location)
+    local sellable = C_AuctionHouse.IsSellItemValid(location, false)
+    local itemKey = sellable and C_AuctionHouse.GetItemKeyFromItem(location)
+    local status = sellable and C_AuctionHouse.GetItemCommodityStatus(location)
+    local commodity = status == Enum.ItemCommodityStatus.Commodity
+    ClearCursor()
+
+    if not HouseIsOpen() then
+        SetSellStatus("Open the auction house first.")
+        return
+    end
+    if not sellable then
+        SetSellStatus(name .. " can't be sold at the auction house.")
+        return
+    end
+    if status == Enum.ItemCommodityStatus.Unknown then
+        -- Blizzard's Sell tab stops here too: without item data the right
+        -- search is not known, and a wrong one would spend the throttle.
+        SetSellStatus("The game is still loading " .. name .. ". Drop it again.")
+        return
+    end
+    if not C_AuctionHouse.IsThrottledMessageSystemReady() then
+        SetSellStatus("The auction house is still busy. Wait, then drop the item again.")
+        return
+    end
+
+    -- Blizzard's own Sell tab searches the same way: stackable items by
+    -- item; gear with item level and suffix set to 0, so every variant
+    -- of it comes back in one list under that key.
+    -- Once the house's item info is loaded, its isEquipment decides, as in
+    -- Blizzard's Sell tab (a bag can be worn but is not equipment). On a
+    -- first drop that info may not be loaded yet; then whether the item
+    -- can be worn, known from the item itself, stands in for it.
+    local info = C_AuctionHouse.GetItemKeyInfo(itemKey)
+    local gear
+    if info ~= nil then
+        gear = info.isEquipment == true
+    else
+        gear = type(C_Item.IsEquippableItem) == "function" and C_Item.IsEquippableItem(itemKey.itemID) == true
+    end
+    gear = gear and not commodity
+    local searchKey = gear and AnyVariantKey(itemKey) or itemKey
+    StartPendingSell(searchKey, name, icon, commodity)
+    if gear then
+        C_AuctionHouse.SendSellSearchQuery(searchKey, SELL_SORT, false)
+    else
+        C_AuctionHouse.SendSearchQuery(searchKey, SELL_SORT, false)
+    end
+    SetSellStatus("Searching for " .. name .. "...")
+end
+
+local function SelectTab(id)
+    currentTab = id
+    -- The tab buttons are protected; in combat they are marked afterwards.
+    -- The panels switch right away unless the game counts them as
+    -- protected too; then OnCombatEnded switches them.
+    if InCombat() then
+        afterCombat = true
+    else
+        PanelTemplates_SetTab(frame, id)
+    end
+    if Locked(buyPanel) or Locked(sellPanel) then
+        return
+    end
+    if id == SELL_TAB then
+        buyPanel:Hide()
+        sellPanel:Show()
+    else
+        sellPanel:Hide()
+        buyPanel:Show()
+    end
+end
+
+--- Clear on the Buy tab: empties the search box and the list. The house
+--- is not asked anything; a result that still arrives shows as usual.
+local function ClearSearch()
+    searchBox:SetText("")
+    searchBox:ClearFocus()
+    results = {}
+    scrollOffset = 0
+    for _, row in ipairs(rows) do
+        row.result = nil
+        row:Hide()
+    end
+    ClearDetails()
+    SetStatus(BUY_HELP)
+end
+
+--- Reset on the Sell tab: empties the slot and its values. Results that
+--- still arrive for that item are ignored. Blizzard's window is left as is.
+local function ResetSell()
+    pendingSell = nil
+    sellPanel.itemName:SetText(SELL_PROMPT)
+    sellPanel.icon:SetTexture(nil)
+    ClearSellValues()
+    SetSellStatus(SELL_HELP)
+end
+
+local function SendSearch()
+    local text = strtrim(searchBox:GetText() or "")
+    if strlenutf8(text) < MIN_SEARCH_LENGTH then
+        SetStatus("Type at least 2 letters.")
+        return
+    end
+    if not AuctionHouseFrame or not AuctionHouseFrame:IsShown() then
+        SetStatus("Open the auction house first.")
+        return
+    end
+    if not C_AuctionHouse.IsThrottledMessageSystemReady() then
+        SetStatus("The auction house is still busy. Wait, then click Search again.")
+        return
+    end
+
+    -- One click, one query. No follow-up timer.
+    C_AuctionHouse.SendBrowseQuery({
+        searchString = text,
+        sorts = PRICE_SORT,
+        filters = QUALITY_FILTERS,
+    })
+    SetStatus("Searching for " .. text .. "...")
+end
+
+local function StopReading()
+    readToken = readToken + 1
+    scanState = "idle"
+    EnableScanButton()
+end
+
+local function FinishRead(token, best)
+    if token ~= readToken or scanState ~= "reading" then
+        return
+    end
+    if next(best) == nil then
+        StopReading()
+        SetScanStatus("The house sent no listings. Nothing saved.", 8)
+        return
+    end
+    local saved = HouseLedgerPrice.Commit(HouseLedgerDB, scanHouseKey, best, time())
+    StopReading()
+    SetScanStatus(string.format("Saved %d prices for %s.", saved, HouseLedgerPrice.HouseLabel(scanHouseKey)), 8)
+end
+
+local function ReadListings(token, index, total, best)
+    if token ~= readToken or scanState ~= "reading" then
+        return
+    end
+    if not HouseIsOpen() then
+        StopReading()
+        SetScanStatus("Scan stopped because the auction house closed. Next scan in 15 min.", 8)
+        return
+    end
+
+    local last = math.min(index + READ_BATCH - 1, total - 1)
+    for i = index, last do
+        -- One call. The seller fields come back nil and are not stored.
+        local _, _, count, _, _, _, _, _, _, buyout, _, _, _, _, _, _, itemID =
+            C_AuctionHouse.GetReplicateItemInfo(i)
+        HouseLedgerPrice.Consider(best, itemID, count, buyout)
+    end
+
+    local nextIndex = last + 1
+    if nextIndex >= total then
+        FinishRead(token, best)
+        return
+    end
+
+    SetScanStatus(string.format("Reading listings %d of %d...", nextIndex, total))
+    C_Timer.After(0, function()
+        ReadListings(token, nextIndex, total, best)
+    end)
+end
+
+local function BeginRead()
+    HouseLedgerDB.replicateAt = time()
+    scanHouseKey = CurrentScanKey()
+    local total = 0
+    if C_AuctionHouse.GetNumReplicateItems then
+        total = C_AuctionHouse.GetNumReplicateItems() or 0
+    end
+    scanState = "reading"
+    readToken = readToken + 1
+    acceptAnswerUntil = 0
+    SetScanStatus(string.format("Reading %d listings...", total))
+    ReadListings(readToken, 0, total, {})
+end
+
+local function StartScan()
+    if scanState ~= "idle" then
+        return
+    end
+    if not HouseIsOpen() then
+        SetScanStatus("Open the auction house first.", 4)
+        return
+    end
+    if C_AuctionHouse.ReplicateItems == nil or C_AuctionHouse.GetReplicateItemInfo == nil then
+        SetScanStatus("This client has no full-scan function.", 8)
+        return
+    end
+
+    local wait = HouseLedgerPrice.SecondsUntil(HouseLedgerDB.replicateAt, time())
+    if wait > 0 then
+        SetScanStatus("Next scan in " .. RemainingText(wait) .. ".", 4)
+        return
+    end
+
+    scanState = "waiting"
+    waitStarted = Clock()
+    if scanButton then
+        scanButton:Disable()
+    end
+    -- One click, one full-house request. No retry timer.
+    -- Start the 15 minutes now: the request is out even if no answer comes.
+    HouseLedgerDB.replicateAt = time()
+    C_AuctionHouse.ReplicateItems()
+    SetScanStatus("Asking the auction house for every listing...")
+end
+
+local function AddPriceLine(tooltip, data)
+    if tooltip == nil or type(tooltip.AddLine) ~= "function" or type(data) ~= "table" then
+        return
+    end
+    local itemID = data.id
+    if type(itemID) ~= "number" and type(data.hyperlink) == "string" and type(GetItemInfoInstant) == "function" then
+        itemID = GetItemInfoInstant(data.hyperlink)
+    end
+    local info = HouseLedgerPrice.Lookup(HouseLedgerDB, itemID, PlayerHouseKey())
+    if info == nil then
+        return
+    end
+    -- Shift is read when the tooltip is built: hold it, then hover.
+    local showDetails = type(IsShiftKeyDown) == "function" and IsShiftKeyDown() == true
+    local lines = HouseLedgerPrice.TooltipLines(info, CopperToText, showDetails)
+    if lines == nil then
+        return
+    end
+    -- First line in gold like other price lines; details in light gray.
+    tooltip:AddLine(lines[1].left, 1, 0.82, 0, true)
+    for index = 2, #lines do
+        local line = lines[index]
+        if line.right and type(tooltip.AddDoubleLine) == "function" then
+            tooltip:AddDoubleLine(line.left, line.right, 0.8, 0.8, 0.8, 1, 1, 1)
+        else
+            tooltip:AddLine(line.left, 0.8, 0.8, 0.8, true)
+        end
+    end
+end
+
+local function HookTooltips()
+    if tooltipsHooked then
+        return true
+    end
+    if TooltipDataProcessor == nil or type(TooltipDataProcessor.AddTooltipPostCall) ~= "function" then
+        return false
+    end
+    if Enum == nil or Enum.TooltipDataType == nil or Enum.TooltipDataType.Item == nil then
+        return false
+    end
+    TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, AddPriceLine)
+    tooltipsHooked = true
+    return true
+end
+
+--- Anchors one line of cells, right to left: trend, typical, available,
+--- price, then the name fills what is left beside the icon.
+---   cells: { parent, icon?, name, price, avail, typical, trend }
+---   showTypical: false hides the Avg 7d column on a narrow window
+local function AnchorCells(cells, showTypical)
+    for _, key in ipairs({ "name", "price", "avail", "typical", "trend" }) do
+        cells[key]:ClearAllPoints()
+    end
+    cells.trend:SetPoint("RIGHT", cells.parent, "RIGHT", -4, 0)
+    cells.trend:SetWidth(COLUMN_WIDTH.trend)
+    local rightOfAvail = cells.trend
+    if showTypical then
+        cells.typical:SetPoint("RIGHT", cells.trend, "LEFT", -COLUMN_GAP, 0)
+        cells.typical:SetWidth(COLUMN_WIDTH.typical)
+        cells.typical:Show()
+        rightOfAvail = cells.typical
+    else
+        cells.typical:Hide()
+    end
+    cells.avail:SetPoint("RIGHT", rightOfAvail, "LEFT", -COLUMN_GAP, 0)
+    cells.avail:SetWidth(COLUMN_WIDTH.avail)
+    cells.price:SetPoint("RIGHT", cells.avail, "LEFT", -COLUMN_GAP, 0)
+    cells.price:SetWidth(COLUMN_WIDTH.price)
+    if cells.icon then
+        cells.name:SetPoint("LEFT", cells.icon, "RIGHT", 4, 0)
+    else
+        cells.name:SetPoint("LEFT", cells.parent, "LEFT", 4 + ICON_SIZE + 4, 0)
+    end
+    cells.name:SetPoint("RIGHT", cells.price, "LEFT", -COLUMN_GAP, 0)
+end
+
+local function Cell(parent, font, justify)
+    local text = parent:CreateFontString(nil, "OVERLAY", font)
+    text:SetJustifyH(justify)
+    -- Each cell has a fixed slot. Long text is cut with "..." instead of
+    -- wrapping onto the line below.
+    text:SetWordWrap(false)
+    return text
+end
+
+local function CellsOf(owner)
+    return {
+        parent = owner,
+        icon = owner.icon,
+        name = owner.nameText,
+        price = owner.priceText,
+        avail = owner.availText,
+        typical = owner.typicalText,
+        trend = owner.trendText,
+    }
+end
+
+local function BuildRow(list, index)
+    local row = CreateFrame("Button", nil, list)
+    row:SetHeight(ROW_HEIGHT)
+    row:SetPoint("TOPLEFT", list, "TOPLEFT", 0, -HEADER_HEIGHT - (index - 1) * ROW_HEIGHT)
+    row:SetPoint("RIGHT", list, "RIGHT", 0, 0)
+    row:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
+    row.icon = row:CreateTexture(nil, "ARTWORK")
+    row.icon:SetSize(ICON_SIZE, ICON_SIZE)
+    row.icon:SetPoint("LEFT", row, "LEFT", 4, 0)
+    row.nameText = Cell(row, "GameFontHighlightSmall", "LEFT")
+    row.priceText = Cell(row, "GameFontHighlightSmall", "RIGHT")
+    row.availText = Cell(row, "GameFontHighlightSmall", "RIGHT")
+    row.typicalText = Cell(row, "GameFontHighlightSmall", "RIGHT")
+    row.trendText = Cell(row, "GameFontHighlightSmall", "RIGHT")
+    -- A click or hover reads saved data and the game's item cache only.
+    row:SetScript("OnClick", ShowRowDetails)
+    row:SetScript("OnEnter", ShowRowTooltip)
+    row:SetScript("OnLeave", HideRowTooltip)
+    row:Hide()
+    return row
+end
+
+local function BuildHeader(list)
+    header = CreateFrame("Frame", nil, list)
+    header:SetHeight(HEADER_HEIGHT)
+    header:SetPoint("TOPLEFT", list, "TOPLEFT", 0, 0)
+    header:SetPoint("RIGHT", list, "RIGHT", 0, 0)
+    header.nameText = Cell(header, "GameFontNormalSmall", "LEFT")
+    header.priceText = Cell(header, "GameFontNormalSmall", "RIGHT")
+    header.availText = Cell(header, "GameFontNormalSmall", "RIGHT")
+    header.typicalText = Cell(header, "GameFontNormalSmall", "RIGHT")
+    header.trendText = Cell(header, "GameFontNormalSmall", "RIGHT")
+    header.nameText:SetText("Item")
+    header.priceText:SetText("Price")
+    header.availText:SetText("Avail.")
+    header.typicalText:SetText("Avg 7d")
+    header.trendText:SetText("Trend")
+end
+
+--- Room to the right of the auction house, between the width limits.
+local function FrameWidth()
+    local screenRight = UIParent and UIParent:GetRight()
+    local houseRight = AuctionHouseFrame and AuctionHouseFrame:GetRight()
+    if type(screenRight) ~= "number" or type(houseRight) ~= "number" then
+        return FRAME_WIDTH_MIN
+    end
+    local room = math.floor(screenRight - houseRight - PIN_GAP - SCREEN_MARGIN)
+    return math.max(FRAME_WIDTH_MIN, math.min(FRAME_WIDTH_MAX, room))
+end
+
+local function LayoutColumns(width)
+    local showTypical = width >= TYPICAL_MIN_WIDTH
+    AnchorCells(CellsOf(header), showTypical)
+    for _, row in ipairs(rows) do
+        AnchorCells(CellsOf(row), showTypical)
+    end
+end
+
+local function BuildSellPanel()
+    sellPanel = CreateFrame("Frame", nil, frame)
+    sellPanel:SetAllPoints(frame)
+    frame.sellPanel = sellPanel
+
+    local slot = CreateFrame("Button", nil, sellPanel)
+    slot:SetSize(37, 37)
+    slot:SetPoint("TOPLEFT", sellPanel, "TOPLEFT", 20, -LIST_TOP - 16)
+    local slotBackground = slot:CreateTexture(nil, "BACKGROUND")
+    slotBackground:SetTexture(EMPTY_SLOT_TEXTURE)
+    slotBackground:SetSize(64, 64)
+    slotBackground:SetPoint("CENTER", slot, "CENTER", 0, 0)
+    sellPanel.icon = slot:CreateTexture(nil, "ARTWORK")
+    sellPanel.icon:SetAllPoints(slot)
+    -- Drag an item onto the slot, or pick it up and click the slot.
+    slot:SetScript("OnReceiveDrag", DropItem)
+    slot:SetScript("OnClick", DropItem)
+    sellPanel.slot = slot
+
+    sellPanel.itemName = Cell(sellPanel, "GameFontNormalLarge", "LEFT")
+    sellPanel.itemName:SetPoint("LEFT", slot, "RIGHT", 12, 0)
+    sellPanel.itemName:SetPoint("RIGHT", sellPanel, "RIGHT", -16, 0)
+    sellPanel.itemName:SetText(SELL_PROMPT)
+
+    sellPanel.values = {}
+    sellPanel.labels = {}
+    for index, line in ipairs(SELL_LINES) do
+        local y = -LIST_TOP - 72 - (index - 1) * SELL_LINE_HEIGHT
+        local label = Cell(sellPanel, "GameFontNormal", "LEFT")
+        label:SetPoint("TOPLEFT", sellPanel, "TOPLEFT", 24, y)
+        label:SetWidth(150)
+        label:SetText(line[2])
+        sellPanel.labels[line[1]] = label
+        local value = Cell(sellPanel, "GameFontHighlight", "LEFT")
+        value:SetPoint("TOPLEFT", sellPanel, "TOPLEFT", 180, y)
+        value:SetPoint("RIGHT", sellPanel, "RIGHT", -16, 0)
+        sellPanel.values[line[1]] = value
+    end
+    sellPanel.hint = Cell(sellPanel, "GameFontHighlight", "LEFT")
+    sellPanel.hint:SetPoint("TOPLEFT", sellPanel, "TOPLEFT", 24, -LIST_TOP - 72 - #SELL_LINES * SELL_LINE_HEIGHT - 10)
+    sellPanel.hint:SetPoint("RIGHT", sellPanel, "RIGHT", -16, 0)
+    ClearSellValues()
+
+    sellPanel.statusText = Cell(sellPanel, "GameFontHighlightSmall", "LEFT")
+    sellPanel.statusText:SetPoint("BOTTOMLEFT", 14, 30)
+    sellPanel.statusText:SetPoint("RIGHT", sellPanel, "RIGHT", -14, 0)
+    sellPanel.statusText:SetText(SELL_HELP)
+
+    local reset = CreateFrame("Button", nil, sellPanel, "UIPanelButtonTemplate")
+    reset:SetSize(80, 22)
+    reset:SetPoint("RIGHT", scanButton, "LEFT", -8, 0)
+    reset:SetText("Reset")
+    reset:SetScript("OnClick", ResetSell)
+end
+
+--- Buy and Sell tabs under the window, like the auction house's own.
+--- One tab: Blizzard's tab look, and the game's secure click button.
+--- Once linked (LinkTabs), a click makes the game itself press
+--- Blizzard's matching tab; addon code never calls Blizzard's window.
+--- Its OnClick stays the secure one; our panel switch runs after it.
+local function BuildTab(id, label)
+    local tab = CreateFrame("Button", "HouseLedgerFrameTab" .. id, frame,
+        "PanelTabButtonTemplate,SecureActionButtonTemplate")
+    tab:SetID(id)
+    tab:SetText(label)
+    tab:SetAttribute("type", "click")
+    -- Act on mouse release, like a normal button click.
+    tab:SetAttribute("useOnKeyDown", false)
+    tab:SetScript("PostClick", function()
+        SelectTab(id)
+    end)
+    return tab
+end
+
+local function BuildTabs()
+    local buyTab = BuildTab(BUY_TAB, "Buy")
+    buyTab:SetPoint("TOPLEFT", frame, "BOTTOMLEFT", 12, 2)
+    local sellTab = BuildTab(SELL_TAB, "Sell")
+    if type(PanelTemplates_TabResize) == "function" then
+        PanelTemplates_TabResize(buyTab, 0)
+        PanelTemplates_TabResize(sellTab, 0)
+    end
+    frame.Tabs = { buyTab, sellTab }
+    -- Also anchors the Sell tab to the right of the Buy tab.
+    PanelTemplates_SetNumTabs(frame, 2)
+    SelectTab(BUY_TAB)
+end
+
+local function BuildFrame()
+    -- Blizzard's panel template: the same frame, title bar, close button
+    -- and solid background as the auction house beside it.
+    frame = CreateFrame("Frame", "HouseLedgerFrame", UIParent, "ButtonFrameTemplate")
+    frame:SetSize(FRAME_WIDTH_MIN, HOUSE_HEIGHT)
+    -- Fallback spot. PlaceFrame moves it beside the auction house.
+    frame:SetPoint("CENTER")
+    -- On a narrow screen the spot beside the house runs off the edge;
+    -- the clamp slides it back on screen.
+    frame:SetClampedToScreen(true)
+    -- Blizzard's auction house is toplevel too, so a click on either
+    -- window brings that one to the front.
+    frame:SetToplevel(true)
+    -- A drag lasts until the house closes. PlaceFrame sets the spot on
+    -- every open, so the game's saved-position cache is not used.
+    frame:SetDontSavePosition(true)
+    if type(frame.SetTitle) == "function" then
+        frame:SetTitle("HouseLedger")
+    end
+    if type(frame.SetPortraitToAsset) == "function" then
+        frame:SetPortraitToAsset(PORTRAIT_ICON)
+    end
+    frame:SetMovable(true)
+    frame:EnableMouse(true)
+    frame:RegisterForDrag("LeftButton")
+    frame:SetScript("OnDragStart", function(self)
+        -- The window is protected; the game blocks moving it in combat.
+        if not InCombat() then
+            self:StartMoving()
+        end
+    end)
+    frame:SetScript("OnDragStop", function(self)
+        if InCombat() then
+            -- OnCombatEnded stops the move and puts the window back.
+            afterCombat = true
+        else
+            self:StopMovingOrSizing()
+        end
+    end)
+    frame:Hide()
+
+    scanButton = CreateFrame("Button", nil, frame, "UIPanelButtonTemplate")
+    scanButton:SetSize(80, 22)
+    scanButton:SetPoint("TOPRIGHT", -10, -30)
+    scanButton:SetText("Scan")
+    scanButton:SetScript("OnClick", StartScan)
+
+    buyPanel = CreateFrame("Frame", nil, frame)
+    buyPanel:SetAllPoints(frame)
+    frame.buyPanel = buyPanel
+
+    local button = CreateFrame("Button", nil, buyPanel, "UIPanelButtonTemplate")
+    button:SetSize(90, 22)
+    button:SetPoint("RIGHT", scanButton, "LEFT", -8, 0)
+    button:SetText("Search")
+    button:SetScript("OnClick", SendSearch)
+
+    local clear = CreateFrame("Button", nil, buyPanel, "UIPanelButtonTemplate")
+    clear:SetSize(70, 22)
+    clear:SetPoint("RIGHT", button, "LEFT", -6, 0)
+    clear:SetText("Clear")
+    clear:SetScript("OnClick", ClearSearch)
+
+    searchBox = CreateFrame("EditBox", nil, buyPanel, "InputBoxTemplate")
+    searchBox:SetHeight(20)
+    -- Left of 70 clears the round portrait in the corner.
+    searchBox:SetPoint("LEFT", frame, "TOPLEFT", 72, -41)
+    searchBox:SetPoint("RIGHT", clear, "LEFT", -10, 0)
+    searchBox:SetAutoFocus(false)
+    searchBox:SetScript("OnEnterPressed", function(box)
+        SendSearch()
+        box:ClearFocus()
+    end)
+
+    local inset = frame.Inset
+    if type(inset) == "table" then
+        inset:ClearAllPoints()
+        inset:SetPoint("TOPLEFT", frame, "TOPLEFT", 4, -LIST_TOP)
+        inset:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -6, LIST_BOTTOM)
+    end
+
+    local list = CreateFrame("Frame", nil, buyPanel)
+    list:SetPoint("TOPLEFT", frame, "TOPLEFT", 8, -LIST_TOP - 2)
+    list:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -10, LIST_BOTTOM + 2)
+    list:EnableMouseWheel(true)
+    list:SetScript("OnMouseWheel", function(_, delta)
+        Scroll(-delta * WHEEL_STEP)
+    end)
+    BuildHeader(list)
+    for index = 1, VISIBLE_ROWS do
+        rows[index] = BuildRow(list, index)
+    end
+    LayoutColumns(FRAME_WIDTH_MIN)
+
+    statusText = buyPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    statusText:SetPoint("BOTTOMLEFT", 14, 30)
+    statusText:SetPoint("RIGHT", frame, "RIGHT", -14, 0)
+    statusText:SetJustifyH("LEFT")
+    statusText:SetWordWrap(false)
+    statusText:SetText(BUY_HELP)
+
+    -- The details block, between the list and the status lines.
+    buyPanel.detailTitle = Cell(buyPanel, "GameFontNormal", "LEFT")
+    buyPanel.detailTitle:SetPoint("TOPLEFT", frame, "BOTTOMLEFT", 16, LIST_BOTTOM - 6)
+    buyPanel.detailTitle:SetPoint("RIGHT", frame, "RIGHT", -16, 0)
+    buyPanel.detailLines = {}
+    for index = 1, DETAIL_LINES do
+        local y = LIST_BOTTOM - 6 - index * DETAIL_LINE_HEIGHT
+        local left = Cell(buyPanel, "GameFontHighlightSmall", "LEFT")
+        left:SetPoint("TOPLEFT", frame, "BOTTOMLEFT", 24, y)
+        left:SetWidth(150)
+        local right = Cell(buyPanel, "GameFontHighlightSmall", "LEFT")
+        right:SetPoint("TOPLEFT", frame, "BOTTOMLEFT", 180, y)
+        right:SetPoint("RIGHT", frame, "RIGHT", -16, 0)
+        buyPanel.detailLines[index] = { left = left, right = right }
+    end
+    ClearDetails()
+
+    BuildSellPanel()
+    BuildTabs()
+
+    scanText = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    scanText:SetPoint("BOTTOMLEFT", 14, 8)
+    scanText:SetPoint("RIGHT", frame, "RIGHT", -14, 0)
+    scanText:SetJustifyH("LEFT")
+    scanText:SetWordWrap(false)
+    scanText:SetText("")
+
+    local tick = 0
+    frame:SetScript("OnUpdate", function(_, elapsed)
+        if scanState == "waiting" and (Clock() - waitStarted) >= ANSWER_WAIT then
+            -- The request may already count. Do not send another one.
+            HouseLedgerDB.replicateAt = time()
+            acceptAnswerUntil = time() + ANSWER_WAIT
+            StopReading()
+            SetScanStatus("No answer yet. Next scan in 15 min.", 8)
+            return
+        end
+        tick = tick + elapsed
+        if tick < 1 then
+            return
+        end
+        tick = 0
+        RefreshIdleScanLine()
+    end)
+
+    RefreshIdleScanLine()
+end
+
+--- The item Blizzard's Sell window holds now, or nil. Reads only.
+local function BlizzardSellItem()
+    local commodities = AuctionHouseFrame.CommoditiesSellFrame
+    local items = AuctionHouseFrame.ItemSellFrame
+    return (commodities and commodities:GetItem()) or (items and items:GetItem())
+end
+
+-- Following Blizzard's auction window. HouseLedger never calls a method
+-- on that window or changes it: addon code that switched its tab once
+-- left every auction house search spinning until the game restarted.
+-- hooksecurefunc runs these after Blizzard's own code has finished,
+-- without touching it.
+
+--- Blizzard's window was asked to switch tabs: show the matching tab here.
+--- The mode asked for is not trusted: Blizzard swaps some, skips a switch
+--- to the tab already shown, and another addon may pass its own table.
+--- So the mode Blizzard's window shows now is read instead.
+--- Args:
+---   asked: the AuctionHouseFrameDisplayMode Blizzard was asked for
+local function FollowDisplayMode(_, asked)
+    local modes = AuctionHouseFrameDisplayMode
+    if frame == nil or modes == nil then
+        return
+    end
+    local mode = asked
+    if type(AuctionHouseFrame.GetDisplayMode) == "function" then
+        mode = AuctionHouseFrame:GetDisplayMode()
+    end
+    if mode == modes.ItemSell or mode == modes.CommoditiesSell or mode == modes.WoWTokenSell then
+        SelectTab(SELL_TAB)
+    elseif mode == modes.Buy or mode == modes.ItemBuy or mode == modes.CommoditiesBuy
+        or mode == modes.WoWTokenBuy then
+        SelectTab(BUY_TAB)
+    end
+end
+
+--- Blizzard's Sell window took an item (dropped on it, or right-clicked
+--- from a bag) and has sent its own search for it. This shows the item
+--- here, and the results events fill in its prices. Nothing is sent.
+--- Args:
+---   location: the ItemLocation Blizzard was given
+local function FollowPostItem(_, location)
+    if frame == nil or location == nil then
+        return
+    end
+    -- The hook runs even when Blizzard turned the item away (its
+    -- multi-sell bar was up), so check what its Sell window really holds.
+    if BlizzardSellItem() ~= location then
+        return
+    end
+    if type(location.IsValid) == "function" and not location:IsValid() then
+        return
+    end
+    -- Blizzard turns these away without a search, so there is nothing to show.
+    if not C_AuctionHouse.IsSellItemValid(location, false) then
+        return
+    end
+    local status = C_AuctionHouse.GetItemCommodityStatus(location)
+    local commodity = status == Enum.ItemCommodityStatus.Commodity
+    if not commodity and status ~= Enum.ItemCommodityStatus.Item then
+        return
+    end
+    local itemKey = C_AuctionHouse.GetItemKeyFromItem(location)
+    if itemKey == nil then
+        return
+    end
+    -- A WoW Token goes to Blizzard's token frame, which sends no item search.
+    local tokens = C_WowTokenPublic
+    if tokens and tokens.IsAuctionableWowToken and tokens.IsAuctionableWowToken(itemKey.itemID) then
+        return
+    end
+    -- Read with the key Blizzard searched with: the any-variant key only
+    -- when the house says equipment (AuctionHouseUtil.ConvertItemSellItemKey).
+    local readKey = itemKey
+    if not commodity then
+        local info = C_AuctionHouse.GetItemKeyInfo(itemKey)
+        if info ~= nil and info.isEquipment == true then
+            readKey = AnyVariantKey(itemKey)
+        end
+    end
+    local name = C_Item.GetItemName(location) or "This item"
+    StartPendingSell(readKey, name, C_Item.GetItemIcon(location), commodity, true)
+    SelectTab(SELL_TAB)
+    SetSellStatus("Reading the auction house's prices for " .. name .. "...")
+    -- Blizzard's answer may already be in; if not, its results event shows it.
+    if commodity then
+        if (C_AuctionHouse.GetNumCommoditySearchResults(readKey.itemID) or 0) > 0 then
+            OnCommodityResults(readKey.itemID)
+        end
+    elseif (C_AuctionHouse.GetNumItemSearchResults(readKey) or 0) > 0 then
+        OnItemResults(readKey)
+    end
+end
+
+--- Starts following Blizzard's auction window, once it exists.
+local function HookHouse()
+    if houseHooked or AuctionHouseFrame == nil or type(hooksecurefunc) ~= "function" then
+        return
+    end
+    if type(AuctionHouseFrame.SetPostItem) ~= "function" or type(AuctionHouseFrame.SetDisplayMode) ~= "function" then
+        return
+    end
+    hooksecurefunc(AuctionHouseFrame, "SetDisplayMode", FollowDisplayMode)
+    hooksecurefunc(AuctionHouseFrame, "SetPostItem", FollowPostItem)
+    houseHooked = true
+end
+
+--- Points our tabs' secure click at Blizzard's Buy and Sell tabs. Only
+--- an attribute on our own buttons is set; the game's secure code does
+--- the pressing. Waits out combat, and skips a client without the tabs.
+local function LinkTabs()
+    if tabsLinked or frame == nil or AuctionHouseFrame == nil or InCombat() then
+        return
+    end
+    local blizzardBuy = AuctionHouseFrame.BuyTab
+    local blizzardSell = AuctionHouseFrame.SellTab
+    if blizzardBuy == nil or blizzardSell == nil then
+        return
+    end
+    frame.Tabs[BUY_TAB]:SetAttribute("clickbutton", blizzardBuy)
+    frame.Tabs[SELL_TAB]:SetAttribute("clickbutton", blizzardSell)
+    tabsLinked = true
+end
+
+--- Put HouseLedger beside Blizzard's auction house window, not over it.
+--- Blizzard loads that window on its own interaction event, so it may
+--- not exist yet when AUCTION_HOUSE_SHOW reaches this addon. In that
+--- case the frame keeps its current spot and tries once more next frame.
+--- Args:
+---   isRetry: true on the one follow-up attempt, so it never loops
+local function PlaceFrame(isRetry)
+    if frame == nil then
+        return
+    end
+    if AuctionHouseFrame == nil then
+        if not isRetry then
+            C_Timer.After(0, function()
+                PlaceFrame(true)
+            end)
+        end
+        return
+    end
+    HookHouse()
+    if InCombat() then
+        afterCombat = true
+        return
+    end
+    LinkTabs()
+    frame:ClearAllPoints()
+    -- Top and bottom on the house's right edge: beside it, same height.
+    frame:SetPoint("TOPLEFT", AuctionHouseFrame, "TOPRIGHT", PIN_GAP, 0)
+    frame:SetPoint("BOTTOMLEFT", AuctionHouseFrame, "BOTTOMRIGHT", PIN_GAP, 0)
+    local width = FrameWidth()
+    frame:SetWidth(width)
+    LayoutColumns(width)
+end
+
+local function OnReplicateList()
+    local expecting = scanState == "waiting" or time() <= acceptAnswerUntil
+    if not expecting then
+        return
+    end
+    if not HouseIsOpen() then
+        HouseLedgerDB.replicateAt = time()
+        acceptAnswerUntil = 0
+        if scanState ~= "idle" then
+            StopReading()
+        end
+        SetScanStatus("The house answered after it closed. Next scan in 15 min.", 8)
+        return
+    end
+    BeginRead()
+end
+
+--- Says so when mouseover prices could not be hooked on this client.
+local function NoteTooltips()
+    if not tooltipsHooked then
+        SetScanStatus("Mouseover prices are unavailable on this client.", 8)
+    end
+end
+
+--- Combat ended: catch up on the window changes the game blocked.
+local function OnCombatEnded()
+    if buildAfterCombat then
+        buildAfterCombat = false
+        BuildFrame()
+        NoteTooltips()
+        afterCombat = true
+    end
+    if frame == nil or not afterCombat then
+        return
+    end
+    afterCombat = false
+    frame:StopMovingOrSizing()
+    if HouseIsOpen() then
+        PlaceFrame(false)
+        frame:Show()
+        frame:Raise()
+        RefreshIdleScanLine()
+    else
+        frame:Hide()
+    end
+    SelectTab(currentTab)
+end
+
+local eventFrame = CreateFrame("Frame")
+eventFrame:RegisterEvent("ADDON_LOADED")
+eventFrame:RegisterEvent("PLAYER_REGEN_ENABLED")
+eventFrame:RegisterEvent("AUCTION_HOUSE_SHOW")
+eventFrame:RegisterEvent("AUCTION_HOUSE_CLOSED")
+eventFrame:RegisterEvent("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
+eventFrame:RegisterEvent("ITEM_KEY_ITEM_INFO_RECEIVED")
+eventFrame:RegisterEvent("COMMODITY_SEARCH_RESULTS_UPDATED")
+eventFrame:RegisterEvent("ITEM_SEARCH_RESULTS_UPDATED")
+eventFrame:RegisterEvent("REPLICATE_ITEM_LIST_UPDATE")
+
+eventFrame:SetScript("OnEvent", function(_, event, arg1)
+    if event == "ADDON_LOADED" then
+        if arg1 ~= ADDON_NAME then
+            return
+        end
+        HouseLedgerDB = HouseLedgerPrice.EnsureDB(HouseLedgerDB)
+        HookTooltips()
+        if C_AuctionHouse == nil then
+            return
+        end
+        if C_AuctionHouse.SendBrowseQuery == nil and C_AuctionHouse.ReplicateItems == nil then
+            return
+        end
+        if InCombat() then
+            -- A /reload in combat: the window's tabs are protected, so it
+            -- is built once combat ends.
+            buildAfterCombat = true
+            return
+        end
+        BuildFrame()
+        NoteTooltips()
+        return
+    end
+
+    if event == "PLAYER_REGEN_ENABLED" then
+        OnCombatEnded()
+        return
+    end
+
+    if event == "REPLICATE_ITEM_LIST_UPDATE" then
+        if HouseLedgerDB == nil then
+            return
+        end
+        OnReplicateList()
+        return
+    end
+
+    if frame == nil then
+        return
+    end
+
+    if event == "AUCTION_HOUSE_SHOW" then
+        -- Hooks Blizzard's window even in combat; the rest waits for it to end.
+        PlaceFrame(false)
+        if InCombat() then
+            afterCombat = true
+            return
+        end
+        frame:Show()
+        frame:Raise()
+        RefreshIdleScanLine()
+        return
+    end
+
+    if event == "AUCTION_HOUSE_CLOSED" then
+        if InCombat() then
+            afterCombat = true
+        else
+            frame:Hide()
+        end
+        if scanState == "waiting" then
+            acceptAnswerUntil = time() + ANSWER_WAIT
+        end
+        if scanState == "waiting" or scanState == "reading" then
+            local answered = scanState == "reading"
+            StopReading()
+            if answered then
+                SetScanStatus("Scan stopped because the auction house closed. Next scan in 15 min.", 8)
+            else
+                SetScanStatus("Scan cancelled. Waiting to see if the house accepted it.", 8)
+            end
+        end
+        return
+    end
+
+    if event == "AUCTION_HOUSE_BROWSE_RESULTS_UPDATED" then
+        ShowResults()
+        return
+    end
+
+    if event == "ITEM_KEY_ITEM_INFO_RECEIVED" and #results > 0 then
+        -- An item's name and icon arrived; redraw the rows in place.
+        RenderRows()
+        return
+    end
+
+    if event == "COMMODITY_SEARCH_RESULTS_UPDATED" then
+        OnCommodityResults(arg1)
+        return
+    end
+
+    if event == "ITEM_SEARCH_RESULTS_UPDATED" then
+        OnItemResults(arg1)
+    end
+end)

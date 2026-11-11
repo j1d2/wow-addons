@@ -1,0 +1,20 @@
+wow-addons
+Copyright 2026 j1d2
+
+This project is licensed under the Apache License, Version 2.0.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+SPDX-License-Identifier: Apache-2.0
+
+World of Warcraft, WoW, Warcraft, Battle.net, and Blizzard are trademarks
+or registered trademarks of Blizzard Entertainment, Inc. in the U.S. and/or
+other countries. Other product names are the property of their respective
+owners. This project is not affiliated with, endorsed by, or sponsored by
+Blizzard Entertainment or Microsoft. It does not include their logos,
+client files, interface code, or written game content. The screenshots in
+docs/screenshots/ show these addons in the game; the game art in them is
+(c) Blizzard Entertainment, Inc., shown for noncommercial use, and is not
+covered by this project's license. The license covers this project's own
+code only.

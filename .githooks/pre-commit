@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# Runs scripts/check.sh on exactly what is being committed (the index), not on the working
+# folder, so unstaged edits can't hide a broken commit. Never skip it with --no-verify.
+# Install once per clone: scripts/install_hooks.sh
+set -euo pipefail
+
+top="$(git rev-parse --show-toplevel)"
+snapshot="$(mktemp -d "$(git rev-parse --absolute-git-dir)/pre-commit.XXXXXX")"
+trap 'rm -r "$snapshot"' EXIT
+
+# Git's GIT_INDEX_FILE still applies here, so partial commits export the right files.
+git checkout-index --all --prefix="$snapshot/"
+
+# Git sets GIT_* variables inside hooks; drop them so the checks don't touch the real repo.
+unset_git=()
+while IFS= read -r name; do
+    unset_git+=(-u "$name")
+done < <(compgen -e | grep '^GIT_' || true)
+
+cd "$snapshot"
+echo "pre-commit: checking the staged files"
+env "${unset_git[@]}" \
+    PRIVACY_SCAN_NO_GIT=1 HYGIENE_NO_GIT=1 \
+    PRIVACY_DENYLIST="$top/security/privacy-denylist.local" \
+    scripts/check.sh

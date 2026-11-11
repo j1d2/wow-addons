@@ -1,0 +1,22 @@
+name: Feature idea
+description: Something an addon could do, or a new addon
+title: "feat: "
+labels: ["idea"]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What it should do
+      description: The problem it solves, in a few plain lines.
+    validations:
+      required: true
+  - type: checkboxes
+    id: rules
+    attributes:
+      label: Rules
+      description: See RULES.md. Ideas that break it will be closed.
+      options:
+        - label: It needs a click for each action. Nothing posts, buys, bids or cancels on its own, and nothing sends requests from a timer.
+          required: true
+        - label: It does not copy another addon's code, name or art.
+          required: true

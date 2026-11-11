@@ -1,0 +1,46 @@
+name: Addon bug
+description: An addon shows an error, a wrong value, or does something it should not
+title: "fix: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Leave out email addresses, Battle.net or WoW account names, character and realm names, IP addresses, and full logs. Quote the error line only.
+  - type: dropdown
+    id: addon
+    attributes:
+      label: Addon
+      options:
+        - HouseLedger
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: What you did
+      placeholder: Opened the auction house, clicked Scan once, then closed it.
+    validations:
+      required: true
+  - type: textarea
+    id: saw
+    attributes:
+      label: What happened
+      description: The Lua error line (turn errors on with /console scriptErrors 1) and what you expected.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Client version
+      description: Output of /run print(GetBuildInfo())
+      placeholder: 1.60.1 70862
+    validations:
+      required: true
+  - type: checkboxes
+    id: redacted
+    attributes:
+      label: Before you submit
+      options:
+        - label: I removed account, character and realm names, emails, IP addresses, and full logs.
+          required: true

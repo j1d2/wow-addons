@@ -1,0 +1,92 @@
+# Contributing
+
+Thanks for helping. These addons are small, free and plain Lua, and they stay that way.
+
+The first part covers every addon. Then each addon has its own section: [HouseLedger](#houseledger).
+
+## Before you start
+
+- Read [`RULES.md`](RULES.md). It lists what the addons may and may not do under Blizzard's addon policy, plus this project's own stricter limits. A change that breaks it won't be merged.
+- Open an issue first for anything bigger than a small fix, so we can agree on the approach.
+- Be kind: [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) covers issues and pull requests.
+- Using an AI coding agent? Point it at [AGENTS.md](AGENTS.md). Keep its own config (`CLAUDE.md`, `.claude/` and the like) local; git ignores those names.
+
+## Setup
+
+You need `lua5.1`, `luac5.1` and `shellcheck` from your system's package manager. Nothing else is installed: no package managers, no libraries.
+
+```bash
+scripts/install_hooks.sh   # once per clone: pre-commit, commit-msg and pre-push hooks
+scripts/check.sh           # the full gate: what the hooks and CI run
+```
+
+To try an addon in game, link its folder into the client's `Interface/AddOns` folder (see the README), then `/reload`.
+
+## How we work
+
+- **Tests first.** Write a failing test, then the code. Tests live next to the addon as `*_test.lua`, run under `lua5.1`, and are never listed in the `.toc`. Code that needs the game API gets a small fake of that API inside its test.
+- **Pure logic in its own file**, with no game API calls, so it can be tested offline. UI and events go in a separate file.
+- **No new globals.** Use `local`. A SavedVariables table is the exception; list it in `scripts/allowed-globals.txt`.
+- **Comments** explain why, and functions get a short `---` doc comment with their arguments.
+- **No third-party code or libraries.** Write it yourself. Don't copy code, names or art from other addons or from Blizzard's interface files. Reading them to learn how something works is fine.
+- **One click, one action.** Nothing posts, buys, bids or cancels. Nothing sends a request on its own timer.
+
+## Privacy
+
+The repo may be public one day, so no file or commit message may hold personal or machine details: no home folder paths, account, character, guild or realm names, or emails. Use placeholders like `<WoW folder>`. The privacy scan enforces this. Put your own names in `security/privacy-denylist.local` (git ignores it) so the scan blocks them too.
+
+**Screenshots** go in `docs/screenshots/` as `<addon>-<what>.png`. The scan can't read images, so check them yourself:
+
+- Crop to the addon's window. Leave out character, guild and other players' names, and chat.
+- Cover or crop any line that names a realm or account.
+- Strip the file's metadata, for example `magick in.png -strip out.png`.
+- Keep each file under 500 KB (the hygiene check's limit).
+
+## Commits and pull requests
+
+- Conventional commits: `feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`. The message says why, not just what. The `commit-msg` hook checks the subject.
+- Small, focused commits. Never skip a hook (`--no-verify`), amend a pushed commit, or force-push. If a hook fails, fix the problem and make a new commit.
+- Open a PR into `main`. `main` is protected: every change lands through a PR, and CI (`scripts/check.sh`) must pass first. Say in the PR whether the change was tried in game.
+- On your first merged PR, add your GitHub handle to [CONTRIBUTORS.md](CONTRIBUTORS.md). Handles only.
+
+## Adding a new addon
+
+1. Make `addons/<Name>/` with `<Name>.toc` (`## Interface: 16001`, `## X-License: Apache-2.0`) listing its files in load order.
+2. Put game-free logic in its own file with a `*_test.lua` beside it. Frames and events go in a second file.
+3. Add its SavedVariables table to `scripts/allowed-globals.txt`.
+4. Check every game API it uses against Blizzard's interface source for the Forever client.
+5. Add a README section like HouseLedger's: TL;DR first (five bullets at most), a screenshot, then how to use it and what it does not do. Add a row to the README's addon table.
+6. Add a section to this file for it, and to `RULES.md` if it touches a limited game system.
+
+The gate finds every folder under `addons/` on its own. No script change is needed.
+
+---
+
+## HouseLedger
+
+An auction house price history. Read the auction house part of [`RULES.md`](RULES.md) before changing anything that talks to the auction house.
+
+**Files:**
+
+| File | What goes in it |
+| --- | --- |
+| `PriceLedger.lua` | Price math, saved-data layout and migrations, tooltip text. No game API calls, so it runs under plain `lua5.1`. Loads first. |
+| `HouseLedger.lua` | Frames, events, `C_AuctionHouse` calls and the tooltip hook. Loads second. |
+| `price_test.lua` | Tests for `PriceLedger.lua`. |
+| `houseledger_test.lua` | Tests for `HouseLedger.lua`, with a fake auction house and a fake of Blizzard's auction window. |
+
+**Limits that matter here:**
+
+- One click sends at most one request. Scrolling, hovering and row clicks send nothing.
+- A full scan only from the Scan button, at most once each 15 minutes.
+- Never call a method on Blizzard's `AuctionHouseFrame`. In testing, doing that from addon code stopped every auction house search until the game restarted. Read it, anchor to it, or follow it with `hooksecurefunc`. The `policy` check flags other calls.
+- The tabs switch Blizzard's tabs through the game's secure click, so the window is protected in combat. Moves, shows and tab changes wait for combat to end.
+- Saved data changes need a migration in `PriceLedger.EnsureDB` and a test that loads the old layout.
+
+**Trying it in game:** link the folder (see the README), `/reload`, and turn on Lua errors with `/console scriptErrors 1`. Say in the PR what you checked: Scan, a search, a row click, a Sell drop, and the tooltip.
+
+---
+
+## License
+
+By contributing, you agree that your work is licensed under the [Apache License 2.0](LICENSE), the same as the rest of the project (section 5 of the license).

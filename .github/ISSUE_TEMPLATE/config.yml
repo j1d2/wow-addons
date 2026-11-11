@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Code of conduct
+    url: https://github.com/j1d2/wow-addons/blob/main/CODE_OF_CONDUCT.md
+    about: How to report a conduct problem without posting it in a public issue.
+  - name: Security or privacy problem
+    url: https://github.com/j1d2/wow-addons/blob/main/SECURITY.md
+    about: Report it privately, not in a public issue.

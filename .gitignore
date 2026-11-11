@@ -1,0 +1,12 @@
+*.bak
+*~
+.DS_Store
+.check-tmp/
+security/privacy-denylist.local
+luac.out
+
+# AI agent configs stay local: each contributor keeps their own.
+# AGENTS.md is the shared, committed rule set.
+.claude/
+CLAUDE.md
+CLAUDE.local.md

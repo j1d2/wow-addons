@@ -1,0 +1,34 @@
+# CI: the same gate as scripts/check.sh, on every PR and every push to main.
+# GitHub-hosted runner on purpose: this repo may go public, and a self-hosted runner must never
+# serve a public repo. Actions are pinned to full commit SHAs; Dependabot keeps them current.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      # Ubuntu's own packages only: the Lua 5.1 the game uses, and shellcheck.
+      - name: Install lua5.1 and shellcheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends lua5.1 shellcheck
+
+      - name: All gates (scripts/check.sh)
+        run: scripts/check.sh

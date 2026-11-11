@@ -1,0 +1,14 @@
+# Weekly update PRs for the pinned GitHub Actions (the only dependency this repo has).
+# cooldown: an update is proposed only once the release is 14 days old, which leaves time for a
+# bad or compromised release to be caught. Per GitHub's docs it does not delay security updates.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 14
+    groups:
+      actions:
+        patterns: ["*"]
