@@ -6,8 +6,9 @@
 #            (reads luac's SETGLOBAL listing, the core idea of luacheck, without the package)
 #   toc      each addon has a .toc with ## Interface, every listed file exists, test files are
 #            never listed, and every non-test .lua is listed
-#   policy   no call to an API that RULES.md forbids (post, buy, bid, cancel, run code from text),
-#            and no change to Blizzard's auction window (read or hook it only)
+#   policy   no call to an API that RULES.md forbids (post, buy, bid, cancel, run code from text,
+#            setfenv/getfenv, debug, RunMacro); chat, addon messages and setting changes only
+#            with a "-- reviewed: <why>" note; no change to Blizzard's auction window
 #   version  each addon's <Name>.toc has a "## Version: X.Y.Z" (semver), and its CHANGELOG.md
 #            has a "## [X.Y.Z]" section for it, so every release has notes
 #   tests    each addon has at least one *_test.lua, and all of them pass under lua5.1
@@ -31,7 +32,15 @@ fi
 ALLOWED_GLOBALS="$ROOT/scripts/allowed-globals.txt"
 
 # RULES.md: never post, buy, bid or cancel, and no code run from text (it hides what runs).
-readonly BANNED_API='C_AuctionHouse\.(PostItem|PostCommodity|PlaceBid|CancelAuction|CancelSell|StartCommoditiesPurchase|ConfirmCommoditiesPurchase)|\b(PlaceAuctionBid|PostAuction|StartAuction|CancelAuction|loadstring|RunScript|RunMacroText)\b'
+# Also never: swapping a function's environment (setfenv, getfenv) hides what code does, the
+# debug library reaches into other code, and RunMacro plays the character.
+readonly BANNED_API='C_AuctionHouse\.(PostItem|PostCommodity|PlaceBid|CancelAuction|CancelSell|StartCommoditiesPurchase|ConfirmCommoditiesPurchase)|\b(PlaceAuctionBid|PostAuction|StartAuction|CancelAuction|loadstring|RunScript|RunMacroText|RunMacro|setfenv|getfenv)\b|\bdebug\.[A-Za-z_]+'
+
+# RULES.md: calls that send data out of the game (chat, addon messages, Battle.net) or change
+# the player's setup (keybindings, macros, settings) need a "-- reviewed: <why>" note on the
+# same line. Names checked against Blizzard's interface source for the Forever client.
+readonly REVIEW_API='(C_ChatInfo\.(SendChatMessage|SendAddonMessage|SendAddonMessageLogged)|C_BattleNet\.(SendWhisper|SendGameData)|C_CVar\.SetCVar|(^|[^A-Za-z0-9_.:])(SendChatMessage|SendAddonMessage|SetCVar|SetBinding|SetBindingClick|SaveBindings|CreateMacro|EditMacro|DeleteMacro))[[:space:]]*\('
+readonly REVIEW_NOTE='--[[:space:]]*reviewed:[[:space:]]*[^[:space:]]'
 
 # RULES.md: Blizzard's auction window is read or followed (hooksecurefunc), never
 # changed. A method call on it or on one of its parts (AuctionHouseFrame.SearchBar,
@@ -183,21 +192,29 @@ check_toc() {
 }
 
 #######################################
-# Check addon files (not tests) for API calls RULES.md forbids (BANNED_API) and for method
-# calls on Blizzard's auction window that do more than read it (HOUSE_CALL, HOUSE_READS).
+# Check addon files (not tests) for API calls RULES.md forbids (BANNED_API), for calls that
+# need a reviewed note and lack one (REVIEW_API, REVIEW_NOTE), and for method calls on
+# Blizzard's auction window that do more than read it (HOUSE_CALL, HOUSE_READS).
 # Globals:
-#   BANNED_API, HOUSE_CALL, HOUSE_READS
+#   BANNED_API, REVIEW_API, REVIEW_NOTE, HOUSE_CALL, HOUSE_READS
 #   failures (counted through problem)
 # Outputs:
 #   Writes each hit, with file and line, to stdout.
 #######################################
 check_policy() {
-    local file hit
+    local file hit name
     while IFS= read -r -d '' file; do
         is_test "$file" && continue
         while IFS= read -r hit; do
             problem "$(rel "$file"):${hit%%:*}" "calls '${hit#*:}', which RULES.md forbids"
         done < <(grep -n -o -E -- "$BANNED_API" "$file" || true)
+        while IFS= read -r hit; do
+            grep -q -E -- "$REVIEW_NOTE" <<<"${hit#*:}" && continue
+            name="$(grep -o -E -- "$REVIEW_API" <<<"${hit#*:}" | head -n 1 \
+                | sed -E -e 's/^[^A-Za-z_]//' -e 's/[[:space:]]*\($//')"
+            problem "$(rel "$file"):${hit%%:*}" \
+                "calls '$name', which needs a '-- reviewed: <why>' note on the same line (RULES.md)"
+        done < <(grep -n -E -- "$REVIEW_API" "$file" || true)
         while IFS= read -r hit; do
             problem "$(rel "$file"):${hit%%:*}" "changes Blizzard's auction window ('${hit#*:}'); only read or hook it"
         done < <(grep -n -o -E -- "$HOUSE_CALL" "$file" | grep -v -E -- "$HOUSE_READS" || true)
