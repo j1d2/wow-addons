@@ -10,6 +10,7 @@
 
 - [ ] `scripts/check.sh` passes (the hooks and CI run it too)
 - [ ] New behavior has a test that failed first
+- [ ] Player-visible change: a line under `## [Unreleased]` in the addon's `CHANGELOG.md`
 - [ ] Still within `RULES.md`: one click per action, no post, buy, bid or cancel, at most one full scan per 15 minutes, no seller names saved
 - [ ] No personal or machine details (paths, account, character or realm names)
 - [ ] Not checked in game yet / checked in game (say which)

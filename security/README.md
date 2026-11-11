@@ -27,7 +27,8 @@ The scans print only the file, line and rule, never the matched text, so CI logs
 
 - No third-party packages. The checks are plain bash plus the Lua 5.1 tools.
 - CI installs only Ubuntu's own `lua5.1` and `shellcheck` packages, on a GitHub-hosted runner.
-- The one GitHub Action (`actions/checkout`) is pinned to a full commit SHA. Dependabot proposes updates after a 14-day cooldown.
+- Only GitHub's own actions are used (`actions/checkout`, and `actions/attest-build-provenance` for releases), each pinned to a full commit SHA. Dependabot proposes updates after a 14-day cooldown.
+- Release zips are built by the `release` workflow from a tag on `main`, after the full gate passes, and get a signed build-provenance record. Check a zip with `gh attestation verify <zip> --repo j1d2/wow-addons`.
 - A dedicated secret scanner such as gitleaks would add more rules. It is a third-party tool, so it is not used without the owner's OK.
 
 ## Repository settings
@@ -36,6 +37,8 @@ Set on GitHub, not in files, so they are written down here. Re-check them after 
 
 - **Ruleset "Protect main"** (no one can bypass it, the owner included): changes land only through a pull request, CI's `check` must pass on a branch that is up to date with `main`, review threads must be resolved, and `main` can't be force-pushed or deleted. No approval count is set, because a sole maintainer can't approve their own pull request.
 - **Actions:** only GitHub's own actions may run, pinned to a full commit SHA. Workflows get a read-only token and can't approve pull requests.
+- **Ruleset "Protect release tags"** (no bypass): tags like `HouseLedger-v0.3.0` can't be moved or deleted.
+- **Releases are immutable:** once published, a release's zip and tag can't change. A fix is a new version.
 - **Merged branches** are deleted automatically.
 - **Dependabot alerts** are on.
 

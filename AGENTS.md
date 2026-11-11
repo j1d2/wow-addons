@@ -11,13 +11,14 @@ This repository holds free, plain-Lua World of Warcraft addons for the Forever c
 - Write the failing test first, then the code. Tests are `*_test.lua` files next to the addon. They run offline under `lua5.1`, use small synthetic data, fake the game API they need, and are never listed in a `.toc`.
 - Keep game-free logic in its own file so it can be tested offline. Frames and events go in a separate file.
 - Use `local` for everything. A SavedVariables table is the only global an addon writes; list it in `scripts/allowed-globals.txt`.
-- Give functions a short `---` doc comment with their arguments, and comment why, not what.
+- Give every function a doc comment: LDoc style in Lua, Google Shell Style Guide headers in bash ([CONTRIBUTING.md](CONTRIBUTING.md#how-we-work)). Comment why, not what.
+- Add a line under `## [Unreleased]` in the addon's `CHANGELOG.md` for anything a player will notice.
 - Check a game API function, event or enum against Blizzard's interface source for the Forever client before relying on it. Mark anything you could not check as unverified.
 - Say what you verified (read, ran or tested) and what you inferred. Say "I don't know" rather than guess. Copy numbers from their source.
 - Use placeholders such as `<WoW folder>` for paths.
 - Use conventional commits (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`) that explain why. Stage files by name.
 - Open a pull request into `main`. Say whether the change was tried in game.
-- Ask the maintainer before anything destructive or public: deleting files, publishing, or changing repository settings.
+- Ask the maintainer before anything destructive or public: deleting files, publishing, or changing repository settings. Pushing a release tag publishes a release, so never push one unless asked.
 
 ## Do not
 
