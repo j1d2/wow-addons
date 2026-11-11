@@ -51,11 +51,13 @@ local function InCombat()
     return type(InCombatLockdown) == "function" and InCombatLockdown() == true
 end
 
---- Whether a region can't be changed right now: in combat, and protected.
--- @param region a frame
--- @return true when showing, hiding or moving it must wait for the fight to end
-local function Locked(region)
-    return InCombat() and (type(region.IsProtected) ~= "function" or region:IsProtected() == true)
+--- Whether a part of the window can't be changed right now. Unmaker does nothing in combat,
+-- so every show, hide, move and tab change waits for the fight to end, without asking the game
+-- whether that part counts as protected.
+-- @param _ the frame (kept so callers say which part they mean)
+-- @return true in combat
+local function Locked(_)
+    return InCombat()
 end
 
 --- Whether this character knows Disenchant.
