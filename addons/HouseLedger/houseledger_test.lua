@@ -15,6 +15,9 @@ Run with the game's Lua version, from anywhere:
 local folder = arg[0]:match("^(.*)/") or "."
 local failed = 0
 
+--- Records one check: prints "ok  <name>", or "FAIL  <name>" and counts the failure.
+-- @param name what the check proves
+-- @param ok true when it passed
 local function Check(name, ok)
     if ok then
         io.write("ok  " .. name .. "\n")
@@ -30,15 +33,19 @@ end
 
 local world
 
+--- Does nothing; stands in for game methods the tests don't need.
 local function Noop() end
 
---- Methods every fake frame or font string answers. Unknown methods
---- fall through to a no-op so layout calls (SetSize, SetBackdrop...)
---- do not need their own stubs.
+--- Methods every fake frame or font string answers.
+-- Unknown methods fall through to a no-op so layout calls (SetSize,
+-- SetBackdrop...) do not need their own stubs. The one-line methods below
+-- only record what they are given.
 local FrameMethods = {}
 
---- Counts a change the game would block: addon code changing a
---- protected frame (a secure button, or its parent) during combat.
+--- Counts a change the game would block.
+-- That is addon code changing a protected frame (a secure button, or its
+-- parent) during combat. The count is world.blocked.
+-- @param object the fake frame being changed
 local function NoteIfBlocked(object)
     if world.inCombat and object.protected then
         world.blocked = (world.blocked or 0) + 1
@@ -75,6 +82,10 @@ function FrameMethods:GetHeight() return self.height end
 function FrameMethods:SetTextColor(r, g, b) self.color = { r, g, b } end
 function FrameMethods:SetTexture(texture) self.texture = texture end
 
+--- Makes a fake frame, font string or texture with empty state.
+-- @param kind the frame type, such as "Button" or "FontString"
+-- @param name optional global name
+-- @return the fake object
 local function NewObject(kind, name)
     local object = {
         kind = kind,
@@ -103,22 +114,36 @@ local function NewObject(kind, name)
     })
 end
 
+--- Makes a fake font string and lists it in the owner's fontStrings.
+-- @return the font string
 function FrameMethods:CreateFontString()
     local fontString = NewObject("FontString")
     self.fontStrings[#self.fontStrings + 1] = fontString
     return fontString
 end
 
+--- Makes a fake texture.
+-- @return the texture
 function FrameMethods:CreateTexture()
     return NewObject("Texture")
 end
 
---- Build a listing row in GetReplicateItemInfo order. Owner fields are
---- filled on purpose so the tests can prove they are never saved.
+--- Builds one listing for the fake replicate list.
+-- The fake GetReplicateItemInfo returns it in the game's order, with owner
+-- fields filled on purpose so the tests can prove they are never saved.
+-- @param itemID the item's id
+-- @param count stack size
+-- @param buyout stack buyout in copper
+-- @return the listing
 local function Listing(itemID, count, buyout)
     return { itemID = itemID, count = count, buyout = buyout }
 end
 
+--- Builds a fresh fake game world and loads both addon files into it.
+-- @param opts optional: listings (replicate list), savedDB (HouseLedgerDB
+--   at load), noMoneyString (no GetMoneyString), npcSide (the auctioneer's
+--   faction, default "Alliance"), screenRight (UIParent's right edge,
+--   default 1400)
 local function Setup(opts)
     opts = opts or {}
     world = {
@@ -343,6 +368,8 @@ local function Setup(opts)
     dofile(folder .. "/HouseLedger.lua")
 end
 
+--- The addon's event frame: the one registered for ADDON_LOADED.
+-- @return the fake frame
 local function EventFrame()
     for _, object in ipairs(world.frames) do
         if object.events.ADDON_LOADED then
@@ -351,13 +378,21 @@ local function EventFrame()
     end
 end
 
+--- Sends one game event to the addon.
+-- @param event the event name
+-- @param ... the event's arguments
 local function Fire(event, ...)
     local handler = EventFrame():GetScript("OnEvent")
     handler(EventFrame(), event, ...)
 end
 
+--- The HouseLedger window.
+-- @return HouseLedgerFrame, or nil before it is built
 local function MainFrame() return _G.HouseLedgerFrame end
 
+--- The first fake button showing this text.
+-- @param label the button text
+-- @return the button, or nil
 local function ButtonNamed(label)
     for _, object in ipairs(world.frames) do
         if object.kind == "Button" and object.text == label then
@@ -366,6 +401,8 @@ local function ButtonNamed(label)
     end
 end
 
+--- The Buy tab's search box: the first fake EditBox.
+-- @return the edit box, or nil
 local function SearchBox()
     for _, object in ipairs(world.frames) do
         if object.kind == "EditBox" then
@@ -374,14 +411,16 @@ local function SearchBox()
     end
 end
 
---- Bottom status line. BuildFrame creates font strings in this order:
---- title, search status, MAX_ROWS result rows, scan status (last).
+--- The scan line at the bottom of the window.
+-- It is the last font string made on the window frame itself.
+-- @return its text
 local function ScanLine()
     local list = MainFrame().fontStrings
     return list[#list].text
 end
 
 --- A mouse click: OnClick, then PostClick when the button has one.
+-- @param label the text of the button to click
 local function Click(label)
     local button = ButtonNamed(label)
     button:GetScript("OnClick")(button, "LeftButton")
@@ -398,10 +437,13 @@ local function NoteHouseCall()
     end
 end
 
---- Blizzard's window: 800 x 538 at x 16, so its right edge is at 816.
---- SetDisplayMode and SetPostItem act like Blizzard's: SetPostItem turns
---- away what its Sell tab would, sends Blizzard's one search (counted in
---- world.blizzardQueries, not world.itemQueries) and switches to Sell.
+--- A fake of Blizzard's auction house window.
+-- Blizzard's window: 800 x 538 at x 16, so its right edge is at 816.
+-- SetDisplayMode and SetPostItem act like Blizzard's: SetPostItem turns
+-- away what its Sell tab would, sends Blizzard's one search (counted in
+-- world.blizzardQueries, not world.itemQueries) and switches to Sell.
+-- Calls that Blizzard's own code did not make are counted by NoteHouseCall.
+-- @return the fake window
 local function NewHouseFrame()
     local house = NewObject("Frame", "AuctionHouseFrame")
     house.right = 816
@@ -447,21 +489,26 @@ local function NewHouseFrame()
 end
 
 --- Runs fn as Blizzard's own code: a click on its tab, a drop on its window.
+-- @param fn the function to run
 local function AsBlizzard(fn)
     world.blizzardActing = true
     fn()
     world.blizzardActing = false
 end
 
+--- A click on one of Blizzard's tabs, made by Blizzard's code.
+-- @param mode the AuctionHouseFrameDisplayMode to switch to
 local function BlizzardTab(mode)
     AsBlizzard(function() AuctionHouseFrame:SetDisplayMode(mode) end)
 end
 
 --- An item dropped on Blizzard's Sell window, or right-clicked from a bag.
+-- @param item the fake item location
 local function BlizzardPostItem(item)
     AsBlizzard(function() AuctionHouseFrame:SetPostItem(item) end)
 end
 
+--- Opens the auction house: shows Blizzard's window and fires AUCTION_HOUSE_SHOW.
 local function OpenHouse()
     world.houseOpen = true
     _G.AuctionHouseFrame = _G.AuctionHouseFrame or NewHouseFrame()
@@ -469,6 +516,7 @@ local function OpenHouse()
     Fire("AUCTION_HOUSE_SHOW")
 end
 
+--- Closes the auction house: hides Blizzard's window and fires AUCTION_HOUSE_CLOSED.
 local function CloseHouse()
     world.houseOpen = false
     if _G.AuctionHouseFrame then
@@ -477,8 +525,8 @@ local function CloseHouse()
     Fire("AUCTION_HOUSE_CLOSED")
 end
 
---- Run queued C_Timer.After callbacks. Bounded so a loop bug fails
---- the test instead of hanging it.
+--- Runs queued C_Timer.After callbacks, oldest first.
+-- Bounded so a loop bug fails the test instead of hanging it.
 local function RunTimers()
     for _ = 1, 10000 do
         if #world.timers == 0 then
@@ -490,7 +538,8 @@ local function RunTimers()
     error("timer queue never drained")
 end
 
---- Move the clock forward, one OnUpdate per second while shown.
+--- Moves the clock forward, one OnUpdate per second while shown.
+-- @param seconds how many seconds to move
 local function Advance(seconds)
     for _ = 1, seconds do
         world.now = world.now + 1
@@ -501,10 +550,16 @@ local function Advance(seconds)
     end
 end
 
+--- Fires ADDON_LOADED for HouseLedger.
 local function Load()
     Fire("ADDON_LOADED", "HouseLedger")
 end
 
+--- True when any string key or value in a nested table contains `needle`.
+-- @param value a string or table to search
+-- @param needle the plain text to find
+-- @param seen tables already searched; nil on the first call
+-- @return true when found
 local function DeepFind(value, needle, seen)
     seen = seen or {}
     if type(value) == "string" then
@@ -522,6 +577,9 @@ local function DeepFind(value, needle, seen)
     return false
 end
 
+--- A long replicate list over 300 item ids, each a single item.
+-- @param total how many listings
+-- @return the list of listings
 local function ManyListings(total)
     local list = {}
     for i = 1, total do
@@ -728,6 +786,7 @@ do
 end
 
 --- Result row buttons, top to bottom.
+-- @return the list of rows
 local function ResultRows()
     local rows = {}
     for _, object in ipairs(world.frames) do
@@ -738,23 +797,31 @@ local function ResultRows()
     return rows
 end
 
+--- True when the Avg 7d column shows, read from the first row.
+-- @return true when shown
 local function TypicalColumnShown()
     return ResultRows()[1].typicalText.shown == true
 end
 
---- The line under the results: search status or a clicked row's stats.
+--- The Buy tab's status line under the results.
+-- It is the first font string made on the Buy panel.
+-- @return its text
 local function StatusLine()
     return MainFrame().buyPanel.fontStrings[1].text
 end
 
+--- The list frame the result rows sit in.
+-- @return the list frame
 local function ListFrame()
     return ResultRows()[1].parent
 end
 
+--- One mouse-wheel step down over the list.
 local function WheelDown()
     ListFrame():GetScript("OnMouseWheel")(ListFrame(), -1)
 end
 
+--- One mouse-wheel step up over the list.
 local function WheelUp()
     ListFrame():GetScript("OnMouseWheel")(ListFrame(), 1)
 end
@@ -764,8 +831,11 @@ end
 -- centered HouseLedger sat over its results list and went behind it.
 -- ---------------------------------------------------------------------
 
---- True when the frame's top and bottom are both on the auction house's
---- right edge, so it is beside the house and exactly as tall.
+--- True when the frame is pinned beside the auction house.
+-- Its top and bottom are both on the auction house's right edge, so it is
+-- beside the house and exactly as tall.
+-- @param frame the HouseLedger window
+-- @return true when pinned
 local function PinnedToHouse(frame)
     local top, bottom = frame.points[1], frame.points[2]
     return #frame.points == 2
@@ -861,6 +931,10 @@ end
 -- ---------------------------------------------------------------------
 
 --- Browse results for item ids first..last, cheapest first.
+-- @param first first item id
+-- @param last last item id
+-- @param price optional minPrice for all; default 10 copper times the item id
+-- @return the results list
 local function BrowseResults(first, last, price)
     local results = {}
     for itemID = first, last do
@@ -873,8 +947,9 @@ local function BrowseResults(first, last, price)
     return results
 end
 
---- Saves one scan a day of an item (default 4306) at 100c for the days
---- before today.
+--- Saves one scan a day of an item at 100c for the days before today.
+-- @param days how many days back to start
+-- @param itemID optional item id, default 4306
 local function SaveDailyHistory(days, itemID)
     local P = HouseLedgerPrice
     for back = days, 1, -1 do
@@ -1022,6 +1097,9 @@ end
 -- Tabs and the Sell tab. One drop sends one search; nothing is saved.
 -- ---------------------------------------------------------------------
 
+--- One of our tab buttons, by its text.
+-- @param label "Buy" or "Sell"
+-- @return the tab, or nil
 local function TabNamed(label)
     for _, object in ipairs(world.frames) do
         if type(object.template) == "string" and object.template:find("PanelTabButtonTemplate", 1, true)
@@ -1031,14 +1109,21 @@ local function TabNamed(label)
     end
 end
 
+--- The text of one Sell tab value.
+-- @param key a SELL_LINES key, such as "low"
+-- @return its text
 local function SellValue(key)
     return MainFrame().sellPanel.values[key].text
 end
 
+--- The Sell tab's status line.
+-- @return its text
 local function SellStatus()
     return MainFrame().sellPanel.statusText.text
 end
 
+--- Drops an item on the Sell slot.
+-- @param item the fake item location to put on the cursor
 local function Drop(item)
     world.cursorItem = item
     local slot = MainFrame().sellPanel.slot
@@ -1046,6 +1131,9 @@ local function Drop(item)
 end
 
 --- True when any string saved in the table contains `needle`.
+-- @param value a string or table to search
+-- @param needle the plain text to find
+-- @return true when found
 local function SavedAnywhere(value, needle)
     if type(value) == "string" then
         return value:find(needle, 1, true) ~= nil
@@ -1061,6 +1149,8 @@ local function SavedAnywhere(value, needle)
     return false
 end
 
+--- How many item rows HouseLedgerDB holds, over every house.
+-- @return the count
 local function SavedItemCount()
     local count = 0
     for _, house in pairs(HouseLedgerDB.houses) do

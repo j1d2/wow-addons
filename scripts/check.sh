@@ -8,12 +8,20 @@
 #   5. self-tests the check scripts' own tests
 #   6. addons     Lua syntax, global writes, .toc files, RULES.md API limits, versions
 #   7. tests      every addons/*/*_test.lua under lua5.1
+#   8. coverage   those tests run at least 90% of the lines in each addon file
 #
 # Usage: scripts/check.sh
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
+#######################################
+# Print a step heading.
+# Arguments:
+#   The step's name, as one or more words.
+# Outputs:
+#   Writes a blank line and "==> name" to stdout.
+#######################################
 step() { printf '\n==> %s\n' "$*"; }
 
 step "tools"
@@ -38,9 +46,17 @@ shellcheck --severity=style scripts/*.sh .githooks/*
 echo "shellcheck passed."
 
 step "check-script self-tests"
+# On success print the last line; on failure print every FAIL line, so CI and the hooks name
+# the broken checks instead of only the count.
 for test in scripts/*_test.sh; do
     printf '%s: ' "$test"
-    "$test" | tail -n 1
+    if out="$("$test" 2>&1)"; then
+        tail -n 1 <<<"$out"
+    else
+        echo "failed"
+        grep -E '^FAIL' <<<"$out" || printf '%s\n' "$out"
+        exit 1
+    fi
 done
 
 step "addon checks: syntax, globals, toc, policy, version"
@@ -51,5 +67,8 @@ done
 
 step "addon tests (lua5.1)"
 scripts/addon_checks.sh tests
+
+step "line coverage (at least ${COVERAGE_MIN:-90}% of each addon file)"
+scripts/addon_checks.sh coverage
 
 printf '\nAll checks passed.\n'

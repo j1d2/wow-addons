@@ -5,6 +5,7 @@
 [![Lua 5.1](https://img.shields.io/badge/Lua_5.1-2C2D72?style=for-the-badge&logo=lua&logoColor=white)](https://www.lua.org/manual/5.1/)
 [![WoW Forever](https://img.shields.io/badge/WoW_Forever-16001-148EFF?style=for-the-badge)](RULES.md)
 [![Apache 2.0](https://img.shields.io/badge/Apache_2.0-blue?style=for-the-badge)](LICENSE)
+[![Coverage at least 90%](https://img.shields.io/badge/coverage-%E2%89%A590%25-brightgreen?style=for-the-badge)](docs/development.md#first-run)
 
 </p>
 

@@ -16,16 +16,28 @@ cd "$ROOT"
 readonly MAX_KB=500
 failures=0
 
+#######################################
 # Report one problem and count it.
-# Args:
-#   $1  "file" or "file:line"
-#   $2  what is wrong
+# Globals:
+#   failures (incremented)
+# Arguments:
+#   Where: "file" or "file:line".
+#   What is wrong.
+# Outputs:
+#   Writes "where: what" to stdout.
+#######################################
 problem() {
     printf '%s: %s\n' "$1" "$2"
     failures=$((failures + 1))
 }
 
-# Repo files, NUL separated: git's list in a work tree, otherwise everything but .git.
+#######################################
+# List the repo's files: git's list in a work tree, otherwise everything but .git.
+# Globals:
+#   HYGIENE_NO_GIT (1 = always use find)
+# Outputs:
+#   Writes the paths, relative to the current folder and NUL separated, to stdout.
+#######################################
 list_files() {
     if [[ "${HYGIENE_NO_GIT:-0}" != 1 ]] \
         && [[ "$(git rev-parse --is-inside-work-tree 2>/dev/null)" == true ]]; then

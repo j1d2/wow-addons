@@ -5,20 +5,32 @@
 # string the scanner would flag. Fixtures live in .check-tmp/ (git ignores it), removed on exit.
 #
 # Usage: scripts/privacy_scan_test.sh
-set -euo pipefail
+# No -e: each check reports its own result, and a failed one must not stop the rest.
+set -uo pipefail
 
-cd "$(dirname "${BASH_SOURCE[0]}")/.."
+cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
 
 readonly ROOT="$PWD/.check-tmp/privacy-test"
 failed=0
 
+#######################################
+# Remove the fixtures folder, .check-tmp/, if it exists. Runs on exit.
+# Globals:
+#   PWD (the repo root, after the cd above)
+#######################################
 cleanup() { [[ ! -d "$PWD/.check-tmp" ]] || rm -r "$PWD/.check-tmp"; }
 trap cleanup EXIT
 
+#######################################
 # Record one result.
-# Args:
-#   $1  check name
-#   $2  0 = passed, anything else = failed
+# Globals:
+#   failed (incremented on a failure)
+# Arguments:
+#   The check's name.
+#   Its status: 0 = passed, anything else = failed.
+# Outputs:
+#   Writes "ok  name" or "FAIL  name" to stdout.
+#######################################
 check() {
     if [[ "$2" -eq 0 ]]; then
         printf 'ok  %s\n' "$1"
@@ -28,20 +40,30 @@ check() {
     fi
 }
 
-# Make an empty fixture repo holding a copy of the scanner. Echoes nothing.
+#######################################
+# Make an empty fixture repo holding a copy of the scanner.
+# Globals:
+#   ROOT (the fixture folder; replaced)
+#######################################
 fresh_fixture() {
     [[ ! -d "$ROOT" ]] || rm -r "$ROOT"
     mkdir -p "$ROOT/scripts" "$ROOT/security"
     cp scripts/privacy_scan.sh "$ROOT/scripts/"
 }
 
-# Run the fixture's scanner. Sets scan_out and scan_status.
+#######################################
+# Run the fixture's scanner, listing files with find and using the fixture's denylist.
+# Globals:
+#   ROOT
+#   scan_out (set to the scanner's stdout and stderr)
+#   scan_status (set to its exit status)
+# Arguments:
+#   Optional arguments for privacy_scan.sh, such as --text FILE.
+#######################################
 run_scan() {
-    set +e
     scan_out="$(PRIVACY_SCAN_NO_GIT=1 PRIVACY_DENYLIST="$ROOT/security/privacy-denylist.local" \
         "$ROOT/scripts/privacy_scan.sh" "$@" 2>&1)"
     scan_status=$?
-    set -e
 }
 
 home_dir="/ho""me/someone/Games"
@@ -70,10 +92,10 @@ for label in "home folder path:$home_dir" "mount path:$mount_dir" "Wine prefix p
     fresh_fixture
     printf 'line one\nsee %s here\n' "$value" >"$ROOT/leak.txt"
     run_scan
-    [[ $scan_status -eq 1 && "$scan_out" == *"leak.txt:2: $rule"* ]]
-    check "flags $rule with file and line" $?
-    [[ "$scan_out" != *"$value"* ]]
-    check "report hides the $rule itself" $?
+    if [[ $scan_status -eq 1 && "$scan_out" == *"leak.txt:2: $rule"* ]]; then rc=0; else rc=1; fi
+    check "flags $rule with file and line" "$rc"
+    if [[ "$scan_out" != *"$value"* ]]; then rc=0; else rc=1; fi
+    check "report hides the $rule itself" "$rc"
 done
 
 fresh_fixture
@@ -82,16 +104,16 @@ run_scan
 check "name passes with no denylist" "$scan_status"
 printf '# real names, one per line\n%s\n' "${fake_name,,}" >"$ROOT/security/privacy-denylist.local"
 run_scan
-[[ $scan_status -eq 1 && "$scan_out" == *"notes.md:1: local denylist entry"* ]]
-check "denylist entry is flagged, any case" $?
-[[ "$scan_out" != *"$fake_name"* ]]
-check "report hides the denylist entry" $?
+if [[ $scan_status -eq 1 && "$scan_out" == *"notes.md:1: local denylist entry"* ]]; then rc=0; else rc=1; fi
+check "denylist entry is flagged, any case" "$rc"
+if [[ "$scan_out" != *"$fake_name"* ]]; then rc=0; else rc=1; fi
+check "report hides the denylist entry" "$rc"
 
 fresh_fixture
 printf 'fix: tidy\n\nPath was %s.\n' "$home_dir" >"$ROOT/msg.txt"
 run_scan --text "$ROOT/msg.txt"
-[[ $scan_status -eq 1 && "$scan_out" == *"msg.txt:3: home folder path"* ]]
-check "--text scans one file, such as a commit message" $?
+if [[ $scan_status -eq 1 && "$scan_out" == *"msg.txt:3: home folder path"* ]]; then rc=0; else rc=1; fi
+check "--text scans one file, such as a commit message" "$rc"
 
 if [[ $failed -gt 0 ]]; then
     printf '%d failed\n' "$failed"

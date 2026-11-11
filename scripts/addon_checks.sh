@@ -11,9 +11,11 @@
 #   version  each addon's <Name>.toc has a "## Version: X.Y.Z" (semver), and its CHANGELOG.md
 #            has a "## [X.Y.Z]" section for it, so every release has notes
 #   tests    each addon has at least one *_test.lua, and all of them pass under lua5.1
+#   coverage the tests run at least COVERAGE_MIN percent (default 90) of the lines in each
+#            addon file (scripts/lua_coverage.lua: Lua's own line hook, no packages)
 #
-# Usage: scripts/addon_checks.sh [--root DIR] <syntax|globals|toc|policy|version|tests|all>
-# Environment: LUA (default lua5.1), LUAC (default luac5.1)
+# Usage: scripts/addon_checks.sh [--root DIR] <syntax|globals|toc|policy|version|tests|coverage|all>
+# Environment: LUA (default lua5.1), LUAC (default luac5.1), COVERAGE_MIN (default 90)
 set -euo pipefail
 
 SCRIPTS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -42,19 +44,39 @@ readonly SEMVER='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
 
 failures=0
 
+#######################################
 # Report one problem and count it.
-# Args:
-#   $1  "file:line" or "file"
-#   $2  what is wrong
+# Globals:
+#   failures (incremented)
+# Arguments:
+#   Where: "file:line" or "file".
+#   What is wrong.
+# Outputs:
+#   Writes "where: what" to stdout.
+#######################################
 problem() {
     printf '%s: %s\n' "$1" "$2"
     failures=$((failures + 1))
 }
 
+#######################################
 # Print a path relative to ROOT for reports.
+# Globals:
+#   ROOT
+# Arguments:
+#   A path under ROOT.
+# Outputs:
+#   Writes the path without the ROOT/ prefix, and no newline, to stdout.
+#######################################
 rel() { printf '%s' "${1#"$ROOT"/}"; }
 
-# All addon folders, one per line.
+#######################################
+# List all addon folders.
+# Globals:
+#   ROOT
+# Outputs:
+#   Writes each folder under ROOT/addons/, one per line and without a trailing /, to stdout.
+#######################################
 addon_dirs() {
     local dir
     for dir in "$ROOT"/addons/*/; do
@@ -65,8 +87,23 @@ addon_dirs() {
 # All .lua files under addons/, NUL separated.
 lua_files() { find "$ROOT/addons" -type f -name '*.lua' -print0 2>/dev/null; }
 
+#######################################
+# Tell whether a path is a test file.
+# Arguments:
+#   A file path or name.
+# Returns:
+#   0 if it ends in _test.lua, 1 if not.
+#######################################
 is_test() { [[ "$1" == *_test.lua ]]; }
 
+#######################################
+# Check that every .lua under addons/ parses (luac -p).
+# Globals:
+#   LUAC
+#   failures (counted through problem)
+# Outputs:
+#   Writes each file that does not parse, with luac's message, to stdout.
+#######################################
 check_syntax() {
     local file out
     while IFS= read -r -d '' file; do
@@ -76,6 +113,15 @@ check_syntax() {
     done < <(lua_files)
 }
 
+#######################################
+# Check that addon files (not tests) write only globals listed in scripts/allowed-globals.txt.
+# Reads the SETGLOBAL lines of luac's listing, so each write is reported with its line.
+# Globals:
+#   ALLOWED_GLOBALS, LUAC
+#   failures (counted through problem)
+# Outputs:
+#   Writes each stray global write to stdout.
+#######################################
 check_globals() {
     local allowed="" file line name
     if [[ -f "$ALLOWED_GLOBALS" ]]; then
@@ -93,6 +139,14 @@ check_globals() {
     done < <(lua_files)
 }
 
+#######################################
+# Check each addon's .toc files: an "## Interface:" number, every listed file exists, no test
+# file is listed, and every non-test .lua is listed in one of them.
+# Globals:
+#   failures (counted through problem)
+# Outputs:
+#   Writes each problem to stdout.
+#######################################
 check_toc() {
     local dir name tocs toc entry listed file
     while IFS= read -r dir; do
@@ -128,6 +182,15 @@ check_toc() {
     done < <(addon_dirs)
 }
 
+#######################################
+# Check addon files (not tests) for API calls RULES.md forbids (BANNED_API) and for method
+# calls on Blizzard's auction window that do more than read it (HOUSE_CALL, HOUSE_READS).
+# Globals:
+#   BANNED_API, HOUSE_CALL, HOUSE_READS
+#   failures (counted through problem)
+# Outputs:
+#   Writes each hit, with file and line, to stdout.
+#######################################
 check_policy() {
     local file hit
     while IFS= read -r -d '' file; do
@@ -177,6 +240,14 @@ check_version() {
     done < <(addon_dirs)
 }
 
+#######################################
+# Run each addon's *_test.lua files under LUA, and fail an addon that has none.
+# Globals:
+#   LUA
+#   failures (counted through problem)
+# Outputs:
+#   Writes each passing test's last line, or a failing test's FAIL and error lines, to stdout.
+#######################################
 check_tests() {
     local dir test count out
     while IFS= read -r dir; do
@@ -195,6 +266,48 @@ check_tests() {
     done < <(addon_dirs)
 }
 
+#######################################
+# Run each addon's tests under scripts/lua_coverage.lua, print the coverage of each addon file,
+# and fail any file whose tests run less than COVERAGE_MIN percent of its lines.
+# Globals:
+#   ROOT, SCRIPTS, LUA, LUAC, COVERAGE_MIN
+#   failures (counted through problem)
+# Outputs:
+#   Writes one coverage line per addon file, and each problem, to stdout.
+#######################################
+check_coverage() {
+    local minimum="${COVERAGE_MIN:-90}" dir test hits file out line
+    local -a files
+    mkdir -p "$ROOT/.check-tmp"
+    hits="$(mktemp "$ROOT/.check-tmp/coverage.XXXXXX")"
+    while IFS= read -r dir; do
+        : >"$hits"
+        # Run from ROOT with relative paths, so reports name files the way the repo does.
+        for test in "$dir"/*_test.lua; do
+            [[ -f "$test" ]] || continue
+            if ! out="$(cd "$ROOT" && "$LUA" "$SCRIPTS/lua_coverage.lua" run "$hits" "$(rel "$test")" 2>&1)"; then
+                printf '%s\n' "$out" | grep -E '^FAIL|rror' || true
+                problem "$(rel "$test")" "failed"
+            fi
+        done
+        files=()
+        while IFS= read -r -d '' file; do
+            is_test "$file" || files+=("$(rel "$file")")
+        done < <(find "$dir" -type f -name '*.lua' -print0 | sort -z)
+        [[ ${#files[@]} -gt 0 ]] || continue
+        out="$(cd "$ROOT" && LUAC="$LUAC" "$LUA" "$SCRIPTS/lua_coverage.lua" report "$minimum" "$hits" \
+            "${files[@]}" 2>&1)" || true
+        while IFS= read -r line; do
+            if [[ "$line" == *"% minimum" ]]; then
+                problem "${line%%: *}" "${line#*: }"
+            else
+                printf '%s\n' "$line"
+            fi
+        done <<<"$out"
+    done < <(addon_dirs)
+    rm "$hits"
+}
+
 case "${1:-}" in
     syntax) check_syntax ;;
     globals) check_globals ;;
@@ -202,6 +315,7 @@ case "${1:-}" in
     policy) check_policy ;;
     version) check_version ;;
     tests) check_tests ;;
+    coverage) check_coverage ;;
     all)
         check_syntax
         check_globals
@@ -209,9 +323,10 @@ case "${1:-}" in
         check_policy
         check_version
         check_tests
+        check_coverage
         ;;
     *)
-        echo "usage: $0 [--root DIR] <syntax|globals|toc|policy|version|tests|all>" >&2
+        echo "usage: $0 [--root DIR] <syntax|globals|toc|policy|version|tests|coverage|all>" >&2
         exit 2
         ;;
 esac

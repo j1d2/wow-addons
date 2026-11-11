@@ -47,9 +47,16 @@ readonly EMAIL_OK='@(example\.(com|org|net)|users\.noreply\.github\.com)$|norepl
 
 found=0
 
-# Drop email hits that are allowed. Reads grep -o output "file:line:match" on stdin.
-# Args:
-#   $1  rule label; only "email address" is filtered
+#######################################
+# Drop email hits that are allowed (EMAIL_OK). Reads grep -o output, "file:line:match", on
+# stdin; other rules' hits pass through.
+# Globals:
+#   EMAIL_OK
+# Arguments:
+#   The rule label; only "email address" is filtered.
+# Outputs:
+#   Writes the hits that are kept to stdout.
+#######################################
 filter_hits() {
     if [[ "$1" != "email address" ]]; then
         cat
@@ -63,11 +70,17 @@ filter_hits() {
     done
 }
 
-# Print "file:line: label" for each hit of one rule, never the matched text.
-# Args:
-#   $1  label shown in the report
-#   $2  extended regex
-#   $3+ files to search
+#######################################
+# Report each hit of one rule, never the matched text.
+# Globals:
+#   found (set to 1 on a hit)
+# Arguments:
+#   The label shown in the report.
+#   The extended regex.
+#   The files to search, one or more.
+# Outputs:
+#   Writes "file:line: label" for each hit to stdout.
+#######################################
 report_rule() {
     local label="$1" regex="$2"
     shift 2
@@ -78,9 +91,16 @@ report_rule() {
     done < <(grep -I -H -n -o -E -- "$regex" "$@" 2>/dev/null | filter_hits "$label")
 }
 
-# Print "file:line: local denylist entry" for each hit. Never prints the entry.
-# Args:
-#   $@  files to search
+#######################################
+# Report each hit of the local denylist, any case. Never prints the entry.
+# Globals:
+#   DENYLIST (skipped when missing or empty)
+#   found (set to 1 on a hit)
+# Arguments:
+#   The files to search, one or more.
+# Outputs:
+#   Writes "file:line: local denylist entry" for each hit to stdout.
+#######################################
 report_denylist() {
     [[ -f "$DENYLIST" ]] || return 0
     local patterns hit
@@ -92,7 +112,16 @@ report_denylist() {
     done < <(grep -I -H -n -i -F -- "$patterns" "$@" 2>/dev/null || true)
 }
 
+#######################################
 # Run every rule and the denylist over the given files.
+# Globals:
+#   RULES
+#   found (set to 1 on a hit, through report_rule and report_denylist)
+# Arguments:
+#   The files to search, one or more.
+# Outputs:
+#   Writes each hit to stdout.
+#######################################
 scan() {
     local rule
     for rule in "${RULES[@]}"; do
@@ -101,8 +130,16 @@ scan() {
     report_denylist "$@"
 }
 
+#######################################
 # Scan the repo's files, or a plain folder when there is no .git (the hooks check an
-# exported copy of the commit).
+# exported copy of the commit). This script itself is skipped.
+# Globals:
+#   PRIVACY_SCAN_NO_GIT (1 = list files with find instead of git)
+#   SELF
+#   found (set through scan)
+# Outputs:
+#   Writes each hit to stdout.
+#######################################
 scan_files() {
     local files=() path
     if [[ "${PRIVACY_SCAN_NO_GIT:-0}" != 1 ]] \
@@ -119,10 +156,19 @@ scan_files() {
     [[ ${#files[@]} -eq 0 ]] || scan "${files[@]}"
 }
 
-# Write each commit (author, committer, message, diff) to a file named by its id and scan
-# those. Reports only: removing history needs a rewrite, which this repo never does.
+# Work folder of scan_history; its EXIT trap removes it.
 history_work=""
 
+#######################################
+# Write each commit (author, committer, message, diff) to a file named by its id and scan
+# those. Reports only: removing history needs a rewrite, which this repo never does.
+# Globals:
+#   history_work (set to the work folder inside .git)
+#   found (set through scan)
+# Outputs:
+#   Writes each hit as "<commit>:<line>: label" to stdout, then a summary: on a hit, to
+#   stderr; otherwise "History scan: nothing found." to stdout.
+#######################################
 scan_history() {
     local sha
     # Inside .git, never /tmp: the work folder is removed on exit.

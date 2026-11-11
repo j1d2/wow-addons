@@ -68,7 +68,9 @@ scripts/install_hooks.sh   # once per clone: pre-commit, commit-msg and pre-push
 scripts/check.sh           # the full gate: what the hooks and CI run
 ```
 
-`scripts/check.sh` runs every check: hygiene, the privacy and secret scan, shellcheck, the scripts' own tests, the addon checks (syntax, globals, `.toc` files, `RULES.md` limits, versions) and every addon test. The hooks and CI run the same script.
+`scripts/check.sh` runs every check: hygiene, the privacy and secret scan, shellcheck, the scripts' own tests, the addon checks (syntax, globals, `.toc` files, `RULES.md` limits, versions), every addon test, and line coverage. The hooks and CI run the same script.
+
+**Coverage:** `scripts/addon_checks.sh coverage` runs each addon's tests under `scripts/lua_coverage.lua`, which uses Lua's own line hook (no packages). Each addon file must have at least 90% of its lines run. The report lists the lines that never ran, for example `not run: 6-7, 9`.
 
 ## Try an addon in game
 
