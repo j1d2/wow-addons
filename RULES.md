@@ -31,5 +31,16 @@ Sources:
 - Calling `C_AuctionHouse.SendBrowseQuery` from `/run` or `/script`. Blizzard marks that function `#noscript` because doing so breaks the auction house. This repo treats every `C_AuctionHouse` search the same way.
 - Calling a method on Blizzard's auction window or changing it from addon code: switching its tab, putting an item in it, filling its search box. On Forever, `/run AuctionHouseFrame:SetDisplayMode(...)` left every auction house search spinning until the game restarted, though Blizzard's own tab button calls the same method. Blizzard's searches are `#noscript`, and Blizzard's window keeps what script code set up, so its later searches stall (players call this bricking the auction house). Changes from addon code leave taint on that window too; Auctionator resets fields after it touches it. Read it, anchor to it, or follow it with `hooksecurefunc`; `scripts/addon_checks.sh policy` flags anything else. The one way to switch its tabs: our tab is a `SecureActionButtonTemplate` with `type="click"` and `clickbutton` set to Blizzard's tab, so on the player's click the game's own secure code presses Blizzard's tab. Blizzard's Buy and Sell panels send no query when shown, so that click is still one action. The secure tabs make our window protected: in combat it waits (showing, hiding, moving, tab marking, and the panels if the game's `IsProtected` says they are protected too), and catches up when combat ends.
 - Combat automation, secret-value math, or anything that plays the character.
+- `setfenv` or `getfenv`: swapping a function's environment hides what the code really does. Also the `debug` library, which reaches into other code, and `RunMacro`, which plays the character. `scripts/addon_checks.sh policy` blocks them in addon files.
+
+## Allowed only with a reason
+
+These calls send data out of the game, or change the player's own setup. An addon may use one only with a `-- reviewed: <why>` note on the same line, so the reason is read in review. `scripts/addon_checks.sh policy` flags any line that names one without the note, so keeping it in a local can't hide it.
+
+- Chat and messages: `C_ChatInfo.SendChatMessage` (and the older `SendChatMessage`), `C_ChatInfo.SendAddonMessage`, `C_ChatInfo.SendAddonMessageLogged` (and the older `SendAddonMessage`), `C_BattleNet.SendWhisper`, `C_BattleNet.SendGameData`
+- Settings: `SetCVar`, `C_CVar.SetCVar`
+- Keybindings and macros: `SetBinding`, `SetBindingClick`, `SaveBindings`, `CreateMacro`, `EditMacro`, `DeleteMacro`
+
+A message an addon sends must still come from the player's own action and carry nothing private. HouseLedger uses none of these.
 
 Blizzard can disable any of this later. If an API starts requiring a hardware event or disappears, the addon stops calling it.

@@ -141,6 +141,70 @@ for call in "C_AuctionHouse.PlaceBid(key, 1)" "C_AuctionHouse.PostItem(loc, 1, 1
     check "policy: '${call%%(*}' is caught" "$rc"
 done
 
+# No place in these addons: swapping a function's environment hides what code does, the debug
+# library reaches into other code, and RunMacro plays the character.
+for call in "setfenv(1, {})" "getfenv(1)" "debug.sethook()" "RunMacro(1)"; do
+    good_addon
+    printf 'local function Go()\n    %s\nend\n' "$call" >>"$ROOT/addons/Demo/Demo.lua"
+    run_check policy
+    if [[ $status -eq 1 && "$out" == *"Demo.lua:5: calls"*"which RULES.md forbids"* ]]; then rc=0; else rc=1; fi
+    check "policy: '${call%%(*}' is caught" "$rc"
+done
+
+# Sending data out of the game, or changing the player's keybindings, macros or settings, needs
+# a "-- reviewed: <why>" note on the same line.
+for call in 'C_ChatInfo.SendChatMessage("hi", "SAY")' 'SendChatMessage("hi", "SAY")' \
+    'C_ChatInfo.SendAddonMessage("P", "m", "GUILD")' 'C_ChatInfo.SendAddonMessageLogged("P", "m", "GUILD")' \
+    'C_BattleNet.SendWhisper(1, "hi")' 'C_BattleNet.SendGameData(1, "P", "m")' 'SetCVar("x", 1)' \
+    'C_CVar.SetCVar("x", 1)' 'SetBinding("A")' 'SetBindingClick("A", "B")' 'SaveBindings(1)' \
+    'CreateMacro("m", 1, "")' 'EditMacro(1)' 'DeleteMacro(1)'; do
+    good_addon
+    printf 'local function Go()\n    %s\nend\n' "$call" >>"$ROOT/addons/Demo/Demo.lua"
+    run_check policy
+    if [[ $status -eq 1 && "$out" == *"Demo.lua:5: uses '${call%%(*}', which needs a '-- reviewed: <why>' note"* ]]; then rc=0; else rc=1; fi
+    check "policy: '${call%%(*}' needs a reviewed note" "$rc"
+done
+
+good_addon
+printf 'local function Go()\n    %s\nend\n' 'C_ChatInfo.SendChatMessage("deal", "GUILD") -- reviewed: the player asked to share a deal' \
+    >>"$ROOT/addons/Demo/Demo.lua"
+run_check policy
+if [[ $status -eq 0 ]]; then rc=0; else rc=1; fi
+check "policy: a call with a reviewed note and a reason passes" "$rc"
+
+good_addon
+printf 'local function Go()\n    %s\nend\n' 'SetCVar("x", 1) -- reviewed:' >>"$ROOT/addons/Demo/Demo.lua"
+run_check policy
+if [[ $status -eq 1 && "$out" == *"uses 'SetCVar', which needs"* ]]; then rc=0; else rc=1; fi
+check "policy: a reviewed note with no reason does not count" "$rc"
+
+# Renaming a reviewed call must not hide it.
+good_addon
+printf 'local function Go()\n    %s\nend\n' 'local send = C_ChatInfo.SendChatMessage' >>"$ROOT/addons/Demo/Demo.lua"
+run_check policy
+if [[ $status -eq 1 && "$out" == *"Demo.lua:5: uses 'C_ChatInfo.SendChatMessage', which needs"* ]]; then rc=0; else rc=1; fi
+check "policy: a reviewed call kept in a local is still caught" "$rc"
+
+good_addon
+printf 'local function Go()\n    %s\nend\n' 'local send = C_ChatInfo.SendChatMessage -- reviewed: sends the deal line' \
+    >>"$ROOT/addons/Demo/Demo.lua"
+run_check policy
+if [[ $status -eq 0 ]]; then rc=0; else rc=1; fi
+check "policy: that local with a reviewed note passes" "$rc"
+
+# Only Lua's debug library is banned, not a field that happens to be named debug.
+good_addon
+printf 'local function Go(addon)\n    %s\nend\n' 'return addon.debug.enabled' >>"$ROOT/addons/Demo/Demo.lua"
+run_check policy
+if [[ $status -eq 0 ]]; then rc=0; else rc=1; fi
+check "policy: a table field named debug is fine" "$rc"
+
+good_addon
+printf 'SendChatMessage("fake", "SAY")\nsetfenv(1, {})\n' >>"$ROOT/addons/Demo/demo_test.lua"
+run_check policy
+if [[ $status -eq 0 ]]; then rc=0; else rc=1; fi
+check "policy: test files may fake these calls" "$rc"
+
 # Blizzard's auction window is only read or followed, never changed.
 for call in "AuctionHouseFrame:SetDisplayMode(mode)" "AuctionHouseFrame:SetPostItem(loc)" \
     "AuctionHouseFrameSellTab:Click()" "AuctionHouseFrame.SearchBar:SetSearchText(text)"; do

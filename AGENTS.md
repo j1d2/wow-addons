@@ -23,7 +23,8 @@ This repository holds free, plain-Lua World of Warcraft addons for the Forever c
 ## Do not
 
 - Post, buy, bid on or cancel auctions, or act without a fresh click. Do not send requests from a timer or scan when the auction house opens.
-- Run code from text (`loadstring`, `RunScript`) or obfuscate anything.
+- Run code from text (`loadstring`, `RunScript`) or obfuscate anything. No `setfenv`, `getfenv`, `debug` library or `RunMacro`.
+- Send chat, addon or Battle.net messages, or change settings, keybindings or macros, without a `-- reviewed: <why>` note on that line and the maintainer's OK.
 - Add a third-party library, package or tool without the maintainer's OK. Write our own version instead.
 - Copy code, names or art from other addons, or from Blizzard's interface files. Reading them to learn is fine.
 - Add emails, account, character or realm names, IP addresses, hostnames, or a home path that identifies someone, in files or commit messages.

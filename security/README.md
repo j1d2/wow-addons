@@ -11,7 +11,7 @@ How this repo stays safe to share. The policy for reporting a problem is in [`SE
 | Privacy | `scripts/privacy_scan.sh` | Home, mount and Wine paths, WoW account folders, email addresses, private IP addresses, plus any name in your local denylist |
 | Secrets | `scripts/privacy_scan.sh` | Private keys, AWS keys, GitHub, Slack and API tokens, hard-coded passwords |
 | Commit messages | `.githooks/commit-msg` | The same privacy and secret rules, run on the message text |
-| Addon policy | `scripts/addon_checks.sh policy` | Calls that `RULES.md` forbids: post, buy, bid or cancel, and code run from text (`loadstring`, `RunScript`) |
+| Addon policy | `scripts/addon_checks.sh policy` | Calls that `RULES.md` forbids: post, buy, bid or cancel, code run from text (`loadstring`, `RunScript`), `setfenv`/`getfenv`, the `debug` library and `RunMacro`. Chat, addon and Battle.net messages, and changes to settings, keybindings or macros, need a `-- reviewed: <why>` note on the line. |
 | Globals | `scripts/addon_checks.sh globals` | Stray global variables, which can collide with other addons or be overwritten by them |
 | File hygiene | `scripts/hygiene_check.sh` | Big files (over 500 KB), conflict markers, mixed line endings |
 
@@ -65,4 +65,6 @@ An addon runs inside the game client's Lua sandbox, which Blizzard controls. The
 - **User input:** search text goes only to Blizzard's `SendBrowseQuery` (from a click or Enter) and back into the addon's own status line.
 - **Privacy:** seller names are never saved. The HouseLedger harness (`houseledger_test.lua`) feeds seller names in and checks that none reach saved data.
 
-Verdict: low risk. Recheck this section when an addon adds chat or addon messages, slash commands that run actions, or reads data from other players.
+Verdict: low risk. Recheck this section when an addon adds chat or addon messages, slash commands that run actions, or reads data from other players. The policy check makes the first of those visible: each such call needs a `-- reviewed:` note.
+
+**No Lua security scanner:** there is no official one. Semgrep's Lua support is experimental, with mostly code-quality rules, and it would be a third-party tool. These addons have no dependencies to scan, so the project's own policy check, written for WoW's API, is the security scan.
