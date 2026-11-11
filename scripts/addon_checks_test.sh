@@ -161,7 +161,7 @@ for call in 'C_ChatInfo.SendChatMessage("hi", "SAY")' 'SendChatMessage("hi", "SA
     good_addon
     printf 'local function Go()\n    %s\nend\n' "$call" >>"$ROOT/addons/Demo/Demo.lua"
     run_check policy
-    if [[ $status -eq 1 && "$out" == *"Demo.lua:5: calls '${call%%(*}', which needs a '-- reviewed: <why>' note"* ]]; then rc=0; else rc=1; fi
+    if [[ $status -eq 1 && "$out" == *"Demo.lua:5: uses '${call%%(*}', which needs a '-- reviewed: <why>' note"* ]]; then rc=0; else rc=1; fi
     check "policy: '${call%%(*}' needs a reviewed note" "$rc"
 done
 
@@ -175,8 +175,29 @@ check "policy: a call with a reviewed note and a reason passes" "$rc"
 good_addon
 printf 'local function Go()\n    %s\nend\n' 'SetCVar("x", 1) -- reviewed:' >>"$ROOT/addons/Demo/Demo.lua"
 run_check policy
-if [[ $status -eq 1 && "$out" == *"calls 'SetCVar', which needs"* ]]; then rc=0; else rc=1; fi
+if [[ $status -eq 1 && "$out" == *"uses 'SetCVar', which needs"* ]]; then rc=0; else rc=1; fi
 check "policy: a reviewed note with no reason does not count" "$rc"
+
+# Renaming a reviewed call must not hide it.
+good_addon
+printf 'local function Go()\n    %s\nend\n' 'local send = C_ChatInfo.SendChatMessage' >>"$ROOT/addons/Demo/Demo.lua"
+run_check policy
+if [[ $status -eq 1 && "$out" == *"Demo.lua:5: uses 'C_ChatInfo.SendChatMessage', which needs"* ]]; then rc=0; else rc=1; fi
+check "policy: a reviewed call kept in a local is still caught" "$rc"
+
+good_addon
+printf 'local function Go()\n    %s\nend\n' 'local send = C_ChatInfo.SendChatMessage -- reviewed: sends the deal line' \
+    >>"$ROOT/addons/Demo/Demo.lua"
+run_check policy
+if [[ $status -eq 0 ]]; then rc=0; else rc=1; fi
+check "policy: that local with a reviewed note passes" "$rc"
+
+# Only Lua's debug library is banned, not a field that happens to be named debug.
+good_addon
+printf 'local function Go(addon)\n    %s\nend\n' 'return addon.debug.enabled' >>"$ROOT/addons/Demo/Demo.lua"
+run_check policy
+if [[ $status -eq 0 ]]; then rc=0; else rc=1; fi
+check "policy: a table field named debug is fine" "$rc"
 
 good_addon
 printf 'SendChatMessage("fake", "SAY")\nsetfenv(1, {})\n' >>"$ROOT/addons/Demo/demo_test.lua"

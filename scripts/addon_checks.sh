@@ -34,12 +34,13 @@ ALLOWED_GLOBALS="$ROOT/scripts/allowed-globals.txt"
 # RULES.md: never post, buy, bid or cancel, and no code run from text (it hides what runs).
 # Also never: swapping a function's environment (setfenv, getfenv) hides what code does, the
 # debug library reaches into other code, and RunMacro plays the character.
-readonly BANNED_API='C_AuctionHouse\.(PostItem|PostCommodity|PlaceBid|CancelAuction|CancelSell|StartCommoditiesPurchase|ConfirmCommoditiesPurchase)|\b(PlaceAuctionBid|PostAuction|StartAuction|CancelAuction|loadstring|RunScript|RunMacroText|RunMacro|setfenv|getfenv)\b|\bdebug\.[A-Za-z_]+'
+readonly BANNED_API='C_AuctionHouse\.(PostItem|PostCommodity|PlaceBid|CancelAuction|CancelSell|StartCommoditiesPurchase|ConfirmCommoditiesPurchase)|\b(PlaceAuctionBid|PostAuction|StartAuction|CancelAuction|loadstring|RunScript|RunMacroText|RunMacro|setfenv|getfenv)\b|(^|[^A-Za-z0-9_.:])debug\.[A-Za-z_]+'
 
 # RULES.md: calls that send data out of the game (chat, addon messages, Battle.net) or change
 # the player's setup (keybindings, macros, settings) need a "-- reviewed: <why>" note on the
-# same line. Names checked against Blizzard's interface source for the Forever client.
-readonly REVIEW_API='(C_ChatInfo\.(SendChatMessage|SendAddonMessage|SendAddonMessageLogged)|C_BattleNet\.(SendWhisper|SendGameData)|C_CVar\.SetCVar|(^|[^A-Za-z0-9_.:])(SendChatMessage|SendAddonMessage|SetCVar|SetBinding|SetBindingClick|SaveBindings|CreateMacro|EditMacro|DeleteMacro))[[:space:]]*\('
+# same line. Names checked against Blizzard's interface source for the Forever client. Any use
+# counts, not only a call, so keeping one in a local (local send = ...) can't hide it.
+readonly REVIEW_API='(C_ChatInfo\.(SendChatMessage|SendAddonMessage|SendAddonMessageLogged)|C_BattleNet\.(SendWhisper|SendGameData)|C_CVar\.SetCVar|(^|[^A-Za-z0-9_.:])(SendChatMessage|SendAddonMessage|SetCVar|SetBinding|SetBindingClick|SaveBindings|CreateMacro|EditMacro|DeleteMacro))([^A-Za-z0-9_]|$)'
 readonly REVIEW_NOTE='--[[:space:]]*reviewed:[[:space:]]*[^[:space:]]'
 
 # RULES.md: Blizzard's auction window is read or followed (hooksecurefunc), never
@@ -206,14 +207,15 @@ check_policy() {
     while IFS= read -r -d '' file; do
         is_test "$file" && continue
         while IFS= read -r hit; do
-            problem "$(rel "$file"):${hit%%:*}" "calls '${hit#*:}', which RULES.md forbids"
+            name="${hit#*:}"
+            problem "$(rel "$file"):${hit%%:*}" "calls '${name#[^A-Za-z_]}', which RULES.md forbids"
         done < <(grep -n -o -E -- "$BANNED_API" "$file" || true)
         while IFS= read -r hit; do
             grep -q -E -- "$REVIEW_NOTE" <<<"${hit#*:}" && continue
             name="$(grep -o -E -- "$REVIEW_API" <<<"${hit#*:}" | head -n 1 \
-                | sed -E -e 's/^[^A-Za-z_]//' -e 's/[[:space:]]*\($//')"
+                | sed -E -e 's/^[^A-Za-z_]//' -e 's/[^A-Za-z0-9_]$//')"
             problem "$(rel "$file"):${hit%%:*}" \
-                "calls '$name', which needs a '-- reviewed: <why>' note on the same line (RULES.md)"
+                "uses '$name', which needs a '-- reviewed: <why>' note on the same line (RULES.md)"
         done < <(grep -n -E -- "$REVIEW_API" "$file" || true)
         while IFS= read -r hit; do
             problem "$(rel "$file"):${hit%%:*}" "changes Blizzard's auction window ('${hit#*:}'); only read or hook it"

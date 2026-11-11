@@ -35,7 +35,7 @@ Sources:
 
 ## Allowed only with a reason
 
-These calls send data out of the game, or change the player's own setup. An addon may use one only with a `-- reviewed: <why>` note on the same line, so the reason is read in review. `scripts/addon_checks.sh policy` fails the call without one.
+These calls send data out of the game, or change the player's own setup. An addon may use one only with a `-- reviewed: <why>` note on the same line, so the reason is read in review. `scripts/addon_checks.sh policy` flags any line that names one without the note, so keeping it in a local can't hide it.
 
 - Chat and messages: `C_ChatInfo.SendChatMessage` (and the older `SendChatMessage`), `C_ChatInfo.SendAddonMessage`, `C_ChatInfo.SendAddonMessageLogged` (and the older `SendAddonMessage`), `C_BattleNet.SendWhisper`, `C_BattleNet.SendGameData`
 - Settings: `SetCVar`, `C_CVar.SetCVar`
