@@ -23,6 +23,7 @@ scripts/check.sh           # the full gate: what the hooks and CI run
 ## How we work
 
 - **Tests first.** Write a failing test, then the code. Tests live next to the addon as `*_test.lua`, run under `lua5.1`, and are never listed in the `.toc`. Code that needs the game API gets a small fake of that API inside its test.
+- **Coverage:** the tests must run at least 90% of the lines in each addon file. The gate prints each file's percent and the lines that never ran. Bash scripts have no coverage tool here; each one has a `*_test.sh` instead.
 - **Pure logic in its own file**, with no game API calls, so it can be tested offline. UI and events go in a separate file.
 - **No new globals.** Use `local`. A SavedVariables table is the exception; list it in `scripts/allowed-globals.txt`.
 - **Comments** explain why, not what. Every function gets a doc comment:

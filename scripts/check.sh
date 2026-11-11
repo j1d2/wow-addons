@@ -8,6 +8,7 @@
 #   5. self-tests the check scripts' own tests
 #   6. addons     Lua syntax, global writes, .toc files, RULES.md API limits, versions
 #   7. tests      every addons/*/*_test.lua under lua5.1
+#   8. coverage   those tests run at least 90% of the lines in each addon file
 #
 # Usage: scripts/check.sh
 set -euo pipefail
@@ -51,5 +52,8 @@ done
 
 step "addon tests (lua5.1)"
 scripts/addon_checks.sh tests
+
+step "line coverage (at least ${COVERAGE_MIN:-90}% of each addon file)"
+scripts/addon_checks.sh coverage
 
 printf '\nAll checks passed.\n'
