@@ -13,13 +13,24 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
 readonly ROOT="$PWD/.check-tmp/privacy-test"
 failed=0
 
+#######################################
+# Remove the fixtures folder, .check-tmp/, if it exists. Runs on exit.
+# Globals:
+#   PWD (the repo root, after the cd above)
+#######################################
 cleanup() { [[ ! -d "$PWD/.check-tmp" ]] || rm -r "$PWD/.check-tmp"; }
 trap cleanup EXIT
 
+#######################################
 # Record one result.
-# Args:
-#   $1  check name
-#   $2  0 = passed, anything else = failed
+# Globals:
+#   failed (incremented on a failure)
+# Arguments:
+#   The check's name.
+#   Its status: 0 = passed, anything else = failed.
+# Outputs:
+#   Writes "ok  name" or "FAIL  name" to stdout.
+#######################################
 check() {
     if [[ "$2" -eq 0 ]]; then
         printf 'ok  %s\n' "$1"
@@ -29,14 +40,26 @@ check() {
     fi
 }
 
-# Make an empty fixture repo holding a copy of the scanner. Echoes nothing.
+#######################################
+# Make an empty fixture repo holding a copy of the scanner.
+# Globals:
+#   ROOT (the fixture folder; replaced)
+#######################################
 fresh_fixture() {
     [[ ! -d "$ROOT" ]] || rm -r "$ROOT"
     mkdir -p "$ROOT/scripts" "$ROOT/security"
     cp scripts/privacy_scan.sh "$ROOT/scripts/"
 }
 
-# Run the fixture's scanner. Sets scan_out and scan_status.
+#######################################
+# Run the fixture's scanner, listing files with find and using the fixture's denylist.
+# Globals:
+#   ROOT
+#   scan_out (set to the scanner's stdout and stderr)
+#   scan_status (set to its exit status)
+# Arguments:
+#   Optional arguments for privacy_scan.sh, such as --text FILE.
+#######################################
 run_scan() {
     scan_out="$(PRIVACY_SCAN_NO_GIT=1 PRIVACY_DENYLIST="$ROOT/security/privacy-denylist.local" \
         "$ROOT/scripts/privacy_scan.sh" "$@" 2>&1)"

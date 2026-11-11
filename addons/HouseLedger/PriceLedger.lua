@@ -38,6 +38,9 @@ PriceLedger.DEAL_SIGMAS = 2
 local SECONDS_PER_DAY = 24 * 60 * 60
 
 --- Formats a time with the game's date function, or Lua's offline.
+-- @param format a date format string, such as "%Y%m%d"
+-- @param seconds a time() value
+-- @return the formatted text, or nil when neither date function exists
 local function FormatTime(format, seconds)
     if type(date) == "function" then
         return date(format, seconds)
@@ -48,18 +51,23 @@ local function FormatTime(format, seconds)
     return nil
 end
 
+--- Formats when an item was last seen, as month/day and time.
+-- @param seen a time() value
+-- @return text like "11/09 14:05", or the number as text without a date function
 local function FormatStamp(seen)
     return FormatTime("%m/%d %H:%M", seen) or tostring(seen)
 end
 
 --- The local calendar day of a time, as a number like 20261109.
---- Larger keys are later days, so keys compare like dates.
----   seconds: a time() value
---- Returns the day key.
+-- Larger keys are later days, so keys compare like dates.
+-- @param seconds a time() value
+-- @return the day key
 function PriceLedger.DayKey(seconds)
     return tonumber(FormatTime("%Y%m%d", seconds))
 end
 
+--- A new saved-variables table with no houses.
+-- @return { version, houses }
 function PriceLedger.EmptyDB()
     return {
         version = PriceLedger.DB_VERSION,
@@ -67,12 +75,12 @@ function PriceLedger.EmptyDB()
     }
 end
 
---- Adds one scan's unit price to a row's day list. Folds into the last
---- day when it is the same day, otherwise starts a new day.
----   days: list of { dayKey, low, high, scans, sum, sumOfSquares },
----     oldest first
----   unit: unit price in copper
----   seconds: when the scan ran
+--- Adds one scan's unit price to a row's day list.
+-- Folds into the last day when it is the same day, otherwise starts a new day.
+-- @param days list of { dayKey, low, high, scans, sum, sumOfSquares }, oldest first;
+--   changed in place
+-- @param unit unit price in copper
+-- @param seconds when the scan ran
 local function AddToDays(days, unit, seconds)
     local key = PriceLedger.DayKey(seconds)
     local last = days[#days]
@@ -87,9 +95,11 @@ local function AddToDays(days, unit, seconds)
     days[#days + 1] = { key, unit, unit, 1, unit, unit * unit }
 end
 
---- Version 2 days had low, high and count only. Fill the sums in as if
---- half the scans were at the low and half at the high: exact for one
---- scan or a steady price, close otherwise.
+--- Fills in the sums that version 2 days did not have.
+-- Version 2 days had low, high and count only. Fill the sums in as if
+-- half the scans were at the low and half at the high: exact for one
+-- scan or a steady price, close otherwise.
+-- @param days a row's day list; changed in place
 local function AddSumsFromV2(days)
     for _, day in ipairs(days) do
         if type(day) == "table" and day[5] == nil then
@@ -100,11 +110,12 @@ local function AddSumsFromV2(days)
     end
 end
 
---- Version 1 kept a list of price changes per item. Turn it into day
---- summaries. Version 1 moved `seen` on every scan but listed a price
---- only when it changed, so the latest scan's day is added from the last
---- price and seen time when no change was listed that day. The days in
---- between are not known and are not made up.
+--- Turns a version 1 row's list of price changes into day summaries.
+-- Version 1 moved `seen` on every scan but listed a price
+-- only when it changed, so the latest scan's day is added from the last
+-- price and seen time when no change was listed that day. The days in
+-- between are not known and are not made up.
+-- @param row an item row with `history`; changed in place (gets `days`, loses `history`)
 local function MigrateRowFromV1(row)
     local days = {}
     if type(row.history) == "table" then
@@ -124,6 +135,11 @@ local function MigrateRowFromV1(row)
     row.history = nil
 end
 
+--- Makes the saved table usable and brings it up to DB_VERSION.
+-- Rows without `days` are migrated from version 1; other rows get the
+-- version 3 sums from version 2. Runs the migrations only when the version differs.
+-- @param db the saved HouseLedgerDB, or nil on a first load
+-- @return the same table updated in place, or a new empty one if db was not a table
 function PriceLedger.EnsureDB(db)
     if type(db) ~= "table" then
         db = PriceLedger.EmptyDB()
@@ -148,6 +164,10 @@ function PriceLedger.EnsureDB(db)
     return db
 end
 
+--- The key one house is saved under.
+-- @param side "Alliance", "Horde" or "Neutral"; "Unknown" when missing
+-- @param realm the realm name; "Forever" when missing
+-- @return the key, "<side>|<realm>"
 function PriceLedger.HouseKey(side, realm)
     if type(side) ~= "string" or side == "" then
         side = "Unknown"
@@ -158,6 +178,10 @@ function PriceLedger.HouseKey(side, realm)
     return side .. "|" .. realm
 end
 
+--- Finds a house in the db, adding it (with an empty item list) when missing.
+-- @param db the saved table, from EnsureDB
+-- @param key a house key, from HouseKey
+-- @return the house table
 function PriceLedger.EnsureHouse(db, key)
     local house = db.houses[key]
     if type(house) ~= "table" then
@@ -170,13 +194,13 @@ function PriceLedger.EnsureHouse(db, key)
     return house
 end
 
---- Fold one listing into the lowest-price table for this scan.
---- A buyout of 0 is a bid-only listing and is ignored.
---- Args:
----   best: itemID -> { buyout, count, qty }
----   itemID: number
----   count: stack size
----   buyout: stack buyout in copper
+--- Folds one listing into the lowest-price table for this scan.
+-- A buyout of 0 is a bid-only listing and is ignored. A cheaper unit price
+-- replaces the stored one; the same unit price adds its stack to qty.
+-- @param best itemID -> { buyout, count, qty }; changed in place
+-- @param itemID the item's id
+-- @param count stack size
+-- @param buyout stack buyout in copper
 function PriceLedger.Consider(best, itemID, count, buyout)
     if type(itemID) ~= "number" or itemID <= 0 then
         return
@@ -205,6 +229,10 @@ function PriceLedger.Consider(best, itemID, count, buyout)
     end
 end
 
+--- The unit price of a stack, rounded to the nearest copper.
+-- @param buyout stack buyout in copper
+-- @param count stack size
+-- @return copper per unit
 function PriceLedger.UnitCopper(buyout, count)
     return math.floor((buyout / count) + 0.5)
 end
@@ -212,12 +240,12 @@ end
 local COPPER_PER_SILVER = 100
 local COPPER_PER_GOLD = 100 * COPPER_PER_SILVER
 
---- Writes copper as plain gold, silver and copper text, the way the game
---- does in colorblind mode. The addon draws coin icons with the game's
---- GetMoneyString; this is the fallback if that function is missing.
---- Empty denominations are left out (10005 -> "1g 5c").
----   copper: whole copper, 0 or more
---- Returns the text, for example "1g 2s 3c". Zero is "0c".
+--- Writes copper as plain gold, silver and copper text.
+-- This is the way the game does it in colorblind mode. The addon draws coin
+-- icons with the game's GetMoneyString; this is the fallback if that function
+-- is missing. Empty denominations are left out (10005 -> "1g 5c").
+-- @param copper whole copper, 0 or more
+-- @return the text, for example "1g 2s 3c"; zero is "0c"
 function PriceLedger.CoinText(copper)
     local gold = math.floor(copper / COPPER_PER_GOLD)
     local silver = math.floor(copper / COPPER_PER_SILVER) % 100
@@ -235,14 +263,14 @@ function PriceLedger.CoinText(copper)
     return table.concat(parts, " ")
 end
 
---- Saves one item's price from a scan: the latest price, and the day
---- summary. Days older than DAYS_KEPT are dropped.
----   house: the house table
----   itemID: number
----   unit: unit price in copper
----   qty: how many were listed at that price
----   now: when the scan ran
---- Returns the item's row.
+--- Saves one item's price from a scan: the latest price, and the day summary.
+-- Days older than DAYS_KEPT are dropped.
+-- @param house the house table
+-- @param itemID the item's id
+-- @param unit unit price in copper
+-- @param qty how many were listed at that price
+-- @param now when the scan ran
+-- @return the item's row
 function PriceLedger.Remember(house, itemID, unit, qty, now)
     local row = house.items[itemID]
     if type(row) ~= "table" then
@@ -266,9 +294,15 @@ function PriceLedger.Remember(house, itemID, unit, qty, now)
     return row
 end
 
---- Save one finished scan. Items missing from `best` stay in the
---- house with their old seen time, so a later mouseover can still
---- show the last known price.
+--- Saves one finished scan.
+-- Items missing from `best` stay in the house with their old seen time,
+-- so a later mouseover can still show the last known price. Also sets the
+-- house's scannedAt and the db's lastHouseKey.
+-- @param db the saved table
+-- @param houseKey key of the house that was scanned
+-- @param best the lowest-price table from Consider
+-- @param now when the scan ran
+-- @return how many item prices were saved
 function PriceLedger.Commit(db, houseKey, best, now)
     local house = PriceLedger.EnsureHouse(db, houseKey)
     house.scannedAt = now
@@ -284,12 +318,18 @@ function PriceLedger.Commit(db, houseKey, best, now)
     return saved
 end
 
+--- Rounds to the nearest whole number, halves up.
+-- @param value a number
+-- @return the rounded number
 local function Round(value)
     return math.floor(value + 0.5)
 end
 
 --- Adds up the days from `fromKey` to `toKey`, both included.
---- Returns { scans, days, sum, sumOfSquares, low, high }.
+-- @param days a row's day list
+-- @param fromKey first day key to count
+-- @param toKey last day key to count
+-- @return { scans, days, sum, sumOfSquares, low, high }; low and high are nil with no days
 local function Totals(days, fromKey, toKey)
     local totals = { scans = 0, days = 0, sum = 0, sumOfSquares = 0 }
     for _, day in ipairs(days) do
@@ -306,16 +346,16 @@ local function Totals(days, fromKey, toKey)
 end
 
 --- Stats for one item, measured back from its latest scan's day.
----   row: an item row with unit, seen and days
---- Returns nil for a row with no days, or a table:
----   unit: latest price; seen: when it was seen
----   windows: for 1, 3, 7 and 14 days, { days, scans, low, high, avg }
----   scans, days, low, high: the 14-day window
----   earlierScans: scans in the 7-day window before the latest one
----   typical: average of those earlier scans, rounded, or nil with fewer
----     than TREND_MIN_SCANS of them
----   spread: their sample standard deviation, with typical
----   trend, trendPct, deal, dealPct: PriceLedger.Judge of the latest price
+-- @param row an item row with unit, seen and days
+-- @return nil for a row with no days (or no unit or seen), or a table:
+--   unit: latest price; seen: when it was seen
+--   windows: for 1, 3, 7 and 14 days, { days, scans, low, high, avg }
+--   scans, days, low, high: the 14-day window
+--   earlierScans: scans in the 7-day window before the latest one
+--   typical: average of those earlier scans, rounded, or nil with fewer
+--     than TREND_MIN_SCANS of them
+--   spread: their sample standard deviation, with typical
+--   trend, trendPct, deal, dealPct: PriceLedger.Judge of the latest price
 function PriceLedger.Stats(row)
     if type(row) ~= "table" or type(row.days) ~= "table" or #row.days == 0 then
         return nil
@@ -325,6 +365,7 @@ function PriceLedger.Stats(row)
     end
 
     local latestKey = PriceLedger.DayKey(row.seen)
+    --- The day key `count` days before the latest scan.
     local function KeyDaysBack(count)
         return PriceLedger.DayKey(row.seen - count * SECONDS_PER_DAY)
     end
@@ -365,12 +406,12 @@ function PriceLedger.Stats(row)
     return stats
 end
 
---- Judges a price against an item's saved scans: the latest scan's
---- price, or a live price from a search.
----   stats: from PriceLedger.Stats, or nil
----   price: unit price in copper
---- Returns { trend, trendPct, deal, dealPct }. trend is "up", "down",
---- "flat" or nil (too few earlier scans). deal is true or false.
+--- Judges a price against an item's saved scans.
+-- The price is the latest scan's price, or a live price from a search.
+-- @param stats from PriceLedger.Stats, or nil
+-- @param price unit price in copper
+-- @return { trend, trendPct, deal, dealPct }. trend is "up", "down",
+--   "flat" or nil (too few earlier scans). deal is true or false.
 function PriceLedger.Judge(stats, price)
     local verdict = { deal = false }
     if type(stats) ~= "table" or type(price) ~= "number" or stats.typical == nil then
@@ -395,12 +436,13 @@ function PriceLedger.Judge(stats, price)
     return verdict
 end
 
---- Sums up one item's live listings from a search. Nothing is saved.
----   listings: list of { unitPrice, quantity }; a price of 0 or less is
----     a bid-only listing and is skipped
---- Returns nil when nothing has a price, or
---- { low, atLow, total, listings }: lowest unit price, how many are up
---- at that price, how many are up in all, and how many listings.
+--- Sums up one item's live listings from a search.
+-- Nothing is saved.
+-- @param listings list of { unitPrice, quantity }; a price of 0 or less is
+--   a bid-only listing and is skipped
+-- @return nil when nothing has a price, or
+--   { low, atLow, total, listings }: lowest unit price, how many are up
+--   at that price, how many are up in all, and how many listings
 function PriceLedger.LowestListing(listings)
     local summary
     for _, listing in ipairs(listings) do
@@ -421,6 +463,8 @@ function PriceLedger.LowestListing(listings)
 end
 
 --- A house key as people read it: "Horde|Realm" becomes "Horde, Realm".
+-- @param key a house key
+-- @return the label; "" for a non-string, the key itself when it has no "|"
 function PriceLedger.HouseLabel(key)
     if type(key) ~= "string" then
         return ""
@@ -432,6 +476,10 @@ function PriceLedger.HouseLabel(key)
     return side .. ", " .. realm
 end
 
+--- Seconds left before the next full scan is allowed.
+-- @param replicateAt when the last full-scan request went out, or nil
+-- @param now the current time()
+-- @return seconds to wait, 0 when a scan is allowed now
 function PriceLedger.SecondsUntil(replicateAt, now)
     if type(replicateAt) ~= "number" or type(now) ~= "number" then
         return 0
@@ -443,9 +491,15 @@ function PriceLedger.SecondsUntil(replicateAt, now)
     return left
 end
 
---- Price for a mouseover. The player's own house wins. If that house
---- has never seen the item, the last scanned house is used and its
---- side is returned so the tooltip can say where the price came from.
+--- Price for a mouseover.
+-- The player's own house wins. If that house has never seen the item, the
+-- last scanned house is used and its side is returned so the tooltip can say
+-- where the price came from.
+-- @param db the saved table
+-- @param itemID the item's id
+-- @param homeKey the player's own house key
+-- @return nil when no house has a price, or
+--   { unit, qty, seen, scannedAt, stats, side }; side is nil for the own house
 function PriceLedger.Lookup(db, itemID, homeKey)
     if type(db) ~= "table" or type(db.houses) ~= "table" then
         return nil
@@ -454,6 +508,7 @@ function PriceLedger.Lookup(db, itemID, homeKey)
         return nil
     end
 
+    --- The house and the item's priced row for a house key, or nil.
     local function RowFrom(key)
         if type(key) ~= "string" then
             return nil
@@ -507,9 +562,9 @@ local GREEN = { 32, 255, 32, "20ff20" }
 PriceLedger.DEAL_ICON = "|A:Bonus-Objective-Star:16:16:0:0|a"
 
 --- Arrow and percent for a trend, colored for who is looking.
----   stats: from PriceLedger.Stats, or a table with trend and trendPct
----   view: "buyer" (up is red, down is green) or "seller" (the reverse)
---- Returns markup like an arrow then "+12%", or "" for flat or no trend.
+-- @param stats from PriceLedger.Stats, or a table with trend and trendPct
+-- @param view "buyer" (up is red, down is green) or "seller" (the reverse)
+-- @return markup like an arrow then "+12%", or "" for flat or no trend
 function PriceLedger.TrendText(stats, view)
     if type(stats) ~= "table" or (stats.trend ~= "up" and stats.trend ~= "down") then
         return ""
@@ -523,10 +578,10 @@ function PriceLedger.TrendText(stats, view)
         color[4], rising and "+" or "-", percent)
 end
 
---- Grey "steady +3%" for a price within the trend threshold of its
---- 7-day average, so a quiet price does not look like missing data.
----   verdict: from PriceLedger.Judge
---- Returns the markup, or "" when the trend is up, down or not known yet.
+--- Grey "steady +3%" for a price within the trend threshold of its 7-day average.
+-- This way a quiet price does not look like missing data.
+-- @param verdict from PriceLedger.Judge
+-- @return the markup, or "" when the trend is up, down or not known yet
 function PriceLedger.SteadyText(verdict)
     if type(verdict) ~= "table" or verdict.trend ~= "flat" or type(verdict.trendPct) ~= "number" then
         return ""
@@ -538,6 +593,10 @@ function PriceLedger.SteadyText(verdict)
     return string.format("|cff9d9d9dsteady %s%d%%|r", verdict.trendPct < 0 and "-" or "+", percent)
 end
 
+--- A count and a word, with an "s" unless the count is 1.
+-- @param count a number
+-- @param word the singular word
+-- @return text like "1 scan" or "3 scans"
 local function Plural(count, word)
     if count == 1 then
         return count .. " " .. word
@@ -545,7 +604,10 @@ local function Plural(count, word)
     return count .. " " .. word .. "s"
 end
 
---- "95s - 1g 40s", or one price when the low and high match.
+--- A price range like "95s - 1g 40s", or one price when the low and high match.
+-- @param stats a table with low and high
+-- @param coinText function(copper) -> money text
+-- @return the range text
 function PriceLedger.RangeText(stats, coinText)
     local range = coinText(stats.low)
     if stats.high ~= stats.low then
@@ -554,24 +616,28 @@ function PriceLedger.RangeText(stats, coinText)
     return range
 end
 
---- "9 scans over 6 days".
+--- How many scans over how many days, like "9 scans over 6 days".
+-- @param stats a table with scans and days
+-- @return the text
 function PriceLedger.CountText(stats)
     return Plural(stats.scans, "scan") .. " over " .. Plural(stats.days, "day")
 end
 
---- "7 in 2 listings".
+--- How many are up in how many listings, like "7 in 2 listings".
+-- @param summary from PriceLedger.LowestListing
+-- @return the text
 function PriceLedger.ListingText(summary)
     return summary.total .. " in " .. Plural(summary.listings, "listing")
 end
 
 local RangeText = PriceLedger.RangeText
 
---- One line of saved stats for the window's status line.
----   stats: from PriceLedger.Stats
----   coinText: function(copper) -> money text
---- Returns text like "7-day avg 1g, range 95s - 1g 40s, 9 scans over 6 days".
---- One window as a { left, right } line: "3 days, 3 scans" and
---- "avg 105c (100c - 115c)", or just the price when low and high match.
+--- One window as a { left, right } line.
+-- Left is like "3 days, 3 scans"; right is like "avg 105c (100c - 115c)",
+-- or just the price when low and high match.
+-- @param window one entry of the Stats windows list
+-- @param coinText function(copper) -> money text
+-- @return { left, right }
 local function WindowLine(window, coinText)
     local right = coinText(window.avg)
     if window.low ~= window.high then
@@ -580,12 +646,12 @@ local function WindowLine(window, coinText)
     return { left = Plural(window.days, "day") .. ", " .. Plural(window.scans, "scan"), right = right }
 end
 
---- The saved stats for the Buy details block and the Sell tab: one line
---- per window (1, 3, 7 and 14 days, always all four so each keeps its
---- place), then the std dev of the earlier scans.
----   stats: from PriceLedger.Stats
----   coinText: function(copper) -> money text
---- Returns a list of { left, right }, or nil without stats.
+--- The saved stats for the Buy details block and the Sell tab.
+-- One line per window (1, 3, 7 and 14 days, always all four so each keeps its
+-- place), then the std dev of the earlier scans.
+-- @param stats from PriceLedger.Stats
+-- @param coinText function(copper) -> money text
+-- @return a list of { left, right }, or nil without stats
 function PriceLedger.WindowLines(stats, coinText)
     if type(stats) ~= "table" or type(stats.windows) ~= "table" or type(coinText) ~= "function" then
         return nil
@@ -608,11 +674,11 @@ function PriceLedger.WindowLines(stats, coinText)
 end
 
 --- Tooltip lines for one item.
----   info: from PriceLedger.Lookup
----   coinText: function(copper) -> money text
----   showDetails: true adds the 1/3/7/14-day rows, std dev and deal
---- Returns nil, or a list of { left, right }. A line with a right side
---- is a two-column line.
+-- @param info from PriceLedger.Lookup
+-- @param coinText function(copper) -> money text
+-- @param showDetails true adds the 1/3/7/14-day rows, std dev and deal
+-- @return nil, or a list of { left, right }. A line with a right side
+--   is a two-column line.
 function PriceLedger.TooltipLines(info, coinText, showDetails)
     if type(info) ~= "table" or type(info.unit) ~= "number" then
         return nil

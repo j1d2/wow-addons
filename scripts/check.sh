@@ -15,6 +15,13 @@ set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
+#######################################
+# Print a step heading.
+# Arguments:
+#   The step's name, as one or more words.
+# Outputs:
+#   Writes a blank line and "==> name" to stdout.
+#######################################
 step() { printf '\n==> %s\n' "$*"; }
 
 step "tools"

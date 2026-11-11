@@ -14,6 +14,11 @@ while IFS= read -r name; do
 done < <(compgen -e | grep '^GIT_' || true)
 
 snapshot=""
+#######################################
+# Remove the snapshot folder of the commit being checked, if one is left. Runs on exit.
+# Globals:
+#   snapshot (the folder, or empty)
+#######################################
 cleanup() { [[ -z "$snapshot" || ! -d "$snapshot" ]] || rm -r "$snapshot"; }
 trap cleanup EXIT
 

@@ -11,13 +11,24 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
 readonly ROOT="$PWD/.check-tmp/hygiene-test"
 failed=0
 
+#######################################
+# Remove the fixtures folder, .check-tmp/, if it exists. Runs on exit.
+# Globals:
+#   PWD (the repo root, after the cd above)
+#######################################
 cleanup() { [[ ! -d "$PWD/.check-tmp" ]] || rm -r "$PWD/.check-tmp"; }
 trap cleanup EXIT
 
+#######################################
 # Record one result.
-# Args:
-#   $1  check name
-#   $2  0 = passed, anything else = failed
+# Globals:
+#   failed (incremented on a failure)
+# Arguments:
+#   The check's name.
+#   Its status: 0 = passed, anything else = failed.
+# Outputs:
+#   Writes "ok  name" or "FAIL  name" to stdout.
+#######################################
 check() {
     if [[ "$2" -eq 0 ]]; then
         printf 'ok  %s\n' "$1"
@@ -27,14 +38,24 @@ check() {
     fi
 }
 
-# Fresh fixture with one clean file.
+#######################################
+# Make a fresh fixture with one clean file.
+# Globals:
+#   ROOT (the fixture folder; replaced)
+#######################################
 fresh() {
     [[ ! -d "$ROOT" ]] || rm -r "$ROOT"
     mkdir -p "$ROOT"
     printf 'clean line\n' >"$ROOT/clean.txt"
 }
 
-# Run the check on the fixture. Sets out and status.
+#######################################
+# Run hygiene_check.sh on the fixture, listing files with find.
+# Globals:
+#   ROOT
+#   out (set to the check's stdout and stderr)
+#   status (set to its exit status)
+#######################################
 run_check() {
     out="$(HYGIENE_NO_GIT=1 scripts/hygiene_check.sh --root "$ROOT" 2>&1)"
     status=$?

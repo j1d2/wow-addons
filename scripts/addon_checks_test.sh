@@ -11,13 +11,24 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.." || exit 1
 readonly ROOT="$PWD/.check-tmp/addon-test"
 failed=0
 
+#######################################
+# Remove the fixtures folder, .check-tmp/, if it exists. Runs on exit.
+# Globals:
+#   PWD (the repo root, after the cd above)
+#######################################
 cleanup() { [[ ! -d "$PWD/.check-tmp" ]] || rm -r "$PWD/.check-tmp"; }
 trap cleanup EXIT
 
+#######################################
 # Record one result.
-# Args:
-#   $1  check name
-#   $2  0 = passed, anything else = failed
+# Globals:
+#   failed (incremented on a failure)
+# Arguments:
+#   The check's name.
+#   Its status: 0 = passed, anything else = failed.
+# Outputs:
+#   Writes "ok  name" or "FAIL  name" to stdout.
+#######################################
 check() {
     if [[ "$2" -eq 0 ]]; then
         printf 'ok  %s\n' "$1"
@@ -27,7 +38,11 @@ check() {
     fi
 }
 
-# A small addon that passes every check.
+#######################################
+# Make a fresh fixture: a small addon, Demo, that passes every check.
+# Globals:
+#   ROOT (the fixture folder; replaced)
+#######################################
 good_addon() {
     [[ ! -d "$ROOT" ]] || rm -r "$ROOT"
     mkdir -p "$ROOT/addons/Demo" "$ROOT/scripts"
@@ -41,9 +56,13 @@ good_addon() {
         'io.write("all passed\\n")' >"$ROOT/addons/Demo/demo_test.lua"
 }
 
-# The good addon, plus Demo.Pick, which the test never calls: lines 6, 7 and 9 never run.
+#######################################
+# Make the good addon, plus Demo.Pick, which the test never calls: lines 6, 7 and 9 never run.
 # Lines 4 and 10 (each function's end) run when the file loads: that is where luac puts the
 # CLOSURE that makes the function.
+# Globals:
+#   ROOT (the fixture folder; replaced)
+#######################################
 coverage_addon() {
     good_addon
     printf '%s\n' 'local Demo = {}' 'function Demo.Add(a, b)' '    return a + b' 'end' \
@@ -53,9 +72,15 @@ coverage_addon() {
         'assert(Demo.Add(1, 2) == 3)' 'io.write("all passed\\n")' >"$ROOT/addons/Demo/demo_test.lua"
 }
 
-# Run one check on the fixture. Sets out and status.
-# Args:
-#   $1  check name for addon_checks.sh
+#######################################
+# Run one check of addon_checks.sh on the fixture.
+# Globals:
+#   ROOT
+#   out (set to the check's stdout and stderr)
+#   status (set to its exit status)
+# Arguments:
+#   The check name for addon_checks.sh, such as syntax or all.
+#######################################
 run_check() {
     out="$(scripts/addon_checks.sh --root "$ROOT" "$1" 2>&1)"
     status=$?

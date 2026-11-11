@@ -9,6 +9,9 @@ dofile(folder .. "/PriceLedger.lua")
 local P = HouseLedgerPrice
 local failed = 0
 
+--- Records one check: prints "ok  <name>", or "FAIL  <name>" and counts the failure.
+-- @param name what the check proves
+-- @param ok true when it passed
 local function Check(name, ok)
     if ok then
         io.write("ok  " .. name .. "\n")
@@ -18,6 +21,9 @@ local function Check(name, ok)
     io.write("FAIL  " .. name .. "\n")
 end
 
+--- A plain stand-in for the money formatter, so expected text stays short.
+-- @param copper whole copper
+-- @return text like "105c"
 local function Coins(copper)
     return tostring(copper) .. "c"
 end
@@ -52,10 +58,20 @@ end
 local NOON = os.time({ year = 2026, month = 11, day = 1, hour = 12 })
 local DAY = 24 * 60 * 60
 
+--- A time on a day counted from day 0, at noon.
+-- @param dayOffset days from day 0; negative is earlier
+-- @param seconds optional seconds after noon
+-- @return a time() value
 local function At(dayOffset, seconds)
     return NOON + dayOffset * DAY + (seconds or 0)
 end
 
+--- Commits one scan of item 4306 at house "Alliance|Test".
+-- @param db the saved table to commit to
+-- @param dayOffset day of the scan, from day 0
+-- @param unit the unit price in copper
+-- @param seconds optional seconds after noon
+-- @return the item's row
 local function ScanOn(db, dayOffset, unit, seconds)
     local best = {}
     P.Consider(best, 4306, 1, unit)
@@ -63,8 +79,11 @@ local function ScanOn(db, dayOffset, unit, seconds)
     return db.houses["Alliance|Test"].items[4306]
 end
 
---- Saves one scan per day at the given unit prices, starting `#lows` days
---- before day 0, then one scan on day 0 at `today`. Returns the row.
+--- Saves one scan per day at the given unit prices, then one on day 0.
+-- The scans start `#lows` days before day 0, into a fresh db.
+-- @param lows unit prices for the days before day 0, oldest first
+-- @param today the unit price on day 0
+-- @return the item's row
 local function History(lows, today)
     local db = P.EmptyDB()
     for index, unit in ipairs(lows) do
@@ -176,6 +195,8 @@ do
 end
 
 --- Saves scans of item 4306 on day 0, 15 minutes apart, at these prices.
+-- @param prices unit prices in scan order
+-- @return the item's row
 local function SameDay(prices)
     local db = P.EmptyDB()
     local row
@@ -360,6 +381,9 @@ do
 end
 
 --- Saves daily scans of item 4306 into a fresh db and looks it up.
+-- @param lows unit prices for the days before day 0, oldest first
+-- @param today the unit price on day 0
+-- @return the PriceLedger.Lookup result for "Alliance|Test"
 local function InfoFor(lows, today)
     local db = P.EmptyDB()
     for index, unit in ipairs(lows) do
