@@ -46,9 +46,17 @@ shellcheck --severity=style scripts/*.sh .githooks/*
 echo "shellcheck passed."
 
 step "check-script self-tests"
+# On success print the last line; on failure print every FAIL line, so CI and the hooks name
+# the broken checks instead of only the count.
 for test in scripts/*_test.sh; do
     printf '%s: ' "$test"
-    "$test" | tail -n 1
+    if out="$("$test" 2>&1)"; then
+        tail -n 1 <<<"$out"
+    else
+        echo "failed"
+        grep -E '^FAIL' <<<"$out" || printf '%s\n' "$out"
+        exit 1
+    fi
 done
 
 step "addon checks: syntax, globals, toc, policy, version"
