@@ -3,3 +3,6 @@
 
 # HouseLedger: SavedVariables table from HouseLedger.toc
 HouseLedgerDB
+
+# Unmaker: SavedVariables table from Unmaker.toc
+UnmakerDB
