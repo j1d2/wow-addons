@@ -38,7 +38,7 @@ jobs:
 
       - name: The tag must point at a commit on main
         run: |
-          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+          if ! git merge-base --is-ancestor HEAD origin/main; then
             echo "::error::$TAG is not on main. Tag a commit that is merged into main."
             exit 1
           fi
