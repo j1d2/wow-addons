@@ -4,7 +4,8 @@
 # The tag must name an addon folder and match the version in its .toc, and the addon's
 # CHANGELOG.md must have a section for that version. The zip holds one folder named after the
 # addon, which players copy into Interface/AddOns: the .toc files, the files they list,
-# CHANGELOG.md, and the repo's LICENSE and NOTICE (Apache License 2.0, section 4). Test files
+# Bindings.xml if there is one, CHANGELOG.md, and the repo's LICENSE and NOTICE (Apache License
+# 2.0, section 4). Test files
 # never ship. With SOURCE_DATE_EPOCH set, every file gets that time, so one commit always
 # gives the same zip.
 #
@@ -135,6 +136,8 @@ for toc_file in "$dir"/*.toc; do
     done < <(toc_entries "$toc_file")
 done
 cp "$changelog" "$ROOT/LICENSE" "$ROOT/NOTICE" "$dest/"
+# The game loads Bindings.xml by its name, not from the .toc, so it ships when present.
+[[ ! -f "$dir/Bindings.xml" ]] || cp "$dir/Bindings.xml" "$dest/"
 
 # Same modes and, with SOURCE_DATE_EPOCH, the same times on every build.
 find "$stage" -type d -exec chmod 755 {} +

@@ -51,6 +51,7 @@ good_repo() {
     printf 'local Demo = {}\n' >"$ROOT/addons/Demo/Demo.lua"
     printf 'local Window = {}\n' >"$ROOT/addons/Demo/ui/Window.lua"
     printf 'assert(true)\n' >"$ROOT/addons/Demo/demo_test.lua"
+    printf '<Bindings>\n</Bindings>\n' >"$ROOT/addons/Demo/Bindings.xml"
     cat >"$ROOT/addons/Demo/CHANGELOG.md" <<'EOF'
 # Changelog
 
@@ -90,10 +91,10 @@ if [[ -f "$OUT/Demo-1.2.3.zip" ]]; then rc=0; else rc=1; fi
 check "zip is named <Addon>-<version>.zip" "$rc"
 
 listing="$(unzip -Z1 "$OUT/Demo-1.2.3.zip" 2>/dev/null | LC_ALL=C sort || true)"
-expected="$(printf '%s\n' Demo/CHANGELOG.md Demo/Demo.lua Demo/Demo.toc Demo/LICENSE \
+expected="$(printf '%s\n' Demo/Bindings.xml Demo/CHANGELOG.md Demo/Demo.lua Demo/Demo.toc Demo/LICENSE \
     Demo/NOTICE Demo/ui/Window.lua | LC_ALL=C sort)"
 if [[ "$listing" == "$expected" ]]; then rc=0; else rc=1; fi
-check "zip holds the addon folder: .toc, listed files, CHANGELOG, LICENSE, NOTICE" "$rc"
+check "zip holds the addon folder: .toc, listed files, Bindings.xml, CHANGELOG, LICENSE, NOTICE" "$rc"
 if [[ -n "$listing" && "$listing" != *"_test.lua"* ]]; then rc=0; else rc=1; fi
 check "zip leaves out test files" "$rc"
 
