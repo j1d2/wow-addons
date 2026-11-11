@@ -1,0 +1,5 @@
+# Text is stored and checked out with LF line endings on every system, Windows included.
+# The hygiene check rejects CRLF, and bash scripts and git hooks fail with it.
+* text=auto eol=lf
+*.png binary
+*.zip binary

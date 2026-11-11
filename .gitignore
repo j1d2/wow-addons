@@ -10,3 +10,6 @@ luac.out
 .claude/
 CLAUDE.md
 CLAUDE.local.md
+
+# Release zips built by scripts/package_addon.sh.
+dist/
