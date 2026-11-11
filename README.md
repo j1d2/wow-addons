@@ -32,6 +32,7 @@ These are unofficial player addons. They are not affiliated with, endorsed by, o
    - **Windows 11:** `C:\Program Files (x86)\World of Warcraft\_forever_\Interface\AddOns`
    - **macOS:** `/Applications/World of Warcraft/_forever_/Interface/AddOns`
    - **Linux (Wine, Lutris and the like):** the same `World of Warcraft/_forever_/Interface/AddOns` path inside your Wine prefix's `Program Files (x86)`
+   - New to WoW on Linux? [wow-battlenet-linux](https://github.com/j1d2/wow-battlenet-linux) is a guide to installing Battle.net and WoW Forever with Lutris.
 4. Quit the game, then move the addon's folder into `AddOns`. The `.toc` file must sit one level down: `AddOns/HouseLedger/HouseLedger.toc`, not `AddOns/HouseLedger-0.3.0/HouseLedger/HouseLedger.toc`.
 5. Start the game. On the character screen, click **AddOns** and make sure the addon is ticked.
 
