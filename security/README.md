@@ -55,7 +55,7 @@ Set on GitHub, not in files, so they are written down here. Re-check them after 
 4. Turn on CodeQL default setup. It checks the workflow files; it has no Lua support.
 5. Check the community profile under **Insights**. Every file it asks for is already here.
 
-## Addon security review (2026-11-09, HouseLedger)
+## Addon security reviews (HouseLedger 2026-11-09, Unmaker 2026-11-11)
 
 An addon runs inside the game client's Lua sandbox, which Blizzard controls. The review looked at what the addon itself could get wrong.
 
@@ -64,6 +64,13 @@ An addon runs inside the game client's Lua sandbox, which Blizzard controls. The
 - **Saved data:** `HouseLedgerDB` is a local file the player owns. `PriceLedger.EnsureDB` and the lookup code check types before use, so a damaged file can't crash the tooltip.
 - **User input:** search text goes only to Blizzard's `SendBrowseQuery` (from a click or Enter) and back into the addon's own status line.
 - **Privacy:** seller names are never saved. The HouseLedger harness (`houseledger_test.lua`) feeds seller names in and checks that none reach saved data.
+
+**Unmaker (2026-11-11):**
+
+- **Casting:** only Blizzard's secure button casts, on the player's click, and only on the exact bag item the row shows. The policy check blocks addon code from casting or using bag items.
+- **Slash command:** `/unmaker` only opens or closes the window.
+- **No messages:** it sends no chat or addon messages.
+- **Saved data:** `UnmakerDB` holds the settings and the item IDs the player keeps. `UnmakerRules.EnsureDB` repairs a damaged file.
 
 Verdict: low risk. Recheck this section when an addon adds chat or addon messages, slash commands that run actions, or reads data from other players. The policy check makes the first of those visible: each such call needs a `-- reviewed:` note.
 

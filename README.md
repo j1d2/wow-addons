@@ -20,6 +20,7 @@ These are unofficial player addons. They are not affiliated with, endorsed by, o
 | Addon | In one line |
 | --- | --- |
 | [HouseLedger](#houseledger) | Remembers auction house prices, so you can see what's cheap today and what to sell for. |
+| [Unmaker](#unmaker) | Lists the gear in your bags you can disenchant. Uncheck what to keep, then click through the rest. |
 
 ## Install
 
@@ -84,6 +85,42 @@ Its Buy and Sell tabs switch Blizzard's tabs too, and the reverse.
 - It does not save seller names or send anything to other players.
 
 [`RULES.md`](RULES.md) lists everything these addons may and may not do.
+
+---
+
+## Unmaker
+
+Disenchanting without the hunt through your bags. One window lists everything you can disenchant.
+
+### TL;DR
+
+- **Open it** with `/unmaker`, or the **Unmaker** button above your bags.
+- **Every Uncommon, Rare and Epic** weapon and armor piece in your bags is listed. **Uncheck** what you want to keep; Unmaker remembers.
+- **Disenchant next** disenchants the next checked item. One click per item, which is Blizzard's rule. Bind it to a key in the game's Key Bindings menu.
+- **Epics and soulbound gear start unchecked.** Change that on the **Settings** tab.
+- **Never** disenchants without your click, and does nothing in combat.
+
+### How to use it
+
+1. Open the window. It needs a character that knows Disenchant (Enchanting).
+2. Uncheck anything you want to keep.
+3. Click **Disenchant next** once per item, and take the loot. The button waits until the loot window closes, then moves to the next item.
+4. Or click a row and use **Disenchant selected** for just that item. It only works on a checked item.
+
+### Good to know
+
+- An item you uncheck stays unchecked next time, on every character. Checking an Epic or soulbound item only lasts until you log out.
+- Before every cast, Unmaker checks the bag slot still holds that exact item. If your bags changed, nothing happens and the list updates.
+- Items in a saved equipment set are hidden.
+- If the game refuses an item, it leaves the list until you log out.
+- **Settings tab:** keep epics, keep soulbound gear, hide equipment-set items, open when you loot gear to disenchant, and open with your bags.
+- With a fast-loot addon the button may stay locked a little longer. It unlocks by itself after 10 seconds.
+
+### What it does not do
+
+- It never disenchants more than one item per click, never clicks for you, and never casts from a timer.
+- It does nothing in combat. The window waits until the fight ends to open or close.
+- It doesn't sell, mail, or delete anything, and it sends nothing to other players.
 
 ---
 
