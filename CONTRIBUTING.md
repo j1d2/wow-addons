@@ -112,7 +112,7 @@ A disenchanting list. Read the Disenchanting part of [`RULES.md`](RULES.md) befo
 - The buttons stay locked from the cast's start until the loot window closes and the bags update, with a 10-second fallback.
 - The secure buttons make the window protected. Showing, hiding and moving wait for combat to end.
 
-**Trying it in game:** use a character with Enchanting. Check a full cycle (cast, loot, unlock), an Epic (starts unchecked), an item the game refuses, an equipment-set item (hidden), the key binding, and combat (clicks do nothing).
+**Trying it in game:** use a character with Enchanting. Check a full cycle (cast, loot, unlock), an Epic (starts unchecked), a failed cast (moving) that keeps the item, an equipment-set item (hidden), the key binding, and combat (clicks do nothing).
 
 ---
 

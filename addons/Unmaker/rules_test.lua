@@ -113,13 +113,8 @@ do
     rows = R.BuildRows(items, db, session, { [4] = true })
     Check("set items show when Hide set items is off", #rows == 4)
 
-    session.refused["0:2"] = "|Hitem:100|h[Green Vest]|h"
-    rows = R.BuildRows(items, db, session, {})
-    local names = {}
-    for _, row in ipairs(rows) do
-        names[row.name] = true
-    end
-    Check("an item the game refused stays off the list this session", not names["Alpha Ring"])
+    Check("a new session holds only this session's choices", next(R.NewSession().choice) == nil
+        and R.NewSession().refused == nil)
 end
 
 -- Checking and unchecking

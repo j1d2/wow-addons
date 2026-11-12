@@ -112,7 +112,7 @@ Disenchanting without the hunt through your bags. One window lists everything yo
 - An item you uncheck stays unchecked next time, on every character. Checking an Epic or soulbound item only lasts until you log out.
 - Before every cast, Unmaker checks the bag slot still holds that exact item. If your bags changed, nothing happens and the list updates.
 - Items in a saved equipment set are hidden.
-- If the game refuses an item, it leaves the list until you log out.
+- If a disenchant fails (you moved, say), the item stays on the list and the window shows the game's reason. If the game won't disenchant an item at all, uncheck it.
 - **Settings tab:** keep epics, keep soulbound gear, hide equipment-set items, open when you loot gear to disenchant, and open with your bags.
 - With a fast-loot addon the button may stay locked a little longer. It unlocks by itself after 10 seconds.
 

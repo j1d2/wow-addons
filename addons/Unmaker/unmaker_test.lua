@@ -85,7 +85,8 @@ function FrameMethods:CreateTexture() return NewFrame("Texture", nil, self) end
 function FrameMethods:CreateFontString() return NewFrame("FontString", nil, self) end
 function FrameMethods:StartMoving() self.moving = true end
 function FrameMethods:StopMovingOrSizing() self.moving = false end
-for _, method in ipairs({ "SetSize", "SetPoint", "SetAllPoints", "SetColorTexture", "SetJustifyH",
+for _, method in ipairs({ "SetSize", "SetPoint", "SetAllPoints", "SetColorTexture", "SetJustifyH", "SetJustifyV",
+    "SetHeight",
     "RegisterForDrag", "EnableMouse", "EnableMouseWheel", "SetMovable",
     "SetClampedToScreen", "SetFrameStrata", "SetTitle", "SetPortraitToAsset", "SetID" }) do
     FrameMethods[method] = function() end
@@ -221,7 +222,7 @@ end
 local function Lines()
     local count, status
     for _, f in ipairs(world.frames) do
-        if f.kind == "FontString" and f.parent == _G.UnmakerFrame then
+        if f.kind == "FontString" and f.parent and f.parent.scripts.OnMouseWheel then
             if count == nil then
                 count = f.text
             else
@@ -381,13 +382,15 @@ do
     _G.SlashCmdList.UNMAKER("")
     local axe = ShownRows()[1]
     axe:GetScript("OnClick")(axe)
-    Check("clicking a row selects it", axe.highlight.shown and _G.UnmakerSelectedButton.enabled)
+    Check("clicking a row selects it", axe.highlight.shown)
+    Check("Disenchant selected stays off while the selected row is unchecked", not _G.UnmakerSelectedButton.enabled)
     Click(_G.UnmakerSelectedButton)
     Check("Disenchant selected won't touch an unchecked item", #world.casts == 0)
     local _, status = Lines()
     Check("and says to check it first", status:find("first", 1, true) ~= nil)
     axe.check:SetChecked(true)
     axe.check:GetScript("OnClick")(axe.check)
+    Check("checking it turns Disenchant selected on", _G.UnmakerSelectedButton.enabled)
     Click(_G.UnmakerSelectedButton)
     Check("once checked, Disenchant selected casts on that item", #world.casts == 1
         and world.casts[1].bag == 0 and world.casts[1].slot == 3)
@@ -415,15 +418,26 @@ do
     Start({ bags = StandardBags() })
     _G.SlashCmdList.UNMAKER("")
     Click(_G.UnmakerNextButton)
+    Fire("UI_ERROR_MESSAGE", 50, "Can't do that while moving")
     Fire("UNIT_SPELLCAST_FAILED", "player", "guid", 13262)
-    Check("an item the game refuses leaves the list", #ShownRows() == 3)
+    Check("a failed cast keeps the item on the list", #ShownRows() == 4)
     local _, status = Lines()
-    Check("and the status line says so", status:find("couldn't be disenchanted", 1, true) ~= nil)
-    Check("the buttons unlock after a refusal", _G.UnmakerNextButton.enabled)
+    Check("and the status line gives the game's reason", status:find("Can't do that while moving", 1, true) ~= nil)
+    Check("the buttons unlock after a failure", _G.UnmakerNextButton.enabled)
+    Click(_G.UnmakerNextButton)
+    Fire("UNIT_SPELLCAST_FAILED", "player", "guid", 13262)
+    Fire("UI_ERROR_MESSAGE", 51, "That item is not a valid target.")
+    _, status = Lines()
+    Check("the reason shows when the game's message comes after the failure",
+        status:find("not a valid target", 1, true) ~= nil and #ShownRows() == 4)
+    Fire("UI_ERROR_MESSAGE", 52, "Not enough rage")
+    _, status = Lines()
+    Check("a later, unrelated error message doesn't change the status line",
+        status:find("not a valid target", 1, true) ~= nil)
     Click(_G.UnmakerNextButton)
     Fire("UNIT_SPELLCAST_START", "player", "guid", 13262)
     Fire("UNIT_SPELLCAST_INTERRUPTED", "player", "guid", 13262)
-    Check("an interrupted cast unlocks and keeps the item", _G.UnmakerNextButton.enabled and #ShownRows() == 3)
+    Check("an interrupted cast unlocks and keeps the item", _G.UnmakerNextButton.enabled and #ShownRows() == 4)
     Fire("UNIT_SPELLCAST_START", "party1", "guid", 13262)
     Fire("UNIT_SPELLCAST_START", "player", "guid", 999)
     Check("other people's casts and other spells are ignored", _G.UnmakerNextButton.enabled)
@@ -483,6 +497,14 @@ do
     _G.SlashCmdList.UNMAKER("")
     _G.UnmakerFrameTab2:GetScript("OnClick")(_G.UnmakerFrameTab2)
     Check("the Settings tab shows its checkboxes", world.tab == 2)
+    local countLine
+    for _, f in ipairs(world.frames) do
+        if f.kind == "FontString" and f.text and f.text:find("of %d+ checked") then
+            countLine = f
+        end
+    end
+    Check("the count line belongs to the Items tab, so it hides on Settings",
+        countLine ~= nil and countLine.parent.shown == false)
     local boxes = {}
     for _, f in ipairs(world.frames) do
         if f.kind == "CheckButton" and f.key then

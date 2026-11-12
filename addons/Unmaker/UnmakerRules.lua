@@ -64,14 +64,14 @@ function R.EnsureDB(db)
     return db
 end
 
---- A fresh session: choices and refusals that last until logout or /reload.
--- @return { choice = { [itemID] = checked }, refused = { ["bag:slot"] = link } }
+--- A fresh session: choices that last until logout or /reload.
+-- @return { choice = { [itemID] = checked } }
 function R.NewSession()
-    return { choice = {}, refused = {} }
+    return { choice = {} }
 end
 
---- Whether an item can be disenchanted at all. Some items the rules allow are still refused
--- by the game; Unmaker.lua then marks them refused for the session.
+--- Whether an item can be disenchanted at all. If the game still refuses one, Unmaker.lua
+-- shows the game's reason and the player can uncheck it.
 -- @param item an item table
 -- @return true, or false and the reason: "unknown", "quality", "class", "slot" or "cosmetic"
 function R.CanDisenchant(item)
@@ -139,16 +139,8 @@ function R.SetChecked(db, session, item, checked)
     end
 end
 
---- The key a refused bag slot is stored under.
--- @param bag bag index
--- @param slot slot index
--- @return text like "0:2"
-function R.SlotKey(bag, slot)
-    return bag .. ":" .. slot
-end
-
 --- Turn the bag items into the window's rows: only items that can be disenchanted, without
--- set items (when hidden) or items the game refused this session, best quality first.
+-- set items when those are hidden, best quality first.
 -- @param items list of item tables
 -- @param db the saved data
 -- @param session the session table
@@ -157,8 +149,7 @@ end
 function R.BuildRows(items, db, session, setItemIDs)
     local rows = {}
     for _, item in ipairs(items) do
-        local hidden = (db.settings.hideSetItems and setItemIDs[item.itemID])
-            or session.refused[R.SlotKey(item.bag, item.slot)] == item.link
+        local hidden = db.settings.hideSetItems and setItemIDs[item.itemID]
         if not hidden and R.CanDisenchant(item) then
             item.checked = R.IsChecked(item, db, session)
             rows[#rows + 1] = item

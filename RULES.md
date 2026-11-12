@@ -40,7 +40,7 @@ Sources:
 - **Not allowed:** casting or using bag items from addon code (`CastSpellByName`, `CastSpellByID`, `SpellTargetItem`, `UseContainerItem`, `PickupContainerItem`). `scripts/addon_checks.sh policy` blocks them.
 - **Not allowed:** one click that disenchants more than one item, a timer or loop that clicks, or changing the button in combat. In combat the button is left empty, so a click does nothing.
 - Before each cast the bag slot must still hold the row's exact item (item ID and link). If not, nothing is cast.
-- Unverified on Forever: whether Enchanting skill limits what can be disenchanted. Unmaker doesn't guess. If the game refuses an item, Unmaker skips it until logout.
+- Unverified on Forever: whether Enchanting skill limits what can be disenchanted. Unmaker doesn't guess. If a cast fails, Unmaker keeps the item and shows the game's reason; the player unchecks an item the game won't take.
 
 ## Allowed only with a reason
 

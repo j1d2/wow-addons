@@ -18,8 +18,13 @@ local DISENCHANT_SPELL = 13262
 local BAGS = { 0, 1, 2, 3, 4 } -- the backpack and four bags; the reagent bag holds no gear
 local ROW_COUNT = 10
 local ROW_HEIGHT = 24
-local WIDTH = 380
-local HEIGHT = 120 + ROW_COUNT * ROW_HEIGHT
+local WIDTH = 400
+local LIST_TOP = 64 -- the list starts this far below the window's top edge
+local LIST_HEIGHT = ROW_COUNT * ROW_HEIGHT
+-- Under the list: the count line, the status line (room for two lines of text), then the buttons.
+local TEXT_HEIGHT = 56
+local BUTTON_AREA = 40
+local HEIGHT = LIST_TOP + LIST_HEIGHT + TEXT_HEIGHT + BUTTON_AREA
 -- After a cast, wait at most this many seconds for the loot and bag news before unlocking
 -- the buttons, so a missed event can't leave them stuck.
 local UNLOCK_AFTER = 10
@@ -34,6 +39,8 @@ local state = "idle" -- idle, casting (the cast bar is up) or waiting (loot and 
 local pending
 local lootOpen = false
 local lootSeen = false -- a loot window opened for the current cast
+local lastError -- the game's red error text during the current attempt
+local awaitingReason = false -- a cast failed and its error text hasn't come yet
 local bagsSettled = false
 local waited = 0
 local seenLinks
@@ -137,7 +144,7 @@ local function UpdateButtons()
     end
     local ready = state == "idle" and KnowsDisenchant()
     local count = R.CountChecked(rows)
-    selectedButton:SetEnabled(ready and selected ~= nil)
+    selectedButton:SetEnabled(ready and selected ~= nil and selected.checked == true)
     nextButton:SetEnabled(ready and count > 0)
     nextButton:SetText(count > 0 and string.format("Disenchant next (%d)", count) or "Disenchant next")
 end
@@ -210,6 +217,8 @@ local function PrepareCast(button, row)
         return
     end
     ClearCast(button)
+    lastError = nil
+    awaitingReason = false
     if state ~= "idle" or not row or not KnowsDisenchant() then
         return
     end
@@ -442,8 +451,8 @@ local function BuildFrame()
     frame:Hide()
 
     itemsPanel = CreateFrame("Frame", nil, frame)
-    itemsPanel:SetPoint("TOPLEFT", frame, "TOPLEFT", 12, -64)
-    itemsPanel:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -12, 64)
+    itemsPanel:SetPoint("TOPLEFT", frame, "TOPLEFT", 12, -LIST_TOP)
+    itemsPanel:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -12, BUTTON_AREA)
     itemsPanel:EnableMouseWheel(true)
     itemsPanel:SetScript("OnMouseWheel", function(_, delta)
         offset = math.max(0, math.min(offset - delta, #rows - ROW_COUNT))
@@ -453,14 +462,17 @@ local function BuildFrame()
         rowFrames[index] = BuildRow(index)
     end
 
-    countText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    countText:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 16, 52)
+    -- The count and status lines belong to the Items tab, so they hide on Settings.
+    countText = itemsPanel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    countText:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -(LIST_TOP + LIST_HEIGHT + 8))
     countText:SetPoint("RIGHT", frame, "RIGHT", -16, 0)
     countText:SetJustifyH("LEFT")
-    statusText = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    statusText:SetPoint("TOPLEFT", countText, "BOTTOMLEFT", 0, -2)
+    statusText = itemsPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    statusText:SetPoint("TOPLEFT", countText, "BOTTOMLEFT", 0, -4)
     statusText:SetPoint("RIGHT", frame, "RIGHT", -16, 0)
     statusText:SetJustifyH("LEFT")
+    statusText:SetJustifyV("TOP")
+    statusText:SetHeight(TEXT_HEIGHT - 20)
 
     selectedButton = BuildCastButton("UnmakerSelectedButton", "Disenchant selected", function()
         return selected
@@ -581,14 +593,31 @@ function handlers.UNIT_SPELLCAST_SUCCEEDED(unit, _, spellID)
     end
 end
 
+--- The status line after a failed cast. The item stays on the list: most failures (moving,
+-- another cast, combat) say nothing about the item. One the game won't take, the player unchecks.
+-- @param reason the game's red error text, or nil when it hasn't come
+-- @return the status text
+local function FailText(reason)
+    return "Disenchant failed" .. (reason and (": " .. reason) or ".")
+        .. " If the game won't disenchant this item, uncheck it."
+end
+
 function handlers.UNIT_SPELLCAST_FAILED(unit, _, spellID)
     if IsDisenchant(unit, spellID) and state ~= "waiting" then
-        local row = pending
-        if row then
-            session.refused[R.SlotKey(row.bag, row.slot)] = row.link
-        end
-        Unlock(row and ((row.link or row.name) .. " couldn't be disenchanted. It's off the list until you log out.")
-            or "Disenchant failed.")
+        local reason = lastError
+        lastError = nil
+        awaitingReason = reason == nil
+        Unlock(FailText(reason))
+    end
+end
+
+-- The game's red error text. It can come just before or just after the failed cast.
+function handlers.UI_ERROR_MESSAGE(_, message)
+    if awaitingReason then
+        awaitingReason = false
+        Status(FailText(message))
+    elseif pending then
+        lastError = message
     end
 end
 
