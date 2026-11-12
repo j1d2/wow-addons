@@ -47,8 +47,8 @@ Auction house prices, remembered. One Scan a day builds a 14-day price history o
 
 ### TL;DR
 
-- **Scan** at the auction house saves today's prices (once each 15 minutes).
-- **Hover any item:** the last price, a trend arrow and a deal icon. Hold **Shift** for more.
+- **Scan** at the auction house saves today's prices. You can scan every 15 minutes; once a day builds the history.
+- **Hover any item:** the last price, a trend arrow and a ⭐ for a deal. Hold **Shift** for the 1, 3, 7 and 14-day averages and ranges.
 - **Buy tab:** search, then compare today's price with your 7-day average. Click a row for 1, 3, 7 and 14 days.
 - **Sell tab:** drop an item in to see the lowest price now and its history. Then post it in Blizzard's window.
 - **Never** buys, posts or scans by itself.
@@ -57,7 +57,22 @@ Auction house prices, remembered. One Scan a day builds a 14-day price history o
   <img src="docs/screenshots/houseledger-buy.png" alt="HouseLedger Buy tab: search results with price, available, 7-day average and trend, and the saved stats for the selected row" width="420">
   <img src="docs/screenshots/houseledger-sell.png" alt="HouseLedger Sell tab: lowest price now, how many are up, and saved averages over 1, 3, 7 and 14 days with the trend" width="420">
 </p>
-<p align="center"><sub>Buy tab (left) and Sell tab (right). Game art in the screenshots © Blizzard Entertainment, Inc.</sub></p>
+
+**Buy tab** (left):
+1. **Search:** type a name and click **Search**. **Clear** empties the list.
+2. **Scan:** saves today's prices for the whole auction house (every 15 minutes at most).
+3. **Price** is the cheapest one up right now; **Avg 7d** is your saved 7-day average.
+4. **Trend:** a green arrow means cheaper than usual, a red one pricier, grey "steady" about the same, and a ⭐ marks a deal.
+5. **Click a row** for its saved prices over 1, 3, 7 and 14 days.
+
+**Sell tab** (right):
+1. **Drop an item** here, or right-click it in your bags.
+2. **Right now:** the lowest price up, how many are at that price, and how many in all.
+3. **History:** your saved averages and ranges over 1, 3, 7 and 14 days.
+4. **Trend** against your 7-day average.
+5. **Reset** empties the tab; **Scan** saves today's prices.
+
+<p align="center"><sub>Game art in the screenshots © Blizzard Entertainment, Inc.</sub></p>
 
 ### How to use it
 
