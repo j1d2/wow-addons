@@ -28,6 +28,7 @@ The scans print only the file, line and rule, never the matched text, so CI logs
 - No third-party packages. The checks are plain bash plus the Lua 5.1 tools.
 - CI installs only Ubuntu's own `lua5.1` and `shellcheck` packages, on a GitHub-hosted runner.
 - Only GitHub's own actions are used (`actions/checkout`, and `actions/attest-build-provenance` for releases), each pinned to a full commit SHA. Dependabot proposes updates after a 14-day cooldown.
+- The `client-watch` workflow reads two outside sources as data, never code: Blizzard's version server (`us.version.battle.net`) and the community mirror of Blizzard's interface code (`Gethe/wow-ui-source`). Its token can read the repo and open issues, nothing else.
 - Release zips are built by the `release` workflow from a tag on `main`, after the full gate passes, and get a signed build-provenance record. Check a zip with `gh attestation verify <zip> --repo j1d2/wow-addons`.
 - A dedicated secret scanner such as gitleaks would add more rules. It is a third-party tool, so it is not used without the owner's OK.
 

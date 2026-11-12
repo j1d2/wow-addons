@@ -123,6 +123,28 @@ Tags and published releases can't be changed or deleted. A mistake gets a new PA
 
 To build the zip locally without releasing: `scripts/package_addon.sh HouseLedger-vX.Y.Z dist`. To check a downloaded zip was built here: `gh attestation verify HouseLedger-X.Y.Z.zip --repo j1d2/wow-addons`.
 
+## Client updates
+
+Blizzard updates the Forever client often, usually in the Tuesday maintenance from 8:00 AM Pacific. Two kinds of update matter here:
+
+- **A new version** (1.60.1 to 1.61.0) raises the interface number (16001 to 16100). The game then marks every addon with a lower `## Interface:` as out of date, and players must tick "Load out of date AddOns" to use it.
+- **A new build** of the same version (70862 to 70888) keeps the interface number, but can still change game functions an addon calls.
+
+The `client-watch` workflow runs `scripts/client_watch.sh` at 11:00 AM and 7:00 PM Pacific, and can be started by hand from the Actions tab. It opens an issue labeled `client-update` when:
+
+- the version's interface number is above an addon's `## Interface:`, with a checklist for each addon; or
+- a build from the last four days changed the documentation of a function or event an addon uses, or a Blizzard file an addon follows (the auction window, the secure button code, the bag windows).
+
+It reads Forever's version from Blizzard's own version server (the one the Battle.net app uses), and the build changes from [Gethe/wow-ui-source](https://github.com/Gethe/wow-ui-source/tree/forever), a community mirror of Blizzard's interface code. It never edits code, raises versions or releases. An addon is updated after it is tested on the new client:
+
+1. Read what changed, run `scripts/check.sh`, and try the addon in game.
+2. Fix what broke, set `## Interface:` to the new number, raise the PATCH version, and add a changelog line.
+3. Merge, then tag and release as above.
+
+Try it without opening issues: `scripts/client_watch.sh --dry-run`.
+
+GitHub can start a scheduled run late, and pauses schedules on a public repo after 60 days with no activity (it emails first); turn it back on from the Actions tab.
+
 ## More
 
 - [CONTRIBUTING.md](../CONTRIBUTING.md): how we work, with notes for each addon
