@@ -101,6 +101,37 @@ Disenchanting without the hunt through your bags. One window lists everything yo
 - **Stats and History tabs:** how many items you've unmade (this session, today, lifetime), the materials you got, fun facts, and a sortable list of every recent disenchant.
 - **Never** disenchants without your click, and does nothing in combat.
 
+<p align="center">
+  <img src="docs/screenshots/unmaker-items.png" alt="Unmaker's Items tab: the Unmade counts, a checkbox list of gear to disenchant, the Disenchant selected and Disenchant next buttons, and the four tabs" width="420">
+  <img src="docs/screenshots/unmaker-bags.png" alt="The Unmaker button above the bag window" width="400">
+</p>
+
+**Items tab** (left):
+1. **Unmade:** how many items you've disenchanted this session and in total.
+2. **Checkboxes:** uncheck what you want to keep. Unmaker remembers.
+3. **Disenchant next:** one click disenchants the next checked item. You can bind it to a key.
+4. **Disenchant selected:** disenchants only the row you clicked, if it's checked.
+5. **Tabs:** Items, Stats, History and Settings.
+
+**Bag window** (right):
+1. The **Unmaker** button above your bags opens and closes the window.
+
+<p align="center">
+  <img src="docs/screenshots/unmaker-stats.png" alt="Unmaker's Stats tab: counts, fun facts and lifetime materials" width="420">
+  <img src="docs/screenshots/unmaker-history.png" alt="Unmaker's History tab: sortable headings and the loot from each disenchant" width="420">
+</p>
+
+**Stats tab** (left):
+1. **Counts:** lifetime, today and this session.
+2. **Fun facts:** your most-unmade item, best item, busiest day and first disenchant.
+3. **Materials:** everything your disenchants have given you.
+
+**History tab** (right):
+1. Click a heading to sort.
+2. **Got:** the materials each disenchant gave.
+
+<p align="center"><sub>Game art in the screenshots © Blizzard Entertainment, Inc.</sub></p>
+
 ### How to use it
 
 1. Open the window. It needs a character that knows Disenchant (Enchanting).
