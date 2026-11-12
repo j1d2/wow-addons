@@ -460,20 +460,21 @@ local function BuildStats()
     for index = 1, #facts do
         local line = {}
         line.label = statsPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-        line.label:SetPoint("TOPLEFT", statsPanel, "TOPLEFT", 0, -(index - 1) * 18)
+        line.label:SetPoint("TOPLEFT", statsPanel, "TOPLEFT", 0, -(index - 1) * 16)
         line.value = statsPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-        line.value:SetPoint("TOPLEFT", statsPanel, "TOPLEFT", 120, -(index - 1) * 18)
+        line.value:SetPoint("TOPLEFT", statsPanel, "TOPLEFT", 120, -(index - 1) * 16)
         line.value:SetPoint("RIGHT", statsPanel, "RIGHT", 0, 0)
         line.value:SetJustifyH("LEFT")
+        line.value:SetWordWrap(false)
         factLines[index] = line
     end
-    local top = #facts * 18 + 10
+    local top = #facts * 16 + 8
     local header = statsPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     header:SetPoint("TOPLEFT", statsPanel, "TOPLEFT", 0, -top)
     header:SetText("Materials (lifetime)")
     for index = 1, MAT_LINES do
         local line = statsPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-        line:SetPoint("TOPLEFT", statsPanel, "TOPLEFT", 12, -(top + index * 18))
+        line:SetPoint("TOPLEFT", statsPanel, "TOPLEFT", 12, -(top + index * 16))
         matLines[index] = line
     end
     statsPanel:Hide()
@@ -524,6 +525,7 @@ local function BuildHistory()
             text:SetPoint("LEFT", rowFrame, "LEFT", column.x, 0)
             text:SetWidth(column.width)
             text:SetJustifyH("LEFT")
+            text:SetWordWrap(false) -- long loot text is cut off, not wrapped into the next row
             rowFrame[field[1]] = text
         end
         rowFrame:SetScript("OnEnter", function()

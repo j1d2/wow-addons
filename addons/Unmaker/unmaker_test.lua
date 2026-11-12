@@ -86,7 +86,7 @@ function FrameMethods:CreateFontString() return NewFrame("FontString", nil, self
 function FrameMethods:StartMoving() self.moving = true end
 function FrameMethods:StopMovingOrSizing() self.moving = false end
 for _, method in ipairs({ "SetSize", "SetPoint", "SetAllPoints", "SetColorTexture", "SetJustifyH", "SetJustifyV",
-    "SetHeight", "SetWidth",
+    "SetHeight", "SetWidth", "SetWordWrap",
     "RegisterForDrag", "EnableMouse", "EnableMouseWheel", "SetMovable",
     "SetClampedToScreen", "SetFrameStrata", "SetTitle", "SetPortraitToAsset", "SetID" }) do
     FrameMethods[method] = function() end
