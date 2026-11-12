@@ -1,0 +1,39 @@
+# Client watch: twice a day, check whether WoW Forever changed in a way these addons care about,
+# and open an issue if so (scripts/client_watch.sh). Blizzard's maintenance is usually Tuesday
+# from 8:00 AM Pacific; the first run is after it, the second catches late builds and the
+# interface-code mirror catching up. It reads and opens issues only: no code, no releases.
+#
+# GitHub may start a scheduled run late, and pauses schedules on a public repo after 60 days
+# with no activity (it emails first). Run it by hand from the Actions tab at any time.
+name: client-watch
+
+on:
+  schedule:
+    - cron: "0 19 * * *"  # 11:00 AM Pacific (12:00 PM in summer time)
+    - cron: "0 3 * * *"   # 7:00 PM Pacific (8:00 PM in summer time)
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: client-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read  # read the addons' .toc files and code
+      issues: write   # open an issue when there is something to do
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Check the Forever client (scripts/client_watch.sh)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          WATCH_ASSIGNEE: ${{ github.repository_owner }}  # issues land in the owner's assigned list
+        run: scripts/client_watch.sh
