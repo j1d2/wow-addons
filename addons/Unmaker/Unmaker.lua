@@ -33,6 +33,7 @@ local selected
 local state = "idle" -- idle, casting (the cast bar is up) or waiting (loot and bags settling)
 local pending
 local lootOpen = false
+local lootSeen = false -- a loot window opened for the current cast
 local bagsSettled = false
 local waited = 0
 local seenLinks
@@ -237,9 +238,11 @@ local function Unlock(message)
     Refresh()
 end
 
---- After a cast: unlock once the loot window is closed and the bags have updated.
+--- After a cast: unlock once this cast's loot window has opened and closed and the bags have
+-- updated. The item leaves the bags before the loot window opens, so a bag update alone is
+-- not enough; the 10-second fallback covers a loot window that never shows.
 local function TryUnlock()
-    if state == "waiting" and bagsSettled and not lootOpen then
+    if state == "waiting" and lootSeen and bagsSettled and not lootOpen then
         Unlock("Done. Click again for the next item.")
     end
 end
@@ -344,7 +347,7 @@ local function BuildCastButton(name, label, pick)
     local button = CreateFrame("Button", name, itemsPanel, "UIPanelButtonTemplate,SecureActionButtonTemplate")
     button:SetSize(170, 24)
     button:SetText(label)
-    button:RegisterForClicks("AnyUp")
+    button:RegisterForClicks("LeftButtonUp") -- only a left click casts; a key binding sends one too
     button:SetAttribute("useOnKeyDown", false)
     button:SetScript("PreClick", function(self)
         PrepareCast(self, pick())
@@ -563,6 +566,8 @@ end
 function handlers.UNIT_SPELLCAST_START(unit, _, spellID)
     if IsDisenchant(unit, spellID) then
         state = "casting"
+        lootSeen = false
+        waited = 0
         Status(pending and ("Disenchanting " .. (pending.link or pending.name) .. "...") or "Disenchanting...")
         UpdateButtons()
     end
@@ -593,8 +598,14 @@ function handlers.UNIT_SPELLCAST_INTERRUPTED(unit, _, spellID)
     end
 end
 
+-- A cast that ends without an error message: unlock, and keep the item on the list.
+handlers.UNIT_SPELLCAST_FAILED_QUIET = handlers.UNIT_SPELLCAST_INTERRUPTED
+
 function handlers.LOOT_READY()
     lootOpen = true
+    if state ~= "idle" then
+        lootSeen = true
+    end
 end
 
 function handlers.LOOT_CLOSED()
@@ -632,9 +643,10 @@ end
 eventFrame:SetScript("OnEvent", function(_, event, ...)
     handlers[event](...)
 end)
--- Only unlocks the buttons if the game never sends the loot and bag news; it never casts.
+-- Only unlocks the buttons if the game never sends the end of the cast, or the loot and bag
+-- news after it; it never casts. It counts from the cast's start and again from its success.
 eventFrame:SetScript("OnUpdate", function(_, elapsed)
-    if state ~= "waiting" or lootOpen then
+    if state == "idle" or lootOpen then
         return
     end
     waited = waited + elapsed

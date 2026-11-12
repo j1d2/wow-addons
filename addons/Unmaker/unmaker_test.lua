@@ -61,6 +61,7 @@ function FrameMethods:SetChecked(checked) self.checked = checked and true or fal
 function FrameMethods:GetChecked() return self.checked end
 function FrameMethods:SetTexture(texture) self.texture = texture end
 function FrameMethods:RegisterEvent(event) self.events[event] = true end
+function FrameMethods:RegisterForClicks(...) self.clicks = table.concat({ ... }, ",") end
 function FrameMethods:SetAttribute(key, value)
     if world.inCombat and self:IsProtected() then
         world.blocked = world.blocked + 1
@@ -85,7 +86,7 @@ function FrameMethods:CreateFontString() return NewFrame("FontString", nil, self
 function FrameMethods:StartMoving() self.moving = true end
 function FrameMethods:StopMovingOrSizing() self.moving = false end
 for _, method in ipairs({ "SetSize", "SetPoint", "SetAllPoints", "SetColorTexture", "SetJustifyH",
-    "RegisterForClicks", "RegisterForDrag", "EnableMouse", "EnableMouseWheel", "SetMovable",
+    "RegisterForDrag", "EnableMouse", "EnableMouseWheel", "SetMovable",
     "SetClampedToScreen", "SetFrameStrata", "SetTitle", "SetPortraitToAsset", "SetID" }) do
     FrameMethods[method] = function() end
 end
@@ -189,7 +190,10 @@ end
 -- @param event event name
 -- @param ... event arguments
 local function Fire(event, ...)
-    world.events:GetScript("OnEvent")(world.events, event, ...)
+    -- The game only sends events the frame registered for.
+    if world.events.events[event] then
+        world.events:GetScript("OnEvent")(world.events, event, ...)
+    end
 end
 
 --- Load the addon and start the session, as the game does after login.
@@ -325,6 +329,39 @@ do
     Check("before the safety time the buttons stay locked", not _G.UnmakerNextButton.enabled)
     onUpdate(world.events, 7)
     Check("if no loot or bag news comes, the buttons unlock after 10 seconds", _G.UnmakerNextButton.enabled)
+end
+
+do
+    Start({ bags = StandardBags() })
+    _G.SlashCmdList.UNMAKER("")
+    Click(_G.UnmakerNextButton)
+    Fire("UNIT_SPELLCAST_START", "player", "guid", 13262)
+    Fire("UNIT_SPELLCAST_SUCCEEDED", "player", "guid", 13262)
+    world.bags[0][2] = nil
+    Fire("BAG_UPDATE_DELAYED")
+    Check("the item leaving the bags before the loot window opens doesn't unlock", not _G.UnmakerNextButton.enabled)
+    Fire("LOOT_READY")
+    Fire("LOOT_CLOSED")
+    Check("it unlocks once that loot window has closed", _G.UnmakerNextButton.enabled)
+end
+
+do
+    Start({ bags = StandardBags() })
+    _G.SlashCmdList.UNMAKER("")
+    Click(_G.UnmakerNextButton)
+    Fire("UNIT_SPELLCAST_START", "player", "guid", 13262)
+    Fire("UNIT_SPELLCAST_FAILED_QUIET", "player", "guid", 13262)
+    Check("a cast that fails quietly unlocks and keeps the item", _G.UnmakerNextButton.enabled and #ShownRows() == 4)
+    Click(_G.UnmakerNextButton)
+    Fire("UNIT_SPELLCAST_START", "player", "guid", 13262)
+    world.events:GetScript("OnUpdate")(world.events, 11)
+    Check("a cast that ends with no news unlocks after 10 seconds", _G.UnmakerNextButton.enabled)
+end
+
+do
+    Start({ bags = StandardBags() })
+    Check("only a left click casts", _G.UnmakerNextButton.clicks == "LeftButtonUp"
+        and _G.UnmakerSelectedButton.clicks == "LeftButtonUp")
 end
 
 do
