@@ -100,9 +100,11 @@ A disenchanting list. Read the Disenchanting part of [`RULES.md`](RULES.md) befo
 | File | What goes in it |
 | --- | --- |
 | `UnmakerRules.lua` | Which items can be disenchanted, which start checked, the keep list, settings, the next item, and the same-item check. No game API calls. Loads first. |
-| `Unmaker.lua` | The window, the two secure cast buttons, events, the bag-window button, and the slash command. Loads second. |
+| `UnmakerStats.lua` | Lifetime totals, fun facts, materials and the history (500 newest), with sorting. No game API calls. Loads second. |
+| `Unmaker.lua` | The window and its Items, Stats, History and Settings tabs, the two secure cast buttons, events, recording each disenchant and its loot, the bag-window button, and the slash command. Loads last. |
 | `Bindings.xml` | The key binding for "Disenchant next". The game loads it by name, and the release zip ships it. |
 | `rules_test.lua` | Tests for `UnmakerRules.lua`. |
+| `stats_test.lua` | Tests for `UnmakerStats.lua`. |
 | `unmaker_test.lua` | Tests for `Unmaker.lua`, with a fake of the bags, spell and loot events, combat, and the secure click. |
 
 **Limits that matter here:**
