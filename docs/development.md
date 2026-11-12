@@ -134,8 +134,9 @@ The `client-watch` workflow runs `scripts/client_watch.sh` at 11:00 AM and 7:00 
 
 - the version's interface number is above an addon's `## Interface:`, with a checklist for each addon; or
 - a build from the last four days changed the documentation of a function or event an addon uses, or a Blizzard file an addon follows (the auction window, the secure button code, the bag windows).
+- a build changed 300 or more files (the most GitHub's comparison lists), or an API file too large to show, so it must be checked by hand.
 
-It reads Forever's version from Blizzard's own version server (the one the Battle.net app uses), and the build changes from [Gethe/wow-ui-source](https://github.com/Gethe/wow-ui-source/tree/forever), a community mirror of Blizzard's interface code. It never edits code, raises versions or releases. An addon is updated after it is tested on the new client:
+It reads Forever's version from Blizzard's version server (`us.version.battle.net`), and the build changes from [Gethe/wow-ui-source](https://github.com/Gethe/wow-ui-source/tree/forever), a community mirror of Blizzard's interface code. It never edits code, raises versions or releases. An addon is updated after it is tested on the new client:
 
 1. Read what changed, run `scripts/check.sh`, and try the addon in game.
 2. Fix what broke, set `## Interface:` to the new number, raise the PATCH version, and add a changelog line.

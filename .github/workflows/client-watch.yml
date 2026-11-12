@@ -35,4 +35,5 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
+          WATCH_ASSIGNEE: ${{ github.repository_owner }}  # issues land in the owner's assigned list
         run: scripts/client_watch.sh

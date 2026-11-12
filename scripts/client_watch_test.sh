@@ -201,6 +201,23 @@ if [[ "$created" == *"UNIT_SPELLCAST_START"*"addons/Beta/Beta.lua"* && "$created
 check "a changed event argument is reported under the event's name" "$rc"
 
 setup
+for i in $(seq 1 300); do
+    printf 'FILE Interface/AddOns/Blizzard_Thing%d/File.lua\n+changed\n' "$i"
+done >"$FIX/compare-bbb222.txt"
+run_watch
+if [[ $status -eq 0 && "$created" == *"300"* && "$created" == *"TITLE WoW Forever build 70888"* ]]; then rc=0; else rc=1; fi
+check "a build that hits GitHub's 300-file limit opens an issue to check by hand" "$rc"
+
+setup
+cat >"$FIX/compare-bbb222.txt" <<'EOF2'
+FILE Interface/AddOns/Blizzard_APIDocumentationGenerated/ItemDocumentation.lua
+
+EOF2
+run_watch
+if [[ "$created" == *"too large to show"*"ItemDocumentation.lua"* ]]; then rc=0; else rc=1; fi
+check "an API file whose change is too large to show is listed, not skipped" "$rc"
+
+setup
 touch "$FIX/curl-fails"
 run_watch
 if [[ $status -ne 0 && "$out" == *"version server"* && -z "$created" ]]; then rc=0; else rc=1; fi

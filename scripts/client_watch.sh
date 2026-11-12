@@ -2,8 +2,8 @@
 # Watches the WoW Forever client for changes that matter to these addons, and opens a GitHub
 # issue when there is something to do. .github/workflows/client-watch.yml runs it twice a day.
 #
-#   1. Version: reads Forever's version from Blizzard's version server, the one the Battle.net
-#      app uses. If its interface number (1.61.0 is 16100) is above an addon's "## Interface:",
+#   1. Version: reads Forever's version from Blizzard's version server
+#      (us.version.battle.net). If its interface number (1.61.0 is 16100) is above an addon's "## Interface:",
 #      the game will mark that addon out of date: open an "update the addons" issue.
 #   2. Builds: for each new build in the last few days of the community mirror of Blizzard's
 #      interface code (Gethe/wow-ui-source, forever branch), list the game functions and events
@@ -36,6 +36,8 @@ readonly MIRROR_WEB="https://github.com/Gethe/wow-ui-source"
 readonly MIRROR_BRANCH="forever"
 readonly LOOKBACK_DAYS=4
 readonly LABEL="client-update"
+# GitHub's compare API lists at most this many changed files, with no way to page past it.
+readonly COMPARE_FILE_LIMIT=300
 # Blizzard files the addons follow or hook: the auction window (HouseLedger), the secure button
 # code and the bag windows (Unmaker).
 readonly WATCHED_FILES='Blizzard_AuctionHouseUI/|Blizzard_FrameXML/SecureTemplates\.lua|Blizzard_UIPanels_Game/Mainline/ContainerFrame\.lua'
@@ -88,6 +90,7 @@ toc_interface() {
 #   Path to the issue body.
 # Globals:
 #   DRY_RUN (1 prints the issue instead)
+#   WATCH_ASSIGNEE (optional GitHub login to assign the issue to)
 # Outputs:
 #   Writes what it did to stdout.
 #######################################
@@ -102,7 +105,9 @@ open_issue() {
         echo "Already reported: $1"
         return
     fi
-    gh issue create --title "$1" --body-file "$2" --label "$LABEL" >/dev/null
+    local assignee=()
+    [[ -z "${WATCH_ASSIGNEE:-}" ]] || assignee=(--assignee "$WATCH_ASSIGNEE")
+    gh issue create --title "$1" --body-file "$2" --label "$LABEL" "${assignee[@]}" >/dev/null
     echo "Opened: $1"
 }
 
@@ -178,6 +183,16 @@ while IFS=$'\t' read -r sha parent message; do
         }
     ' "$work/diff.txt" | sort -u || true)"
     watched="$(sed -n 's/^FILE //p' "$work/diff.txt" | grep -E -- "$WATCHED_FILES" | sort -u || true)"
+    # API files GitHub listed without their change (too large to show): can't be read, so listed.
+    unread="$(awk '
+        /^FILE / {
+            if (file != "" && api && lines == 0) print file
+            file = $2; api = (file ~ /Blizzard_APIDocumentationGenerated\//); lines = 0; next
+        }
+        NF { lines++ }
+        END { if (file != "" && api && lines == 0) print file }
+    ' "$work/diff.txt")"
+    file_count="$(grep -c '^FILE ' "$work/diff.txt" || true)"
 
     used=""
     while IFS= read -r name; do
@@ -186,7 +201,7 @@ while IFS=$'\t' read -r sha parent message; do
         [[ -z "$files" ]] || used+="| \`$name\` | ${files% } |"$'\n'
     done <<<"$names"
 
-    if [[ -z "$used" && -z "$watched" ]]; then
+    if [[ -z "$used" && -z "$watched" && -z "$unread" && "$file_count" -lt "$COMPARE_FILE_LIMIT" ]]; then
         echo "Build $build_id: no change to APIs or Blizzard files the addons use."
         continue
     fi
@@ -195,6 +210,16 @@ while IFS=$'\t' read -r sha parent message; do
             "$build_id" "$MIRROR_WEB" "$parent" "$sha"
         if [[ -n "$used" ]]; then
             printf 'Game functions or events whose documentation changed:\n\n| Name | Used in |\n| --- | --- |\n%s\n' "$used"
+        fi
+        if [[ "$file_count" -ge "$COMPARE_FILE_LIMIT" ]]; then
+            printf 'This build changed %s or more files, the most GitHub lists, so some changes may not be listed below. Check the comparison by hand.\n\n' "$COMPARE_FILE_LIMIT"
+        fi
+        if [[ -n "$unread" ]]; then
+            printf 'API files whose change was too large to show (check them by hand):\n\n'
+            while IFS= read -r file; do
+                printf -- "- \`%s\`\n" "$file"
+            done <<<"$unread"
+            printf '\n'
         fi
         if [[ -n "$watched" ]]; then
             printf 'Blizzard files the addons follow that changed:\n\n'
