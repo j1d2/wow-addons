@@ -422,7 +422,8 @@ do
     Fire("UNIT_SPELLCAST_FAILED", "player", "guid", 13262)
     Check("a failed cast keeps the item on the list", #ShownRows() == 4)
     local _, status = Lines()
-    Check("and the status line gives the game's reason", status:find("Can't do that while moving", 1, true) ~= nil)
+    Check("and the status line gives the game's reason, ending in a period",
+        status:find("Can't do that while moving. If", 1, true) ~= nil)
     Check("the buttons unlock after a failure", _G.UnmakerNextButton.enabled)
     Click(_G.UnmakerNextButton)
     Fire("UNIT_SPELLCAST_FAILED", "player", "guid", 13262)

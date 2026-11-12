@@ -598,6 +598,9 @@ end
 -- @param reason the game's red error text, or nil when it hasn't come
 -- @return the status text
 local function FailText(reason)
+    if reason and not reason:find("[.!?]$") then
+        reason = reason .. "." -- the game's text often has no period
+    end
     return "Disenchant failed" .. (reason and (": " .. reason) or ".")
         .. " If the game won't disenchant this item, uncheck it."
 end
