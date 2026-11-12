@@ -13,12 +13,13 @@ those wait until the fight ends, as in HouseLedger.
 ]]
 
 local R = UnmakerRules
+local S = UnmakerStats
 
 local DISENCHANT_SPELL = 13262
 local BAGS = { 0, 1, 2, 3, 4 } -- the backpack and four bags; the reagent bag holds no gear
 local ROW_COUNT = 10
 local ROW_HEIGHT = 24
-local WIDTH = 400
+local WIDTH = 440
 local LIST_TOP = 64 -- the list starts this far below the window's top edge
 local LIST_HEIGHT = ROW_COUNT * ROW_HEIGHT
 -- Under the list: the count line, the status line (room for two lines of text), then the buttons.
@@ -29,14 +30,22 @@ local HEIGHT = LIST_TOP + LIST_HEIGHT + TEXT_HEIGHT + BUTTON_AREA
 -- the buttons, so a missed event can't leave them stuck.
 local UNLOCK_AFTER = 10
 local PORTRAIT_ICON = "Interface\\Icons\\INV_Enchant_Disenchant"
+-- A click's cast must start within this many seconds to count as that click's item, so a later
+-- Disenchant from the spellbook is never credited to an old row.
+local CLICK_WINDOW = 1
+local MAT_LINES = 5 -- lifetime materials shown on the Stats tab
 
 local db
 local session = R.NewSession()
+session.unmade = 0
 local rows = {}
 local offset = 0
 local selected
 local state = "idle" -- idle, casting (the cast bar is up) or waiting (loot and bags settling)
 local pending
+local pendingAt -- GetTime() when PreClick set the cast up
+local currentEntry -- the history entry of the cast now finishing
+local earlyLoot -- loot that showed before the cast reported success
 local lootOpen = false
 local lootSeen = false -- a loot window opened for the current cast
 local lastError -- the game's red error text during the current attempt
@@ -48,7 +57,14 @@ local wanted = {} -- show or hide asked for in combat: { shown = true/false }
 local built = false
 local currentTab = 1
 
-local frame, itemsPanel, settingsPanel, countText, statusText
+local frame, itemsPanel, statsPanel, historyPanel, settingsPanel, countText, statusText, unmadeText
+local factLines = {}
+local matLines = {}
+local historyRowFrames = {}
+local historyEmpty
+local historyOffset = 0
+local historySort = "time"
+local historyList = {}
 local selectedButton, nextButton
 local rowFrames = {}
 local settingBoxes = {}
@@ -168,6 +184,7 @@ local function Render()
             rowFrame:Hide()
         end
     end
+    unmadeText:SetText(string.format("Unmade: %d this session, %d lifetime", session.unmade, db.stats.total))
     if not KnowsDisenchant() then
         countText:SetText("This character doesn't know Disenchant. Learn Enchanting first.")
     elseif #rows == 0 then
@@ -177,6 +194,62 @@ local function Render()
             R.CountChecked(rows), #rows))
     end
     UpdateButtons()
+end
+
+--- Format a time for the History tab, like "11/12 03:58".
+-- @param seconds a time() value
+-- @return the text
+local function FormatWhen(seconds)
+    if type(date) == "function" then
+        return date("%m/%d %H:%M", seconds)
+    end
+    return os.date("%m/%d %H:%M", seconds)
+end
+
+--- Fill the Stats tab: the facts, then the lifetime materials, most first.
+local function RenderStats()
+    if not built then
+        return
+    end
+    for index, fact in ipairs(S.Facts(db, session, time())) do
+        local line = factLines[index]
+        if line then
+            line.label:SetText(fact.label)
+            line.value:SetText(fact.value)
+        end
+    end
+    local mats = S.Materials(db)
+    for index, line in ipairs(matLines) do
+        local mat = mats[index]
+        if mat then
+            line:SetText(mat.count .. " " .. (mat.link or mat.name))
+        else
+            line:SetText(index == 1 and "None yet." or "")
+        end
+    end
+end
+
+--- Fill the History tab from the saved history, sorted by the chosen heading.
+local function RenderHistory()
+    if not built then
+        return
+    end
+    historyList = S.SortHistory(db.history, historySort)
+    historyOffset = math.max(0, math.min(historyOffset, #historyList - ROW_COUNT))
+    for index, rowFrame in ipairs(historyRowFrames) do
+        local entry = historyList[historyOffset + index]
+        rowFrame.entry = entry
+        if entry then
+            rowFrame.itemText:SetText(entry.link or entry.name)
+            rowFrame.levelText:SetText(entry.level and tostring(entry.level) or "")
+            rowFrame.lootText:SetText(S.LootText(entry))
+            rowFrame.whenText:SetText(FormatWhen(entry.time))
+            rowFrame:Show()
+        else
+            rowFrame:Hide()
+        end
+    end
+    historyEmpty:SetShown(#historyList == 0)
 end
 
 --- Read the bags again and redraw. The selection survives if its item is still in its slot.
@@ -236,6 +309,7 @@ local function PrepareCast(button, row)
     button:SetAttribute("target-bag", row.bag)
     button:SetAttribute("target-slot", row.slot)
     pending = row
+    pendingAt = GetTime()
 end
 
 --- Back to idle: unlock the buttons and read the bags again.
@@ -243,6 +317,8 @@ end
 local function Unlock(message)
     state = "idle"
     pending = nil
+    currentEntry = nil
+    earlyLoot = nil
     Status(message)
     Refresh()
 end
@@ -291,7 +367,14 @@ local function SelectTab(id)
     currentTab = id
     PanelTemplates_SetTab(frame, id)
     itemsPanel:SetShown(id == 1)
-    settingsPanel:SetShown(id == 2)
+    statsPanel:SetShown(id == 2)
+    historyPanel:SetShown(id == 3)
+    settingsPanel:SetShown(id == 4)
+    if id == 2 then
+        RenderStats()
+    elseif id == 3 then
+        RenderHistory()
+    end
 end
 
 --- Build one list row: a checkbox, the icon, the item link and its item level. Clicking the
@@ -365,6 +448,104 @@ local function BuildCastButton(name, label, pick)
         ClearCast(self)
     end)
     return button
+end
+
+--- Build the Stats tab: one label and value per fact, then the lifetime materials.
+local function BuildStats()
+    statsPanel = CreateFrame("Frame", nil, frame)
+    statsPanel.isStats = true
+    statsPanel:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -70)
+    statsPanel:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -16, BUTTON_AREA)
+    local facts = S.Facts(db, session, time())
+    for index = 1, #facts do
+        local line = {}
+        line.label = statsPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        line.label:SetPoint("TOPLEFT", statsPanel, "TOPLEFT", 0, -(index - 1) * 18)
+        line.value = statsPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        line.value:SetPoint("TOPLEFT", statsPanel, "TOPLEFT", 120, -(index - 1) * 18)
+        line.value:SetPoint("RIGHT", statsPanel, "RIGHT", 0, 0)
+        line.value:SetJustifyH("LEFT")
+        factLines[index] = line
+    end
+    local top = #facts * 18 + 10
+    local header = statsPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    header:SetPoint("TOPLEFT", statsPanel, "TOPLEFT", 0, -top)
+    header:SetText("Materials (lifetime)")
+    for index = 1, MAT_LINES do
+        local line = statsPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        line:SetPoint("TOPLEFT", statsPanel, "TOPLEFT", 12, -(top + index * 18))
+        matLines[index] = line
+    end
+    statsPanel:Hide()
+end
+
+-- History columns: x offset and width of each, inside the History panel.
+local HISTORY_COLUMNS = {
+    { key = "name", label = "Item", x = 0, width = 160 },
+    { key = "level", label = "ilvl", x = 165, width = 35 },
+    { key = nil, label = "Got", x = 205, width = 130 },
+    { key = "time", label = "When", x = 340, width = 70 },
+}
+
+--- Build the History tab: clickable headings that sort, then ten rows, newest first by default.
+local function BuildHistory()
+    historyPanel = CreateFrame("Frame", nil, frame)
+    historyPanel:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -LIST_TOP)
+    historyPanel:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -16, BUTTON_AREA)
+    historyPanel:EnableMouseWheel(true)
+    historyPanel:SetScript("OnMouseWheel", function(_, delta)
+        historyOffset = math.max(0, math.min(historyOffset - delta, #historyList - ROW_COUNT))
+        RenderHistory()
+    end)
+    for _, column in ipairs(HISTORY_COLUMNS) do
+        local heading = CreateFrame("Button", nil, historyPanel)
+        heading:SetSize(column.width, 18)
+        heading:SetPoint("TOPLEFT", historyPanel, "TOPLEFT", column.x, 0)
+        heading.label = heading:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+        heading.label:SetPoint("LEFT", heading, "LEFT", 0, 0)
+        heading.label:SetText(column.label)
+        heading.sortKey = column.key
+        if column.key then
+            heading:SetScript("OnClick", function()
+                historySort = column.key
+                historyOffset = 0
+                RenderHistory()
+            end)
+        end
+    end
+    for index = 1, ROW_COUNT do
+        local rowFrame = CreateFrame("Button", nil, historyPanel)
+        rowFrame.historyRow = true
+        rowFrame:SetSize(WIDTH - 40, ROW_HEIGHT)
+        rowFrame:SetPoint("TOPLEFT", historyPanel, "TOPLEFT", 0, -(20 + (index - 1) * ROW_HEIGHT))
+        for _, field in ipairs({ { "itemText", 1 }, { "levelText", 2 }, { "lootText", 3 }, { "whenText", 4 } }) do
+            local column = HISTORY_COLUMNS[field[2]]
+            local text = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            text:SetPoint("LEFT", rowFrame, "LEFT", column.x, 0)
+            text:SetWidth(column.width)
+            text:SetJustifyH("LEFT")
+            rowFrame[field[1]] = text
+        end
+        rowFrame:SetScript("OnEnter", function()
+            local entry = rowFrame.entry
+            if entry then
+                GameTooltip:SetOwner(rowFrame, "ANCHOR_RIGHT")
+                if entry.link then
+                    GameTooltip:SetHyperlink(entry.link)
+                end
+                GameTooltip:AddLine("Unmade by " .. (entry.character or "?") .. ", " .. FormatWhen(entry.time))
+                GameTooltip:Show()
+            end
+        end)
+        rowFrame:SetScript("OnLeave", function()
+            GameTooltip:Hide()
+        end)
+        historyRowFrames[index] = rowFrame
+    end
+    historyEmpty = historyPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    historyEmpty:SetPoint("TOPLEFT", historyPanel, "TOPLEFT", 0, -24)
+    historyEmpty:SetText("Nothing unmade yet. Disenchant something on the Items tab.")
+    historyPanel:Hide()
 end
 
 --- Build the Settings tab: one checkbox per setting.
@@ -483,10 +664,17 @@ local function BuildFrame()
     end)
     nextButton:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -14, 8)
 
+    unmadeText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    unmadeText:SetPoint("TOP", frame, "TOP", 20, -38)
+
+    BuildStats()
+    BuildHistory()
     BuildSettings()
     BuildTab(1, "Items"):SetPoint("TOPLEFT", frame, "BOTTOMLEFT", 12, 2)
-    BuildTab(2, "Settings"):SetPoint("LEFT", _G.UnmakerFrameTab1, "RIGHT", -14, 0)
-    PanelTemplates_SetNumTabs(frame, 2)
+    BuildTab(2, "Stats"):SetPoint("LEFT", _G.UnmakerFrameTab1, "RIGHT", -14, 0)
+    BuildTab(3, "History"):SetPoint("LEFT", _G.UnmakerFrameTab2, "RIGHT", -14, 0)
+    BuildTab(4, "Settings"):SetPoint("LEFT", _G.UnmakerFrameTab3, "RIGHT", -14, 0)
+    PanelTemplates_SetNumTabs(frame, 4)
     PanelTemplates_SetTab(frame, 1)
 
     AddBagButton(_G.ContainerFrameCombinedBags)
@@ -545,7 +733,7 @@ function handlers.ADDON_LOADED(name)
     if name ~= "Unmaker" then
         return
     end
-    db = R.EnsureDB(UnmakerDB)
+    db = S.EnsureStats(R.EnsureDB(UnmakerDB))
     UnmakerDB = db
     if not InCombat() then
         BuildFrame()
@@ -577,11 +765,27 @@ end
 
 function handlers.UNIT_SPELLCAST_START(unit, _, spellID)
     if IsDisenchant(unit, spellID) then
+        if pending and (not pendingAt or GetTime() - pendingAt > CLICK_WINDOW) then
+            pending = nil -- not this click's cast; don't credit the old row
+        end
         state = "casting"
         lootSeen = false
         waited = 0
+        currentEntry = nil
+        earlyLoot = nil
         Status(pending and ("Disenchanting " .. (pending.link or pending.name) .. "...") or "Disenchanting...")
         UpdateButtons()
+    end
+end
+
+--- After a recorded disenchant: update the Unmade line and any open Stats or History tab.
+local function OnRecorded()
+    Render()
+    if statsPanel:IsShown() then
+        RenderStats()
+    end
+    if historyPanel:IsShown() then
+        RenderHistory()
     end
 end
 
@@ -590,6 +794,17 @@ function handlers.UNIT_SPELLCAST_SUCCEEDED(unit, _, spellID)
         state = "waiting"
         bagsSettled = false
         waited = 0
+        if pending and built then
+            currentEntry = S.Record(db, session, {
+                itemID = pending.itemID, name = pending.name, link = pending.link,
+                quality = pending.quality, level = pending.level, character = UnitName("player"),
+            }, time())
+            if earlyLoot then
+                S.AddLoot(db, currentEntry, earlyLoot)
+                earlyLoot = nil
+            end
+            OnRecorded()
+        end
     end
 end
 
@@ -633,10 +848,30 @@ end
 -- A cast that ends without an error message: unlock, and keep the item on the list.
 handlers.UNIT_SPELLCAST_FAILED_QUIET = handlers.UNIT_SPELLCAST_INTERRUPTED
 
+--- What the open loot window holds.
+-- @return list of { name, link, quantity, quality }
+local function ReadLoot()
+    local loot = {}
+    for slot = 1, GetNumLootItems() or 0 do
+        local _, name, quantity, _, quality = GetLootSlotInfo(slot)
+        if name and quantity and quantity > 0 then
+            loot[#loot + 1] = { name = name, link = GetLootSlotLink(slot), quantity = quantity, quality = quality }
+        end
+    end
+    return loot
+end
+
 function handlers.LOOT_READY()
     lootOpen = true
-    if state ~= "idle" then
-        lootSeen = true
+    if state == "idle" then
+        return
+    end
+    lootSeen = true
+    if currentEntry then
+        S.AddLoot(db, currentEntry, ReadLoot())
+        OnRecorded()
+    elseif state == "casting" and pending then
+        earlyLoot = ReadLoot()
     end
 end
 

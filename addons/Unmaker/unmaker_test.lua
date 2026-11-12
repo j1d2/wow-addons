@@ -86,7 +86,7 @@ function FrameMethods:CreateFontString() return NewFrame("FontString", nil, self
 function FrameMethods:StartMoving() self.moving = true end
 function FrameMethods:StopMovingOrSizing() self.moving = false end
 for _, method in ipairs({ "SetSize", "SetPoint", "SetAllPoints", "SetColorTexture", "SetJustifyH", "SetJustifyV",
-    "SetHeight",
+    "SetHeight", "SetWidth",
     "RegisterForDrag", "EnableMouse", "EnableMouseWheel", "SetMovable",
     "SetClampedToScreen", "SetFrameStrata", "SetTitle", "SetPortraitToAsset", "SetID" }) do
     FrameMethods[method] = function() end
@@ -137,7 +137,7 @@ local function Load(setup)
             _G[f.name] = nil
         end
     end
-    world = { frames = {}, casts = {}, blocked = 0, inCombat = false, callbacks = {},
+    world = { frames = {}, casts = {}, blocked = 0, inCombat = false, callbacks = {}, now = 1000, loot = {},
         bags = setup.bags or {}, knows = setup.knows ~= false, sets = setup.sets or {} }
     _G.UnmakerDB = setup.db
     _G.UIParent = NewFrame("Frame", "UIParent")
@@ -147,6 +147,15 @@ local function Load(setup)
         return NewFrame(kind, name, parent, template)
     end
     _G.InCombatLockdown = function() return world.inCombat end
+    _G.GetTime = function() return world.now end
+    _G.time = function() return 1762900000 + world.now end
+    _G.UnitName = function() return "Tester" end
+    _G.GetNumLootItems = function() return #world.loot end
+    _G.GetLootSlotInfo = function(slot)
+        local mat = world.loot[slot]
+        return mat.icon, mat.name, mat.quantity, nil, mat.quality
+    end
+    _G.GetLootSlotLink = function(slot) return "|Hitem:9|h[" .. world.loot[slot].name .. "]|h" end
     _G.C_SpellBook = { ContainsAnyDisenchantSpell = function() return world.knows end }
     _G.C_Container = {
         GetContainerNumSlots = function(bag) return world.bags[bag] and 16 or 0 end,
@@ -171,14 +180,18 @@ local function Load(setup)
         GetItemIDs = function() return world.sets end,
     }
     _G.GameTooltip = { SetOwner = function() end, SetBagItem = function(_, bag, slot)
-        world.tooltip = bag .. ":" .. slot end, Show = function() end, Hide = function() world.tooltip = nil end }
+        world.tooltip = bag .. ":" .. slot end, Show = function() end, Hide = function() world.tooltip = nil end,
+        SetHyperlink = function(_, link) world.tooltip = link end,
+        AddLine = function(_, text) world.tooltipLine = text end }
     _G.PanelTemplates_SetNumTabs = function() end
     _G.PanelTemplates_SetTab = function(_, id) world.tab = id end
     _G.PanelTemplates_TabResize = function() end
     _G.EventRegistry = { RegisterCallback = function(_, event, fn) world.callbacks[event] = fn end }
     _G.SlashCmdList = {}
     _G.UnmakerRules = nil
+    _G.UnmakerStats = nil
     dofile(folder .. "/UnmakerRules.lua")
+    dofile(folder .. "/UnmakerStats.lua")
     dofile(folder .. "/Unmaker.lua")
     for _, f in ipairs(world.frames) do
         if f.events.ADDON_LOADED then
@@ -222,7 +235,7 @@ end
 local function Lines()
     local count, status
     for _, f in ipairs(world.frames) do
-        if f.kind == "FontString" and f.parent and f.parent.scripts.OnMouseWheel then
+        if f.kind == "FontString" and f.parent == _G.UnmakerNextButton.parent then
             if count == nil then
                 count = f.text
             else
@@ -253,7 +266,9 @@ end
 -- leaves the bags, as it does in the game.
 -- @param bag bag of the item
 -- @param slot slot of the item
-local function FinishCast(bag, slot)
+-- @param loot optional loot window contents: list of { name, quantity, quality }
+local function FinishCast(bag, slot, loot)
+    world.loot = loot or {}
     Fire("UNIT_SPELLCAST_START", "player", "guid", 13262)
     Fire("UNIT_SPELLCAST_SUCCEEDED", "player", "guid", 13262)
     world.bags[bag][slot] = nil
@@ -496,8 +511,8 @@ end
 do
     Start({ bags = StandardBags() })
     _G.SlashCmdList.UNMAKER("")
-    _G.UnmakerFrameTab2:GetScript("OnClick")(_G.UnmakerFrameTab2)
-    Check("the Settings tab shows its checkboxes", world.tab == 2)
+    _G.UnmakerFrameTab4:GetScript("OnClick")(_G.UnmakerFrameTab4)
+    Check("the Settings tab shows its checkboxes", world.tab == 4)
     local countLine
     for _, f in ipairs(world.frames) do
         if f.kind == "FontString" and f.text and f.text:find("of %d+ checked") then
@@ -552,12 +567,7 @@ end
 do
     Start({ bags = StandardBags() })
     _G.SlashCmdList.UNMAKER("")
-    local panel
-    for _, f in ipairs(world.frames) do
-        if f.parent == _G.UnmakerFrame and f.scripts.OnMouseWheel then
-            panel = f
-        end
-    end
+    local panel = _G.UnmakerNextButton.parent
     for slot = 4, 16 do
         world.bags[0][slot] = Gear(100 + slot, "Extra " .. string.format("%02d", slot), 2)
     end
@@ -571,6 +581,131 @@ do
     Check("the window can be dragged", _G.UnmakerFrame.moving)
     _G.UnmakerFrame:GetScript("OnDragStop")(_G.UnmakerFrame)
     Check("and dropped", not _G.UnmakerFrame.moving)
+end
+
+--- The text of the window's line that starts with "Unmade:".
+-- @return the text, or ""
+local function UnmadeLine()
+    for _, f in ipairs(world.frames) do
+        if f.kind == "FontString" and f.text and f.text:find("^Unmade:") then
+            return f.text
+        end
+    end
+    return ""
+end
+
+--- Every text on a panel's own font strings and on its children's, joined.
+-- @param panel a fake frame
+-- @return all the text
+local function PanelText(panel)
+    local parts = {}
+    local function Walk(f)
+        if f.text then
+            parts[#parts + 1] = f.text
+        end
+        for _, child in ipairs(f.children) do
+            if child.shown ~= false then
+                Walk(child)
+            end
+        end
+    end
+    Walk(panel)
+    return table.concat(parts, "\n")
+end
+
+do
+    Start({ bags = StandardBags() })
+    _G.SlashCmdList.UNMAKER("")
+    Check("before any disenchant the Unmade line shows zeros", UnmadeLine():find("0 this session", 1, true) ~= nil)
+    Click(_G.UnmakerNextButton)
+    FinishCast(0, 2, { { name = "Strange Dust", quantity = 2, quality = 1 } })
+    local db = _G.UnmakerDB
+    Check("a disenchant through Unmaker is recorded", db.stats.total == 1 and #db.history == 1
+        and db.history[1].name == "Blue Ring" and db.history[1].character == "Tester")
+    Check("with the loot it gave", db.history[1].mats[1] and db.history[1].mats[1].name == "Strange Dust"
+        and db.stats.mats["Strange Dust"].count == 2)
+    Check("the Unmade line counts it", UnmadeLine():find("1 this session", 1, true) ~= nil
+        and UnmadeLine():find("1 lifetime", 1, true) ~= nil)
+
+    Fire("UNIT_SPELLCAST_START", "player", "guid", 13262)
+    Fire("UNIT_SPELLCAST_SUCCEEDED", "player", "guid", 13262)
+    Check("a Disenchant cast from the spellbook isn't recorded", db.stats.total == 1)
+    Fire("LOOT_READY")
+    Fire("LOOT_CLOSED")
+    Fire("BAG_UPDATE_DELAYED")
+
+    Click(_G.UnmakerNextButton)
+    world.now = world.now + 5
+    Fire("UNIT_SPELLCAST_START", "player", "guid", 13262)
+    Fire("UNIT_SPELLCAST_SUCCEEDED", "player", "guid", 13262)
+    Check("a cast that starts long after a click isn't credited to that item", db.stats.total == 1)
+    Fire("LOOT_READY")
+    Fire("LOOT_CLOSED")
+    Fire("BAG_UPDATE_DELAYED")
+
+    Click(_G.UnmakerNextButton)
+    Fire("UNIT_SPELLCAST_FAILED", "player", "guid", 13262)
+    Check("a failed cast isn't recorded", db.stats.total == 1)
+end
+
+do
+    Start({ bags = StandardBags() })
+    _G.SlashCmdList.UNMAKER("")
+    Click(_G.UnmakerNextButton)
+    world.loot = { { name = "Lesser Magic Essence", quantity = 1, quality = 2 } }
+    Fire("UNIT_SPELLCAST_START", "player", "guid", 13262)
+    Fire("LOOT_READY")
+    Fire("UNIT_SPELLCAST_SUCCEEDED", "player", "guid", 13262)
+    Check("loot that shows before the cast reports success is still recorded",
+        _G.UnmakerDB.history[1].mats[1] and _G.UnmakerDB.history[1].mats[1].name == "Lesser Magic Essence")
+end
+
+do
+    Start({ bags = StandardBags() })
+    _G.SlashCmdList.UNMAKER("")
+    Click(_G.UnmakerNextButton)
+    FinishCast(0, 2, { { name = "Strange Dust", quantity = 2, quality = 1 } })
+    Click(_G.UnmakerNextButton)
+    FinishCast(0, 1, { { name = "Strange Dust", quantity = 1, quality = 1 } })
+
+    _G.UnmakerFrameTab2:GetScript("OnClick")(_G.UnmakerFrameTab2)
+    Check("tab 2 is Stats", world.tab == 2)
+    local statsPanel
+    for _, f in ipairs(world.frames) do
+        if f.parent == _G.UnmakerFrame and f.isStats then
+            statsPanel = f
+        end
+    end
+    local text = statsPanel and PanelText(statsPanel) or ""
+    Check("the Stats tab shows lifetime and quality counts", text:find("Lifetime", 1, true) ~= nil
+        and text:find("Uncommon", 1, true) ~= nil)
+    Check("and lifetime materials", text:find("3 Strange Dust", 1, true) ~= nil
+        or (text:find("Strange Dust", 1, true) ~= nil and text:find("3", 1, true) ~= nil))
+    Check("the Items list hides on the Stats tab", _G.UnmakerNextButton.parent.shown == false)
+
+    _G.UnmakerFrameTab3:GetScript("OnClick")(_G.UnmakerFrameTab3)
+    Check("tab 3 is History", world.tab == 3)
+    local historyRows = {}
+    local headers = {}
+    for _, f in ipairs(world.frames) do
+        if f.historyRow and f.shown then
+            historyRows[#historyRows + 1] = f
+        end
+        if f.sortKey then
+            headers[f.sortKey] = f
+        end
+    end
+    Check("History lists both disenchants", #historyRows == 2)
+    Check("newest first by default", historyRows[1].entry.name == "Green Vest")
+    headers.name:GetScript("OnClick")(headers.name)
+    Check("clicking the Item heading sorts by name", historyRows[1].entry.name == "Blue Ring")
+    headers.time:GetScript("OnClick")(headers.time)
+    Check("clicking the When heading sorts newest first again", historyRows[1].entry.name == "Green Vest")
+    Check("each row shows its loot", historyRows[1].lootText.text:find("Strange Dust", 1, true) ~= nil)
+    historyRows[1]:GetScript("OnEnter")(historyRows[1])
+    Check("hovering a history row shows the item and who unmade it",
+        world.tooltip ~= nil and world.tooltipLine ~= nil and world.tooltipLine:find("Tester", 1, true) ~= nil)
+    historyRows[1]:GetScript("OnLeave")(historyRows[1])
 end
 
 do

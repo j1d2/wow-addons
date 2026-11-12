@@ -9,4 +9,5 @@
 ## ExcludeLoadGameType: standard, classic
 
 UnmakerRules.lua
+UnmakerStats.lua
 Unmaker.lua
