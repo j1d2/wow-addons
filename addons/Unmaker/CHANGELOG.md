@@ -16,3 +16,6 @@ First release.
 - **Disenchant selected** disenchants the row you clicked, if it is checked.
 - A Settings tab: keep epics, keep soulbound gear, hide equipment-set items, open when you loot gear to disenchant, and open with your bags.
 - `/unmaker` and an Unmaker button above your bags open the window.
+- "Unmade" counts at the top of the window: this session and lifetime.
+- A Stats tab: counts by session, day, lifetime and quality, your most-unmade item, best item, busiest day, and lifetime materials.
+- A History tab: the last 500 disenchants with the materials each gave, newest first, sortable by item, item level or time.
