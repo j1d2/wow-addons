@@ -2,7 +2,7 @@
 
 Thanks for helping. These addons are small, free and plain Lua, and they stay that way.
 
-The first part covers every addon. Then each addon has its own section: [HouseLedger](#houseledger).
+The first part covers every addon. Then each addon has its own section: [HouseLedger](#houseledger) and [Unmaker](#unmaker).
 
 ## Before you start
 
@@ -88,6 +88,31 @@ An auction house price history. Read the auction house part of [`RULES.md`](RULE
 - Saved data changes need a migration in `PriceLedger.EnsureDB` and a test that loads the old layout.
 
 **Trying it in game:** link the folder (see [docs/development.md](docs/development.md#try-an-addon-in-game)), `/reload`, and turn on Lua errors with `/console scriptErrors 1`. Say in the PR what you checked: Scan, a search, a row click, a Sell drop, and the tooltip.
+
+---
+
+## Unmaker
+
+A disenchanting list. Read the Disenchanting part of [`RULES.md`](RULES.md) before changing how it casts.
+
+**Files:**
+
+| File | What goes in it |
+| --- | --- |
+| `UnmakerRules.lua` | Which items can be disenchanted, which start checked, the keep list, settings, the next item, and the same-item check. No game API calls. Loads first. |
+| `Unmaker.lua` | The window, the two secure cast buttons, events, the bag-window button, and the slash command. Loads second. |
+| `Bindings.xml` | The key binding for "Disenchant next". The game loads it by name, and the release zip ships it. |
+| `rules_test.lua` | Tests for `UnmakerRules.lua`. |
+| `unmaker_test.lua` | Tests for `Unmaker.lua`, with a fake of the bags, spell and loot events, combat, and the secure click. |
+
+**Limits that matter here:**
+
+- Only the secure buttons cast. Set them in `PreClick`, clear them in `PostClick`, never in combat.
+- Check the slot still holds the exact item before every cast.
+- The buttons stay locked from the cast's start until the loot window closes and the bags update, with a 10-second fallback.
+- The secure buttons make the window protected. Showing, hiding and moving wait for combat to end.
+
+**Trying it in game:** use a character with Enchanting. Check a full cycle (cast, loot, unlock), an Epic (starts unchecked), a failed cast (moving) that keeps the item, an equipment-set item (hidden), the key binding, and combat (clicks do nothing).
 
 ---
 

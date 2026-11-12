@@ -33,6 +33,15 @@ Sources:
 - Combat automation, secret-value math, or anything that plays the character.
 - `setfenv` or `getfenv`: swapping a function's environment hides what the code really does. Also the `debug` library, which reaches into other code, and `RunMacro`, which plays the character. `scripts/addon_checks.sh policy` blocks them in addon files.
 
+## Disenchanting (Unmaker)
+
+- **Allowed:** one click or one key press disenchants one item. The click goes to a Blizzard `SecureActionButtonTemplate` that is set, in `PreClick`, to `type = "spell"`, `spell = 13262` (Disenchant), `target-bag` and `target-slot`. Blizzard's own code casts, and `PostClick` clears the button. A key binding to that button counts as a press.
+- **Allowed:** reading the bags, listing items, and saving which items the player keeps.
+- **Not allowed:** casting or using bag items from addon code (`CastSpellByName`, `CastSpellByID`, `SpellTargetItem`, `UseContainerItem`, `PickupContainerItem`). `scripts/addon_checks.sh policy` blocks them.
+- **Not allowed:** one click that disenchants more than one item, a timer or loop that clicks, or changing the button in combat. In combat the button is left empty, so a click does nothing.
+- Before each cast the bag slot must still hold the row's exact item (item ID and link). If not, nothing is cast.
+- Unverified on Forever: whether Enchanting skill limits what can be disenchanted. Unmaker doesn't guess. If a cast fails, Unmaker keeps the item and shows the game's reason; the player unchecks an item the game won't take.
+
 ## Allowed only with a reason
 
 These calls send data out of the game, or change the player's own setup. An addon may use one only with a `-- reviewed: <why>` note on the same line, so the reason is read in review. `scripts/addon_checks.sh policy` flags any line that names one without the note, so keeping it in a local can't hide it.

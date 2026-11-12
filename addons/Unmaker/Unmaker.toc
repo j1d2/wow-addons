@@ -1,0 +1,12 @@
+## Interface: 16001
+## Title: Unmaker
+## Notes: Lists the gear in your bags you can disenchant. Each click disenchants the next checked item.
+## Author: j1d2
+## Version: 0.1.0
+## X-License: Apache-2.0
+## SavedVariables: UnmakerDB
+## AllowLoadGameType: forever
+## ExcludeLoadGameType: standard, classic
+
+UnmakerRules.lua
+Unmaker.lua

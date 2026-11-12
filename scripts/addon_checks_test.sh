@@ -151,6 +151,17 @@ for call in "setfenv(1, {})" "getfenv(1)" "debug.sethook()" "RunMacro(1)"; do
     check "policy: '${call%%(*}' is caught" "$rc"
 done
 
+# Casting and using bag items happen only through Blizzard's secure button, on the player's
+# click (RULES.md, Disenchanting). Addon code never calls them itself.
+for call in 'CastSpellByName("Disenchant")' "CastSpellByID(13262)" "SpellTargetItem(1)" \
+    "C_Container.UseContainerItem(0, 1)" "UseContainerItem(0, 1)" "C_Container.PickupContainerItem(0, 1)"; do
+    good_addon
+    printf 'local function Go()\n    %s\nend\n' "$call" >>"$ROOT/addons/Demo/Demo.lua"
+    run_check policy
+    if [[ $status -eq 1 && "$out" == *"Demo.lua:5: calls '${call%%(*}', which RULES.md forbids"* ]]; then rc=0; else rc=1; fi
+    check "policy: '${call%%(*}' is caught" "$rc"
+done
+
 # Sending data out of the game, or changing the player's keybindings, macros or settings, needs
 # a "-- reviewed: <why>" note on the same line.
 for call in 'C_ChatInfo.SendChatMessage("hi", "SAY")' 'SendChatMessage("hi", "SAY")' \
