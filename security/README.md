@@ -30,6 +30,7 @@ The scans print only the file, line and rule, never the matched text, so CI logs
 - Only GitHub's own actions are used (`actions/checkout`, and `actions/attest-build-provenance` for releases), each pinned to a full commit SHA. Dependabot proposes updates after a 14-day cooldown.
 - The `client-watch` workflow reads two outside sources as data, never code: Blizzard's version server (`us.version.battle.net`) and the community mirror of Blizzard's interface code (`Gethe/wow-ui-source`). Its token can read the repo and open issues, nothing else.
 - Release zips are built by the `release` workflow from a tag on `main`, after the full gate passes, and get a signed build-provenance record. Check a zip with `gh attestation verify <zip> --repo j1d2/wow-addons`.
+- The `stores` jobs upload that same zip to CurseForge and Wago with plain `curl` (`scripts/store_upload.sh`), not a third-party action. They download it from the published release and check its provenance before sending it. They hold the only secrets in the repo, the two site tokens. The tokens reach `curl` through stdin, never on a command line or in a log, and each job gets only its own site's token. JSON is read and written by our own `scripts/store_json.lua`, so no `jq` is needed.
 - A dedicated secret scanner such as gitleaks would add more rules. It is a third-party tool, so it is not used without the owner's OK.
 
 ## Repository settings
@@ -41,6 +42,7 @@ Set on GitHub, not in files, so they are written down here. Re-check them after 
 - **Ruleset "Protect release tags"** (no bypass): tags like `HouseLedger-v0.3.0` can't be moved or deleted.
 - **Releases are immutable:** once published, a release's zip and tag can't change. A fix is a new version.
 - **Merged branches** are deleted automatically.
+- **Environment "stores"**: only tags like `HouseLedger-v0.3.0` can run jobs in it. It holds the `CURSEFORGE_API_TOKEN` and `WAGO_API_TOKEN` secrets; nothing else in the repo can read them. The repo variable `CURSEFORGE_MANUAL_RELEASE` (unset means `true`) decides whether CurseForge holds new files for a manual release.
 - **Dependabot alerts** are on.
 
 **Before making the repo public:**

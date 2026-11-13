@@ -61,6 +61,7 @@ The repo may be public one day, so no file or commit message may hold personal o
 5. Add a README section like HouseLedger's: TL;DR first (five bullets at most), a screenshot, then how to use it and what it does not do. Add a row to the README's addon table.
 6. Add a section to this file for it, and to `RULES.md` if it touches a limited game system.
 7. Add `CHANGELOG.md` with an `## [Unreleased]` section and a `## [0.1.0]` section. The `version` check needs the `.toc` version there.
+8. To publish it on CurseForge or Wago too, the maintainer makes the project there and adds its `## X-Curse-Project-ID:` or `## X-Wago-ID:` line to the `.toc` (see `docs/development.md`).
 
 The gate finds every folder under `addons/` on its own. No script change is needed.
 

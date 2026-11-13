@@ -119,7 +119,34 @@ While the version starts with 0, a MINOR bump may also change or remove things.
 
 3. The `release` workflow checks that the tag is on `main` and runs the full gate. It builds `HouseLedger-X.Y.Z.zip` (the addon's folder with its `CHANGELOG.md`, `LICENSE` and `NOTICE`, no test files) and signs its build provenance. Then it publishes the release, with this version's changelog section as the notes.
 
+4. The `stores` jobs then upload the same zip to CurseForge and Wago, one job per site (see below). An addon that isn't listed on a site is skipped there.
+
 Tags and published releases can't be changed or deleted. A mistake gets a new PATCH version.
+
+### CurseForge and Wago
+
+Both sites have a WoW Forever category, and the upload puts the addon only there. WoWInterface has no Forever category, so we don't publish there. Other game versions (Retail, Classic) are not supported unless someone contributes them.
+
+`scripts/store_upload.sh` does the upload with plain `curl`; it doesn't use the BigWigs packager, which is a third-party action. It reads everything from inside the release zip:
+
+- the site's project ID from the `.toc`: `## X-Curse-Project-ID: <number>` and `## X-Wago-ID: <id>`. No line means the addon isn't listed on that site, and the job skips it;
+- the game version from `## Interface:` (16001 is Forever 1.60.1). If a site doesn't list that version yet, the file gets the closest older one, with a warning. The script uploads only Forever interfaces (16xxx);
+- the notes from this version's `CHANGELOG.md` section.
+
+CurseForge holds each new file until you press release on the project's Files page. To let files go live once CurseForge approves them, set the repo variable `CURSEFORGE_MANUAL_RELEASE` to `false`.
+
+**One-time setup** (maintainer, per site):
+
+1. Make the project on [CurseForge](https://authors.curseforge.com/) or [Wago](https://addons.wago.io/developers), with WoW Forever as its game version. CurseForge wants a one-sentence summary and a 400×400 icon that isn't one flat color, and doesn't allow download links to other sites (a link to this repo goes at the bottom of the description).
+2. Add the project's ID line to the addon's `.toc` in a pull request.
+3. Make an API token ([CurseForge](https://authors.curseforge.com/#/settings/api-tokens), [Wago](https://addons.wago.io/account/apikeys)) and save it in the repo's `stores` environment. Paste it when asked, so it stays out of your shell history:
+
+   ```bash
+   gh secret set CURSEFORGE_API_TOKEN --env stores --repo j1d2/wow-addons
+   gh secret set WAGO_API_TOKEN --env stores --repo j1d2/wow-addons
+   ```
+
+The next release tag uploads it. Check what would be sent, without uploading: `CURSEFORGE_API_TOKEN=... scripts/store_upload.sh --dry-run curseforge dist/HouseLedger-X.Y.Z.zip` (a dry run also needs the site's token). If one site's job fails, use **Re-run failed jobs**: it retries only that site, so the other site doesn't get the file twice.
 
 To build the zip locally without releasing: `scripts/package_addon.sh HouseLedger-vX.Y.Z dist`. To check a downloaded zip was built here: `gh attestation verify HouseLedger-X.Y.Z.zip --repo j1d2/wow-addons`.
 
