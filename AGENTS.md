@@ -18,7 +18,7 @@ This repository holds free, plain-Lua World of Warcraft addons for the Forever c
 - Use placeholders such as `<WoW folder>` for paths.
 - Use conventional commits (`feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`) that explain why. Stage files by name.
 - Open a pull request into `main`. Say whether the change was tried in game.
-- Ask the maintainer before anything destructive or public: deleting files, publishing, or changing repository settings. Pushing a release tag publishes a release, so never push one unless asked.
+- Ask the maintainer before anything destructive or public: deleting files, publishing, or changing repository settings. Pushing a release tag publishes a release and uploads it to CurseForge and Wago, so never push one unless asked.
 
 ## Do not
 

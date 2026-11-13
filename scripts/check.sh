@@ -4,7 +4,7 @@
 #   1. tools      lua5.1, luac5.1, shellcheck, zip and unzip are installed
 #   2. hygiene    whitespace, final newline, line endings, conflict markers, file size
 #   3. privacy    no personal or machine details, no secrets (scripts/privacy_scan.sh)
-#   4. shellcheck every script and hook
+#   4. shellcheck every script and hook (following sourced files, -x)
 #   5. self-tests the check scripts' own tests
 #   6. addons     Lua syntax, global writes, .toc files, RULES.md API limits, versions
 #   7. tests      every addons/*/*_test.lua under lua5.1
@@ -42,7 +42,7 @@ step "privacy and secret scan"
 scripts/privacy_scan.sh
 
 step "shellcheck"
-shellcheck --severity=style scripts/*.sh .githooks/*
+shellcheck --severity=style -x scripts/*.sh .githooks/*
 echo "shellcheck passed."
 
 step "check-script self-tests"

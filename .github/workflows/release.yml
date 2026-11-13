@@ -1,5 +1,6 @@
 # Release: pushing a tag such as HouseLedger-v0.3.0 builds that addon's zip and publishes it as
-# a GitHub release. Each addon is versioned and released on its own.
+# a GitHub release, then uploads the same zip to CurseForge and Wago (the stores job). Each
+# addon is versioned and released on its own.
 #
 # Order matters. The tag must be on main and the full gate must pass before anything is
 # published. Releases are immutable once published, so the release is made as a draft, the zip
@@ -72,3 +73,49 @@ jobs:
           gh release create "$TAG" --draft --verify-tag --title "$title" --notes-file dist/notes.md
           gh release upload "$TAG" dist/*.zip
           gh release edit "$TAG" --draft=false
+
+  # Upload the same zip to the addon sites, one job per site, so "Re-run failed jobs" retries
+  # only the site that failed (a retried success would post the file twice). The zip comes from
+  # the published release and must pass its provenance check first. The tokens live in the
+  # "stores" environment, which only release tags can use, and only these jobs read them.
+  # An addon with no store ID line in its .toc is skipped (see scripts/store_upload.sh).
+  stores:
+    needs: release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: stores
+    permissions:
+      contents: read      # download the release zip
+      attestations: read  # check its provenance
+    strategy:
+      fail-fast: false
+      matrix:
+        store: [curseforge, wago]
+    env:
+      TAG: ${{ github.ref_name }}
+      STORE: ${{ matrix.store }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install lua5.1
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends lua5.1 unzip
+
+      - name: Download the release zip and check its provenance
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release download "$TAG" --pattern '*.zip' --dir dist
+          gh attestation verify dist/*.zip --repo "$GH_REPO" \
+            --signer-workflow "$GH_REPO/.github/workflows/release.yml" --deny-self-hosted-runners
+
+      - name: Upload to the store
+        env:
+          CURSEFORGE_API_TOKEN: ${{ matrix.store == 'curseforge' && secrets.CURSEFORGE_API_TOKEN || '' }}
+          WAGO_API_TOKEN: ${{ matrix.store == 'wago' && secrets.WAGO_API_TOKEN || '' }}
+          CURSEFORGE_MANUAL_RELEASE: ${{ vars.CURSEFORGE_MANUAL_RELEASE || 'true' }}
+        run: scripts/store_upload.sh "$STORE" dist/*.zip
