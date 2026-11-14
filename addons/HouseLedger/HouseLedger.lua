@@ -617,15 +617,14 @@ local function RefreshMarket()
     marketOffset = math.min(marketOffset, math.max(0, #marketList - VISIBLE_ROWS))
 end
 
---- The Market switcher's text: the view and how old the scan is.
--- @return text like "Deals at last scan (12 min ago)"
+--- The text beside the Market view dropdown: how old the scan is.
+-- @return text like "at last scan (12 min ago)", or "" before any scan
 local function MarketLabel()
-    local title = MARKET_VIEWS[marketView].title
     local scannedAt = marketCache and marketCache.scannedAt
     if scannedAt == nil then
-        return title
+        return ""
     end
-    return title .. " at last scan (" .. AgoText(math.max(0, time() - scannedAt)) .. ")"
+    return "at last scan (" .. AgoText(math.max(0, time() - scannedAt)) .. ")"
 end
 
 --- The status line for an empty Market view.
@@ -1113,10 +1112,10 @@ local function ApplyFilters()
     RenderRows()
 end
 
---- Market's < and > arrows: the previous or next view, wrapping around.
--- @param step 1 for the next view, -1 for the previous one
-local function StepMarket(step)
-    marketView = (marketView - 1 + step) % #MARKET_VIEWS + 1
+--- Market's view dropdown: shows Deals, Biggest drops or Biggest rises.
+-- @param view the index in MARKET_VIEWS
+local function SetMarketView(view)
+    marketView = view
     marketOffset = 0
     -- Each view has its own order (biggest move first); a column sort starts over.
     marketSort.key = nil
@@ -2067,22 +2066,25 @@ local function BuildFrame()
     end)
     buyPanel.searchControls = { searchBox, clear, button }
 
-    -- The Market tab's view switcher, in the search box's place: < Deals at last scan (12 min ago) >
-    local marketPrev = CreateFrame("Button", nil, buyPanel, "UIPanelButtonTemplate")
-    marketPrev:SetSize(24, 22)
-    marketPrev:SetPoint("LEFT", frame, "TOPLEFT", 72, -41)
-    marketPrev:SetText("<")
-    marketPrev:SetScript("OnClick", function() StepMarket(-1) end)
-    local marketNext = CreateFrame("Button", nil, buyPanel, "UIPanelButtonTemplate")
-    marketNext:SetSize(24, 22)
-    marketNext:SetPoint("RIGHT", scanButton, "LEFT", -8, 0)
-    marketNext:SetText(">")
-    marketNext:SetScript("OnClick", function() StepMarket(1) end)
-    local marketLabel = Cell(buyPanel, "GameFontNormal", "CENTER")
-    marketLabel:SetPoint("LEFT", marketPrev, "RIGHT", 6, 0)
-    marketLabel:SetPoint("RIGHT", marketNext, "LEFT", -6, 0)
-    buyPanel.marketPrev, buyPanel.marketNext, buyPanel.marketLabel = marketPrev, marketNext, marketLabel
-    buyPanel.marketControls = { marketPrev, marketNext, marketLabel }
+    -- The Market tab's view dropdown, in the search box's place: [Deals v] at last scan (12 min ago).
+    -- The same Blizzard dropdown as the quality filter.
+    local marketDropdown = CreateFrame("DropdownButton", nil, buyPanel, "WowStyle1DropdownTemplate")
+    marketDropdown:SetWidth(150)
+    marketDropdown:SetPoint("LEFT", frame, "TOPLEFT", 72, -41)
+    marketDropdown:SetupMenu(function(_, root)
+        for index, view in ipairs(MARKET_VIEWS) do
+            root:CreateRadio(view.title, function(picked)
+                return marketView == picked
+            end, function(picked)
+                SetMarketView(picked)
+            end, index)
+        end
+    end)
+    local marketLabel = Cell(buyPanel, "GameFontNormal", "LEFT")
+    marketLabel:SetPoint("LEFT", marketDropdown, "RIGHT", 10, 0)
+    marketLabel:SetPoint("RIGHT", scanButton, "LEFT", -8, 0)
+    buyPanel.marketDropdown, buyPanel.marketLabel = marketDropdown, marketLabel
+    buyPanel.marketControls = { marketDropdown, marketLabel }
     for _, control in ipairs(buyPanel.marketControls) do
         control:Hide()
     end
