@@ -216,7 +216,6 @@ local function RenderStats()
     if not built then
         return
     end
-    statsPanel.viewText:SetText(statsView and S.CharacterLabel(statsView, playerRealm) or "All characters")
     for index, fact in ipairs(S.Facts(db, session, time(), statsView)) do
         local line = factLines[index]
         if line then
@@ -456,20 +455,10 @@ local function BuildCastButton(name, label, pick)
     return button
 end
 
---- Show the previous or next choice on the Stats tab: all characters, then each character A to Z.
--- @param step 1 for the next choice, -1 for the previous one; it wraps around
-local function StepStatsView(step)
-    local choices = { false } -- false stands for all characters
-    for _, key in ipairs(S.Characters(db)) do
-        choices[#choices + 1] = key
-    end
-    local current = 1
-    for index, choice in ipairs(choices) do
-        if choice == (statsView or false) then
-            current = index
-        end
-    end
-    statsView = choices[(current - 1 + step) % #choices + 1] or nil
+--- Show one character's stats on the Stats tab, or every character's together.
+-- @param view a character key, or false or nil for all characters
+local function SetStatsView(view)
+    statsView = view or nil
     RenderStats()
 end
 
@@ -481,22 +470,25 @@ local function BuildStats()
     statsPanel:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -70)
     statsPanel:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -16, BUTTON_AREA)
 
-    -- The switcher sits top right, beside the short numbers of the first fact lines.
-    statsPanel.nextButton = CreateFrame("Button", nil, statsPanel, "UIPanelButtonTemplate")
-    statsPanel.nextButton:SetSize(24, 22)
-    statsPanel.nextButton:SetPoint("TOPRIGHT", statsPanel, "TOPRIGHT", 0, 2)
-    statsPanel.nextButton:SetText(">")
-    statsPanel.nextButton:SetScript("OnClick", function() StepStatsView(1) end)
-    statsPanel.viewText = statsPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    statsPanel.viewText:SetSize(130, 22)
-    statsPanel.viewText:SetPoint("RIGHT", statsPanel.nextButton, "LEFT", -4, 0)
-    statsPanel.viewText:SetJustifyH("CENTER")
-    statsPanel.viewText:SetWordWrap(false)
-    statsPanel.prevButton = CreateFrame("Button", nil, statsPanel, "UIPanelButtonTemplate")
-    statsPanel.prevButton:SetSize(24, 22)
-    statsPanel.prevButton:SetPoint("RIGHT", statsPanel.viewText, "LEFT", -4, 0)
-    statsPanel.prevButton:SetText("<")
-    statsPanel.prevButton:SetScript("OnClick", function() StepStatsView(-1) end)
+    -- Whose stats show: a dropdown top right, beside the short numbers of the first fact lines.
+    -- Blizzard's own dropdown (as HouseLedger's filters use on Forever), rebuilt each time it
+    -- opens, so a character's first disenchant adds it to the list.
+    local dropdown = CreateFrame("DropdownButton", nil, statsPanel, "WowStyle1DropdownTemplate")
+    dropdown:SetWidth(150)
+    dropdown:SetPoint("TOPRIGHT", statsPanel, "TOPRIGHT", 0, 2)
+    dropdown:SetupMenu(function(_, root)
+        local choices = { false } -- false stands for all characters
+        for _, key in ipairs(S.Characters(db)) do
+            choices[#choices + 1] = key
+        end
+        for _, choice in ipairs(choices) do
+            local label = choice and S.CharacterLabel(choice, playerRealm) or "All characters"
+            root:CreateRadio(label, function(picked)
+                return (statsView or false) == picked
+            end, SetStatsView, choice)
+        end
+    end)
+    statsPanel.viewDropdown = dropdown
 
     local facts = S.Facts(db, session, time())
     for index = 1, #facts do
