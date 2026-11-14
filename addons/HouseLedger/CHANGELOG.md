@@ -19,6 +19,8 @@ All notable changes to HouseLedger. The format follows [Keep a Changelog](https:
 
 ### Changed
 
+- Messages you need to act on are easy to see: in large text in the middle of an empty list, and in orange beside the filters ("Click Search again to include lower qualities.", "These are the first 500 results. Add a name or filter to see others."). Search lights up when a new search would show more.
+- **Clear** also resets the quality and item level filters.
 - The **Scan** button greys out and counts down the 15-minute wait, like "Scan (12m)", instead of looking ready.
 - The status line is shorter and leaves out the realm: "6154 prices (Horde). Next scan in 13 min."
 - In the saved price lines, a window with no more scans than the one before says "same as 7 days" instead of repeating the same numbers.

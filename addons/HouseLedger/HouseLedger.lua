@@ -126,6 +126,11 @@ local SELL_LINES = {
 }
 local SELL_LINE_HEIGHT = 20
 local BUY_HELP = "Type an item name. One click sends one search."
+-- Shown large in the middle of the empty Buy list.
+local BUY_START = "Type a name or pick a quality, then click Search."
+-- The search's page can't show everything: said by the filters and in the status line.
+local LOWER_QUALITY_NOTE = "Click Search again to include lower qualities."
+local FIRST_RESULTS_NOTE = "These are the first %d results. Add a name or filter to see others."
 local DETAIL_HINT = "Click a row for its saved prices over 1, 3, 7 and 14 days."
 -- The Sell lines filled in order from PriceLedger.WindowLines.
 local WINDOW_KEYS = { "w1", "w3", "w7", "w14", "spread" }
@@ -217,6 +222,35 @@ end
 local function SetStatus(text)
     if statusText then
         statusText:SetText(text)
+    end
+end
+
+--- Shows a message in large text in the middle of the Buy list, where an empty list draws the
+-- eye; nil hides it.
+-- @param text the message, or nil
+local function SetListMessage(text)
+    if buyPanel and buyPanel.listMessage then
+        buyPanel.listMessage:SetText(text or "")
+        if text then buyPanel.listMessage:Show() else buyPanel.listMessage:Hide() end
+    end
+end
+
+--- Shows a note in orange beside the filters, for something the player needs to act on; nil
+-- hides it.
+-- @param text the note, or nil
+local function SetNotice(text)
+    if buyPanel and buyPanel.notice then
+        buyPanel.notice:SetText(text or "")
+        if text then buyPanel.notice:Show() else buyPanel.notice:Hide() end
+    end
+end
+
+--- Lights up the Search button while a new search would show more, or turns that off.
+-- @param on true to light it
+local function HighlightSearch(on)
+    local button = buyPanel and buyPanel.searchButton
+    if button then
+        if on then button:LockHighlight() else button:UnlockHighlight() end
     end
 end
 
@@ -679,25 +713,36 @@ local function RenderRows()
         buyPanel.marketLabel:SetText(MarketLabel())
     end
     local from = list.from or #list
-    -- What the search's page can't show: more on the house, or qualities it didn't ask for.
-    local notes = ""
-    if not market then
-        if (filter.minQuality or 0) < searchedQuality then
-            notes = notes .. " Search again to include lower qualities."
-        end
-        if type(C_AuctionHouse.HasFullBrowseResults) == "function" and not C_AuctionHouse.HasFullBrowseResults() then
-            notes = notes .. " The house has more; narrow the search."
-        end
+    -- What the search's page can't show: qualities it didn't ask for, or more on the house. The
+    -- first one also shows in orange beside the filters, and lights up Search when a new search
+    -- would bring more.
+    local notes = {}
+    local lowerQuality = not market and (filter.minQuality or 0) < searchedQuality
+    if lowerQuality then
+        notes[#notes + 1] = LOWER_QUALITY_NOTE
     end
+    if not market and type(C_AuctionHouse.HasFullBrowseResults) == "function"
+        and not C_AuctionHouse.HasFullBrowseResults() then
+        notes[#notes + 1] = string.format(FIRST_RESULTS_NOTE, #results)
+    end
+    SetNotice(notes[1])
+    if not market then
+        HighlightSearch(lowerQuality)
+    end
+    local noteText = #notes > 0 and (" " .. table.concat(notes, " ")) or ""
     if #list == 0 then
         if from > 0 then
+            SetListMessage(market and "Nothing matches the filters." or "Nothing on this page matches the filters.")
             SetStatus(string.format(market and "Nothing matches the filters (%d hidden)."
-                or "Nothing on this page matches the filters (%d hidden).", from) .. notes)
+                or "Nothing on this page matches the filters (%d hidden).", from) .. noteText)
         else
-            SetStatus(market and MarketEmptyText() or "No results.")
+            local empty = market and MarketEmptyText() or "No results."
+            SetListMessage(empty)
+            SetStatus(empty)
         end
         return
     end
+    SetListMessage(nil)
     local last = math.min(#list, offset + VISIBLE_ROWS)
     local filtered = from > #list and string.format(" (filtered from %d)", from) or ""
     if market then
@@ -705,7 +750,7 @@ local function RenderRows()
             MARKET_VIEWS[marketView].noun, filtered))
         return
     end
-    SetStatus(string.format("Showing %d-%d of %d%s.", scrollOffset + 1, last, #list, filtered) .. notes)
+    SetStatus(string.format("Showing %d-%d of %d%s.", scrollOffset + 1, last, #list, filtered) .. noteText)
 end
 
 --- Empties the details block under the Buy list.
@@ -1121,6 +1166,8 @@ local function SetMarketMode(market)
             row.result = nil
             row:Hide()
         end
+        SetNotice(nil)
+        SetListMessage(BUY_START)
         SetStatus(BUY_HELP)
     end
 end
@@ -1198,11 +1245,23 @@ local function ClearSearch()
     results = {}
     shownResults = {}
     scrollOffset = 0
+    -- Clear starts over: the quality and item level filters go back to none too.
+    filter.minQuality, filter.minLevel, filter.maxLevel = nil, nil, nil
+    buyPanel.minLevelBox:SetText("")
+    buyPanel.maxLevelBox:SetText("")
+    local quality = buyPanel.qualityDropdown
+    if type(quality.GenerateMenu) == "function" then
+        quality:GenerateMenu() -- shows "Any quality" on the button again
+    end
+    searchedQuality = 0
     for _, row in ipairs(rows) do
         row.result = nil
         row:Hide()
     end
     ClearDetails()
+    SetNotice(nil)
+    HighlightSearch(false)
+    SetListMessage(BUY_START)
     SetStatus(BUY_HELP)
 end
 
@@ -1223,18 +1282,28 @@ local function SendSearch()
     -- A quality filter makes an empty name a real search, as in Blizzard's window. Item level
     -- alone doesn't: it only filters the page that comes back, so the house would send its first
     -- page of everything.
+    --- Says why nothing was sent: in the status line, beside the filters, and in the list if empty.
+    -- @param why the reason
+    local function Refuse(why)
+        SetStatus(why)
+        SetNotice(why)
+        if #shownResults == 0 then
+            SetListMessage(why)
+        end
+    end
     if strlenutf8(text) < MIN_SEARCH_LENGTH and not (text == "" and filter.minQuality) then
-        SetStatus("Type at least 2 letters, or pick a quality.")
+        Refuse("Type at least 2 letters, or pick a quality.")
         return
     end
     if not AuctionHouseFrame or not AuctionHouseFrame:IsShown() then
-        SetStatus("Open the auction house first.")
+        Refuse("Open the auction house first.")
         return
     end
     if not C_AuctionHouse.IsThrottledMessageSystemReady() then
-        SetStatus("The auction house is still busy. Wait, then click Search again.")
+        Refuse("The auction house is still busy. Wait, then click Search again.")
         return
     end
+    SetNotice(nil)
 
     -- One click, one query. No follow-up timer.
     -- The quality filter goes with the search; item level filters the results it brings back.
@@ -2041,6 +2110,15 @@ local function BuildFilterRow()
     local maxBox = FilterBox(34, true)
     maxBox:SetPoint("LEFT", dash, "RIGHT", 8, 0)
     buyPanel.minLevelBox, buyPanel.maxLevelBox = minBox, maxBox
+
+    -- An orange note right of the filters, for something to act on (two short lines at most).
+    local notice = Cell(buyPanel, "GameFontNormalSmall", "LEFT")
+    notice:SetPoint("LEFT", maxBox, "RIGHT", 12, 0)
+    notice:SetPoint("RIGHT", frame, "RIGHT", -14, 0)
+    notice:SetWordWrap(true)
+    notice:SetTextColor(1, 0.5, 0.1)
+    notice:Hide()
+    buyPanel.notice = notice
 end
 
 --- Makes the HouseLedger window, hidden until the auction house opens.
@@ -2102,6 +2180,7 @@ local function BuildFrame()
     button:SetPoint("RIGHT", scanButton, "LEFT", -8, 0)
     button:SetText("Search")
     button:SetScript("OnClick", SendSearch)
+    buyPanel.searchButton = button
 
     local clear = CreateFrame("Button", nil, buyPanel, "UIPanelButtonTemplate")
     clear:SetSize(70, 22)
@@ -2162,6 +2241,14 @@ local function BuildFrame()
     buyPanel.priceHeading = header.priceText
     buyPanel.headerTexts, buyPanel.sortButtons = header.texts, header.sortButtons
     BuildFilterRow()
+
+    -- A large message in the middle of the list while it is empty.
+    local listMessage = Cell(buyPanel, "GameFontNormalLarge", "CENTER")
+    listMessage:SetPoint("LEFT", list, "LEFT", 30, 0)
+    listMessage:SetPoint("RIGHT", list, "RIGHT", -30, 0)
+    listMessage:SetWordWrap(true)
+    listMessage:SetText(BUY_START)
+    buyPanel.listMessage = listMessage
     for index = 1, VISIBLE_ROWS do
         rows[index] = BuildRow(list, index)
     end

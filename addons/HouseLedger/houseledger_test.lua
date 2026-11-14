@@ -87,6 +87,8 @@ function FrameMethods:SetupMenu(generator) self.menuGenerator = generator end
 function FrameMethods:SetChecked(checked) self.checked = checked == true end
 function FrameMethods:SetHeight(height) self.height = height end
 function FrameMethods:SetItemByID(itemID) self.itemByID = itemID end
+function FrameMethods:LockHighlight() self.highlightLocked = true end
+function FrameMethods:UnlockHighlight() self.highlightLocked = false end
 function FrameMethods:SetColorTexture(r, g, b, a) self.colorTexture = { r, g, b, a } end
 function FrameMethods:GetChecked() return self.checked end
 function FrameMethods:SetValue(value) self.value = value end
@@ -973,9 +975,13 @@ do
     Setup()
     Load()
     local lines = {}
-    for _, owner in ipairs({ MainFrame(), MainFrame().buyPanel, MainFrame().sellPanel }) do
+    -- The large list message and the orange note beside the filters are meant to wrap.
+    local panel = MainFrame().buyPanel
+    for _, owner in ipairs({ MainFrame(), panel, MainFrame().sellPanel }) do
         for _, line in ipairs(owner.fontStrings) do
-            lines[#lines + 1] = line
+            if line ~= panel.listMessage and line ~= panel.notice then
+                lines[#lines + 1] = line
+            end
         end
     end
     local allSingle = #lines >= 3
@@ -1814,10 +1820,15 @@ do
         panel.qualityDropdown.shown and panel.minLevelBox.shown and panel.maxLevelBox.shown
         and not panel.filterNameBox.shown)
     Check("quality starts at any", Picked(panel.qualityDropdown) == "Any quality")
+    Check("an empty Buy list says how to start, in large text in the middle of the list",
+        panel.listMessage.shown and panel.listMessage.text == "Type a name or pick a quality, then click Search.")
     SearchBox():SetText("")
     Click("Search")
     Check("no name and no filter sends nothing", #world.browseQueries == 0
         and StatusLine() == "Type at least 2 letters, or pick a quality.")
+    Check("and says so where the player looks: the list and the note by the filters",
+        panel.listMessage.text == "Type at least 2 letters, or pick a quality."
+        and panel.notice.shown and panel.notice.text == "Type at least 2 letters, or pick a quality.")
     Pick(panel.qualityDropdown, "Rare & up")
     Check("picking a quality sends nothing", #world.browseQueries == 0 and Picked(panel.qualityDropdown) == "Rare & up")
     Click("Search")
@@ -1836,6 +1847,7 @@ do
     local rows = ResultRows()
     Check("results below the quality are left out", rows[1].nameText.text == "Item 1" and rows[3].nameText.text == "Item 3"
         and not rows[4].shown and StatusLine() == "Showing 1-3 of 3 (filtered from 4).")
+    Check("with rows showing, the big message and the note go away", not panel.listMessage.shown and not panel.notice.shown)
     Type(panel.minLevelBox, "10")
     Check("a minimum item level filters the results by their own item level, sending nothing",
         rows[1].nameText.text == "Item 2" and rows[2].nameText.text == "Item 3" and not rows[3].shown
@@ -1846,14 +1858,18 @@ do
     Type(panel.maxLevelBox, "")
     Check("loosening the filters shows what the search already brought", rows[3].nameText.text == "Item 4"
         and #world.browseQueries == 1)
-    Check("and says a lower quality needs a new search, since the house only sent the higher ones",
-        StatusLine():find("Search again to include lower qualities.", 1, true) ~= nil)
+    Check("and says a lower quality needs a new search, by the filters and on Search itself",
+        panel.notice.shown and panel.notice.text == "Click Search again to include lower qualities."
+        and ButtonNamed("Search").highlightLocked == true
+        and StatusLine():find("Click Search again to include lower qualities.", 1, true) ~= nil)
     Pick(panel.qualityDropdown, "Epic & up")
-    Check("a tighter quality just filters the page", StatusLine():find("Search again", 1, true) == nil)
+    Check("a tighter quality just filters the page", StatusLine():find("Search again", 1, true) == nil
+        and not panel.notice.shown and ButtonNamed("Search").highlightLocked == false)
     Pick(panel.qualityDropdown, "Any quality")
     Click("Search")
     Check("an empty name with only an item level sends nothing: the house never sees item level",
-        #world.browseQueries == 1 and StatusLine() == "Type at least 2 letters, or pick a quality.")
+        #world.browseQueries == 1 and StatusLine() == "Type at least 2 letters, or pick a quality."
+        and panel.notice.text == "Type at least 2 letters, or pick a quality.")
     SearchBox():SetText("linen")
     Click("Search")
     Check("a name with a level filter asks for every quality", #world.browseQueries == 2
@@ -1862,9 +1878,23 @@ do
     Check("after the new search the lower-quality note goes away", StatusLine():find("Search again", 1, true) == nil)
 
     world.partialBrowse = true
+    Type(panel.minLevelBox, "")
+    Check("a partial page says these are only the first results, by the filters",
+        panel.notice.text == "These are the first 4 results. Add a name or filter to see others."
+        and StatusLine() == "Showing 1-4 of 4. These are the first 4 results. Add a name or filter to see others.")
     Type(panel.minLevelBox, "99")
-    Check("when the filters hide a whole partial page, it says the house has more",
-        StatusLine() == "Nothing on this page matches the filters (4 hidden). The house has more; narrow the search.")
+    Check("when the filters hide a whole partial page, the list says so in large text",
+        panel.listMessage.shown and panel.listMessage.text == "Nothing on this page matches the filters."
+        and StatusLine() == "Nothing on this page matches the filters (4 hidden). These are the first 4 results."
+            .. " Add a name or filter to see others.")
+
+    Pick(panel.qualityDropdown, "Rare & up")
+    Type(panel.maxLevelBox, "50")
+    Click("Clear")
+    Check("Clear empties the name and resets the quality and item level filters",
+        SearchBox():GetText() == "" and Picked(panel.qualityDropdown) == "Any quality"
+        and panel.minLevelBox:GetText() == "" and panel.maxLevelBox:GetText() == ""
+        and panel.listMessage.text == "Type a name or pick a quality, then click Search." and not panel.notice.shown)
 end
 
 do
