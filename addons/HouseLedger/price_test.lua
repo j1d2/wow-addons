@@ -567,6 +567,22 @@ do
         and not P.FilterActive({ text = "x" }) and P.FilterActive({ minQuality = 2 }) and P.FilterActive({ maxLevel = 3 }))
 end
 
+-- Settings
+do
+    local keys = {}
+    for index, setting in ipairs(P.SETTINGS) do
+        keys[index] = setting.key .. "=" .. tostring(setting.default)
+    end
+    Check("settings: tooltip prices on, details without Shift off",
+        table.concat(keys, ",") == "tooltipPrices=true,tooltipDetails=false")
+    local db = P.EnsureDB(nil)
+    Check("new saved data gets every default", db.settings.tooltipPrices == true and db.settings.tooltipDetails == false)
+    db = P.EnsureDB({ version = 3, houses = {}, settings = { tooltipPrices = false, tooltipDetails = "yes" } })
+    Check("a saved choice stays and a damaged one goes back to its default",
+        db.settings.tooltipPrices == false and db.settings.tooltipDetails == false)
+    Check("damaged settings are replaced", type(P.EnsureDB({ settings = 5 }).settings) == "table")
+end
+
 if failed > 0 then
     io.write(string.format("%d failed\n", failed))
     os.exit(1)
