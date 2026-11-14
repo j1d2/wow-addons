@@ -15,6 +15,7 @@ Sources:
 - Showing auction data the server already returned.
 - A search that starts from a button click, or from an item dropped on a slot (one mouse release), and only when `C_AuctionHouse.IsThrottledMessageSystemReady()` is true. One click or drop sends one search. Item searches (`SendSearchQuery`, `SendSellSearchQuery`) follow the same rule as `SendBrowseQuery`, and their results are shown, not saved.
 - A full-house price scan that starts from a Scan click, calls `C_AuctionHouse.ReplicateItems` once, and then waits out the 15 minute account throttle. The listing reads are spread across frames. Seller names are not saved. Saved prices may be shown on item mouseovers.
+- Lists and windows built only from saved scan data: HouseLedger's Market tab (deals, drops and rises) reads saved prices and sends nothing on its tab, arrows, scrolling, row clicks or hovers. Its tab is a plain button of our own and presses nothing on Blizzard's window. Item names and qualities from the scan's own listings may be saved; seller names may not.
 - Following Blizzard's auction window with `hooksecurefunc`: its tab, and the item put in its Sell window, so HouseLedger shows the results Blizzard's own search brought back. Following sends no search.
 - In-game macros made in Blizzard's macro window. One press, one action. A `/castsequence` still needs a press for each step.
 

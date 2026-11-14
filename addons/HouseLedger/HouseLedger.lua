@@ -81,6 +81,15 @@ local SELL_SORT = {
 
 local BUY_TAB = 1
 local SELL_TAB = 2
+-- Market is ours alone: a plain tab that presses nothing on Blizzard's window.
+local MARKET_TAB = 3
+-- The Market tab's views, in switcher order. All read saved data only.
+local MARKET_VIEWS = {
+    { key = "deals", title = "Deals", noun = "deals",
+        empty = "No deals at your last scan. A deal needs %d scans of an item." },
+    { key = "drops", title = "Biggest drops", noun = "drops", empty = "No prices went down at your last scan." },
+    { key = "rises", title = "Biggest rises", noun = "rises", empty = "No prices went up at your last scan." },
+}
 -- Sell panel lines, top to bottom: key and label.
 local SELL_LINES = {
     { "low", "Lowest now" },
@@ -121,6 +130,12 @@ local rows = {}
 -- clicking only re-read these; they never ask the house again.
 local results = {}
 local scrollOffset = 0
+-- The Market tab: which view, its rows (shaped like browse results), and the
+-- PriceLedger.Market lists, kept until the house has a newer scan.
+local marketView = 1
+local marketList = {}
+local marketOffset = 0
+local marketCache
 
 local scanState = "idle"
 local readToken = 0
@@ -330,12 +345,21 @@ end
 --- Name, icon and quality for a result.
 -- The game may not have loaded the item yet; ITEM_KEY_ITEM_INFO_RECEIVED
 -- redraws the rows.
+-- A Market row carries the name and quality its scan saved; those come first.
 -- @param itemKey the result's item key, or nil
+-- @param result optional; the row's result, with savedName and savedQuality on Market rows
 -- @return the name, or "item <id>" (or "unknown item") until it is loaded
 -- @return the icon, or a question mark until it is loaded
 -- @return the item quality, or nil until it is loaded
-local function ItemLook(itemKey)
+local function ItemLook(itemKey, result)
     local info = itemKey and C_AuctionHouse.GetItemKeyInfo(itemKey)
+    if result and result.savedName then
+        local quality = result.savedQuality
+        if not HouseLedgerPrice.IsQuality(quality) then
+            quality = info and info.quality
+        end
+        return result.savedName, info and info.iconFileID or QUESTION_MARK_ICON, quality
+    end
     if info and info.itemName and info.itemName ~= "" then
         return info.itemName, info.iconFileID or QUESTION_MARK_ICON, info.quality
     end
@@ -360,11 +384,12 @@ end
 -- @param row a row button from BuildRow
 -- @param result one entry of C_AuctionHouse.GetBrowseResults
 local function FillRow(row, result)
-    local name, icon, quality = ItemLook(result.itemKey)
+    local name, icon, quality = ItemLook(result.itemKey, result)
     row.result = result
     row.nameText:SetText(name)
     local r, g, b = 1, 1, 1
-    if quality and C_Item and type(C_Item.GetItemQualityColor) == "function" then
+    -- The game rejects anything but a real quality, such as a scan's -1 for "not known yet".
+    if HouseLedgerPrice.IsQuality(quality) and C_Item and type(C_Item.GetItemQualityColor) == "function" then
         r, g, b = C_Item.GetItemQualityColor(quality)
     end
     row.nameText:SetTextColor(r, g, b)
@@ -387,11 +412,96 @@ local function FillRow(row, result)
     row:Show()
 end
 
---- Draws the visible rows from the saved results at the scroll offset.
--- Also sets the status line to the range shown, or "No results.".
+--- How long ago a time was, for the Market switcher.
+-- @param seconds seconds since then
+-- @return text like "just now", "12 min ago", "2 h ago" or "3 days ago"
+local function AgoText(seconds)
+    if seconds < 60 then
+        return "just now"
+    elseif seconds < 60 * 60 then
+        return string.format("%d min ago", math.floor(seconds / 60))
+    elseif seconds < 48 * 60 * 60 then
+        return string.format("%d h ago", math.floor(seconds / (60 * 60)))
+    end
+    return string.format("%d days ago", math.floor(seconds / (24 * 60 * 60)))
+end
+
+--- The list the Buy panel shows now: the Market list on the Market tab, else the search results.
+-- @return the list, and its scroll offset
+local function ActiveList()
+    if currentTab == MARKET_TAB then
+        return marketList, marketOffset
+    end
+    return results, scrollOffset
+end
+
+--- The house the Market tab reads: the player's own once it has a scan, else the last one scanned.
+-- @return the house table, or nil
+local function MarketHouse()
+    local houses = HouseLedgerDB.houses or {}
+    local house = houses[PlayerHouseKey()]
+    if type(house) == "table" and house.scannedAt then
+        return house
+    end
+    return houses[HouseLedgerDB.lastHouseKey or ""]
+end
+
+--- An item key for a saved item: the game's own maker when it has one.
+-- Saved rows have the item id only, so gear shows as its base item.
+-- @param itemID the item's id
+-- @return the item key
+local function SavedItemKey(itemID)
+    if type(C_AuctionHouse.MakeItemKey) == "function" then
+        return C_AuctionHouse.MakeItemKey(itemID)
+    end
+    return { itemID = itemID, itemLevel = 0, itemSuffix = 0, battlePetSpeciesID = 0 }
+end
+
+--- Rebuilds the Market rows for the chosen view. The three lists are worked out once per scan.
+-- Reads saved data only.
+local function RefreshMarket()
+    local house = MarketHouse()
+    if marketCache == nil or marketCache.house ~= house or marketCache.scannedAt ~= (house and house.scannedAt) then
+        marketCache = HouseLedgerPrice.Market(house)
+        marketCache.house = house
+    end
+    marketList = {}
+    for _, entry in ipairs(marketCache[MARKET_VIEWS[marketView].key]) do
+        marketList[#marketList + 1] = {
+            itemKey = SavedItemKey(entry.itemID), minPrice = entry.unit, totalQuantity = entry.qty,
+            savedName = entry.name, savedQuality = entry.quality,
+        }
+    end
+    marketOffset = math.min(marketOffset, math.max(0, #marketList - VISIBLE_ROWS))
+end
+
+--- The Market switcher's text: the view and how old the scan is.
+-- @return text like "Deals at last scan (12 min ago)"
+local function MarketLabel()
+    local title = MARKET_VIEWS[marketView].title
+    local scannedAt = marketCache and marketCache.scannedAt
+    if scannedAt == nil then
+        return title
+    end
+    return title .. " at last scan (" .. AgoText(math.max(0, time() - scannedAt)) .. ")"
+end
+
+--- The status line for an empty Market view.
+-- @return the text
+local function MarketEmptyText()
+    if marketCache == nil or marketCache.scannedAt == nil then
+        return "No prices saved yet. Click Scan once."
+    end
+    return string.format(MARKET_VIEWS[marketView].empty, HouseLedgerPrice.DEAL_MIN_SCANS + 1)
+end
+
+--- Draws the visible rows from the active list at its scroll offset.
+-- Also sets the status line to the range shown, or says the list is empty.
 local function RenderRows()
+    local list, offset = ActiveList()
+    local market = currentTab == MARKET_TAB
     for index = 1, VISIBLE_ROWS do
-        local result = results[scrollOffset + index]
+        local result = list[offset + index]
         if result then
             FillRow(rows[index], result)
         else
@@ -399,11 +509,18 @@ local function RenderRows()
             rows[index]:Hide()
         end
     end
-    if #results == 0 then
-        SetStatus("No results.")
+    if market then
+        buyPanel.marketLabel:SetText(MarketLabel())
+    end
+    if #list == 0 then
+        SetStatus(market and MarketEmptyText() or "No results.")
         return
     end
-    local last = math.min(#results, scrollOffset + VISIBLE_ROWS)
+    local last = math.min(#list, offset + VISIBLE_ROWS)
+    if market then
+        SetStatus(string.format("Showing %d-%d of %d %s.", offset + 1, last, #list, MARKET_VIEWS[marketView].noun))
+        return
+    end
     local text = string.format("Showing %d-%d of %d.", scrollOffset + 1, last, #results)
     if type(C_AuctionHouse.HasFullBrowseResults) == "function" and not C_AuctionHouse.HasFullBrowseResults() then
         text = text .. " The house has more; narrow the search."
@@ -424,6 +541,10 @@ end
 local function ShowResults()
     results = C_AuctionHouse.GetBrowseResults() or {}
     scrollOffset = 0
+    if currentTab == MARKET_TAB then
+        -- Kept for when the Buy tab opens again.
+        return
+    end
     -- The clicked row may not be in the new list.
     ClearDetails()
     RenderRows()
@@ -433,12 +554,18 @@ end
 -- Moves through results already received.
 -- @param rowsDown rows to move; negative moves up. Clamped to the list.
 local function Scroll(rowsDown)
-    local maxOffset = math.max(0, #results - VISIBLE_ROWS)
-    local offset = math.min(maxOffset, math.max(0, scrollOffset + rowsDown))
-    if offset ~= scrollOffset then
-        scrollOffset = offset
-        RenderRows()
+    local list, current = ActiveList()
+    local maxOffset = math.max(0, #list - VISIBLE_ROWS)
+    local offset = math.min(maxOffset, math.max(0, current + rowsDown))
+    if offset == current then
+        return
     end
+    if currentTab == MARKET_TAB then
+        marketOffset = offset
+    else
+        scrollOffset = offset
+    end
+    RenderRows()
 end
 
 --- A row click: its saved stats in the details block.
@@ -449,7 +576,7 @@ local function ShowRowDetails(row)
         return
     end
     ClearDetails()
-    local name = ItemLook(row.result.itemKey)
+    local name = ItemLook(row.result.itemKey, row.result)
     local stats = SavedStats(row.result.itemKey and row.result.itemKey.itemID)
     if stats == nil then
         buyPanel.detailTitle:SetText(name .. ": no saved prices yet. Click Scan.")
@@ -701,8 +828,46 @@ local function DropItem()
     SetSellStatus("Searching for " .. name .. "...")
 end
 
---- Shows the Buy or the Sell tab.
--- @param id BUY_TAB or SELL_TAB
+--- Switches the Buy panel between its search (Buy tab) and the Market tab.
+-- On Market the search box, Clear and Search hide and the view switcher shows in their place;
+-- both share the list, its rows and the details block. Nothing is sent either way.
+-- @param market true for the Market tab
+local function SetMarketMode(market)
+    buyPanel.marketMode = market
+    for _, control in ipairs(buyPanel.searchControls) do
+        if market then control:Hide() else control:Show() end
+    end
+    for _, control in ipairs(buyPanel.marketControls) do
+        if market then control:Show() else control:Hide() end
+    end
+    buyPanel.priceHeading:SetText(market and "Scanned" or "Price")
+    ClearDetails()
+    if market then
+        RefreshMarket()
+        RenderRows()
+    elseif #results > 0 then
+        RenderRows()
+    else
+        for _, row in ipairs(rows) do
+            row.result = nil
+            row:Hide()
+        end
+        SetStatus(BUY_HELP)
+    end
+end
+
+--- Market's < and > arrows: the previous or next view, wrapping around.
+-- @param step 1 for the next view, -1 for the previous one
+local function StepMarket(step)
+    marketView = (marketView - 1 + step) % #MARKET_VIEWS + 1
+    marketOffset = 0
+    RefreshMarket()
+    ClearDetails()
+    RenderRows()
+end
+
+--- Shows the Buy, Sell or Market tab.
+-- @param id BUY_TAB, SELL_TAB or MARKET_TAB
 local function SelectTab(id)
     currentTab = id
     -- The tab buttons are protected; in combat they are marked afterwards.
@@ -722,6 +887,9 @@ local function SelectTab(id)
     else
         sellPanel:Hide()
         buyPanel:Show()
+        if (id == MARKET_TAB) ~= (buyPanel.marketMode == true) then
+            SetMarketMode(id == MARKET_TAB)
+        end
     end
 end
 
@@ -798,6 +966,11 @@ local function FinishRead(token, best)
     end
     local saved = HouseLedgerPrice.Commit(HouseLedgerDB, scanHouseKey, best, time())
     StopReading()
+    if currentTab == MARKET_TAB then
+        -- The Market lists come from the scan just saved.
+        RefreshMarket()
+        RenderRows()
+    end
     SetScanStatus(string.format("Saved %d prices (%s).", saved, HouseLedgerPrice.HouseLabel(scanHouseKey)), 8)
 end
 
@@ -820,9 +993,10 @@ local function ReadListings(token, index, total, best)
     local last = math.min(index + READ_BATCH - 1, total - 1)
     for i = index, last do
         -- One call. The seller fields come back nil and are not stored.
-        local _, _, count, _, _, _, _, _, _, buyout, _, _, _, _, _, _, itemID =
+        -- The item's name and quality are kept; the name is nil for an item the game hasn't loaded.
+        local name, _, count, quality, _, _, _, _, _, buyout, _, _, _, _, _, _, itemID =
             C_AuctionHouse.GetReplicateItemInfo(i)
-        HouseLedgerPrice.Consider(best, itemID, count, buyout)
+        HouseLedgerPrice.Consider(best, itemID, count, buyout, name, quality)
     end
 
     local nextIndex = last + 1
@@ -1145,18 +1319,26 @@ local function BuildTab(id, label)
     return tab
 end
 
---- Makes the Buy and Sell tabs and shows the Buy tab.
+--- Makes the Buy, Sell and Market tabs and shows the Buy tab.
+-- Market is a plain tab: it isn't linked to Blizzard's window and presses nothing there.
 local function BuildTabs()
     local buyTab = BuildTab(BUY_TAB, "Buy")
     buyTab:SetPoint("TOPLEFT", frame, "BOTTOMLEFT", 12, 2)
     local sellTab = BuildTab(SELL_TAB, "Sell")
+    local marketTab = CreateFrame("Button", "HouseLedgerFrameTab" .. MARKET_TAB, frame, "PanelTabButtonTemplate")
+    marketTab:SetID(MARKET_TAB)
+    marketTab:SetText("Market")
+    marketTab:SetScript("OnClick", function()
+        SelectTab(MARKET_TAB)
+    end)
     if type(PanelTemplates_TabResize) == "function" then
         PanelTemplates_TabResize(buyTab, 0)
         PanelTemplates_TabResize(sellTab, 0)
+        PanelTemplates_TabResize(marketTab, 0)
     end
-    frame.Tabs = { buyTab, sellTab }
-    -- Also anchors the Sell tab to the right of the Buy tab.
-    PanelTemplates_SetNumTabs(frame, 2)
+    frame.Tabs = { buyTab, sellTab, marketTab }
+    -- Also anchors each tab to the right of the one before.
+    PanelTemplates_SetNumTabs(frame, MARKET_TAB)
     SelectTab(BUY_TAB)
 end
 
@@ -1236,6 +1418,27 @@ local function BuildFrame()
         SendSearch()
         box:ClearFocus()
     end)
+    buyPanel.searchControls = { searchBox, clear, button }
+
+    -- The Market tab's view switcher, in the search box's place: < Deals at last scan (12 min ago) >
+    local marketPrev = CreateFrame("Button", nil, buyPanel, "UIPanelButtonTemplate")
+    marketPrev:SetSize(24, 22)
+    marketPrev:SetPoint("LEFT", frame, "TOPLEFT", 72, -41)
+    marketPrev:SetText("<")
+    marketPrev:SetScript("OnClick", function() StepMarket(-1) end)
+    local marketNext = CreateFrame("Button", nil, buyPanel, "UIPanelButtonTemplate")
+    marketNext:SetSize(24, 22)
+    marketNext:SetPoint("RIGHT", scanButton, "LEFT", -8, 0)
+    marketNext:SetText(">")
+    marketNext:SetScript("OnClick", function() StepMarket(1) end)
+    local marketLabel = Cell(buyPanel, "GameFontNormal", "CENTER")
+    marketLabel:SetPoint("LEFT", marketPrev, "RIGHT", 6, 0)
+    marketLabel:SetPoint("RIGHT", marketNext, "LEFT", -6, 0)
+    buyPanel.marketPrev, buyPanel.marketNext, buyPanel.marketLabel = marketPrev, marketNext, marketLabel
+    buyPanel.marketControls = { marketPrev, marketNext, marketLabel }
+    for _, control in ipairs(buyPanel.marketControls) do
+        control:Hide()
+    end
 
     local inset = frame.Inset
     if type(inset) == "table" then
@@ -1252,6 +1455,7 @@ local function BuildFrame()
         Scroll(-delta * WHEEL_STEP)
     end)
     BuildHeader(list)
+    buyPanel.priceHeading = header.priceText
     for index = 1, VISIBLE_ROWS do
         rows[index] = BuildRow(list, index)
     end
@@ -1263,6 +1467,7 @@ local function BuildFrame()
     statusText:SetJustifyH("LEFT")
     statusText:SetWordWrap(false)
     statusText:SetText(BUY_HELP)
+    buyPanel.statusText = statusText
 
     -- The details block, between the list and the status lines.
     buyPanel.detailTitle = Cell(buyPanel, "GameFontNormal", "LEFT")
@@ -1318,6 +1523,9 @@ local function BuildFrame()
         tick = 0
         RefreshIdleScanLine()
         RefreshScanButton()
+        if currentTab == MARKET_TAB and buyPanel.marketMode then
+            buyPanel.marketLabel:SetText(MarketLabel())
+        end
     end)
 
     RefreshIdleScanLine()
@@ -1624,7 +1832,7 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
         return
     end
 
-    if event == "ITEM_KEY_ITEM_INFO_RECEIVED" and #results > 0 then
+    if event == "ITEM_KEY_ITEM_INFO_RECEIVED" and #(ActiveList()) > 0 then
         -- An item's name and icon arrived; redraw the rows in place.
         RenderRows()
         return
