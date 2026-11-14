@@ -462,18 +462,30 @@ function PriceLedger.LowestListing(listings)
     return summary
 end
 
---- A house key as people read it: "Horde|Realm" becomes "Horde, Realm".
+--- A house key as people read it: its side, "Horde|Realm" becomes "Horde". The realm is left
+-- out: the player knows it, and it would show in every screenshot of the window.
 -- @param key a house key
 -- @return the label; "" for a non-string, the key itself when it has no "|"
 function PriceLedger.HouseLabel(key)
     if type(key) ~= "string" then
         return ""
     end
-    local side, realm = string.match(key, "^([^|]*)|(.*)$")
-    if side == nil then
-        return key
+    return string.match(key, "^([^|]*)|") or key
+end
+
+--- The Scan button's text: "Scan" when a scan is allowed, otherwise the wait, like
+-- "Scan (12m)" (minutes rounded up) or "Scan (45s)" under a minute.
+-- @param wait seconds until the next scan is allowed
+-- @return the text
+function PriceLedger.ScanButtonText(wait)
+    if type(wait) ~= "number" or wait <= 0 then
+        return "Scan"
     end
-    return side .. ", " .. realm
+    wait = math.ceil(wait)
+    if wait >= 60 then
+        return string.format("Scan (%dm)", math.ceil(wait / 60))
+    end
+    return string.format("Scan (%ds)", wait)
 end
 
 --- Seconds left before the next full scan is allowed.
@@ -648,7 +660,8 @@ end
 
 --- The saved stats for the Buy details block and the Sell tab.
 -- One line per window (1, 3, 7 and 14 days, always all four so each keeps its
--- place), then the std dev of the earlier scans.
+-- place), then the std dev of the earlier scans. A window with no scans beyond
+-- the one before it says so in grey instead of repeating the same numbers.
 -- @param stats from PriceLedger.Stats
 -- @param coinText function(copper) -> money text
 -- @return a list of { left, right }, or nil without stats
@@ -657,8 +670,14 @@ function PriceLedger.WindowLines(stats, coinText)
         return nil
     end
     local lines = {}
+    local previous
     for _, window in ipairs(stats.windows) do
-        lines[#lines + 1] = WindowLine(window, coinText)
+        local line = WindowLine(window, coinText)
+        if previous and window.scans == previous.scans then
+            line.right = "|cff9d9d9dsame as " .. Plural(previous.days, "day") .. "|r"
+        end
+        lines[#lines + 1] = line
+        previous = window
     end
     local spread
     if stats.spread ~= nil and Round(stats.spread) < 1 then

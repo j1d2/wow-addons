@@ -4,6 +4,16 @@ All notable changes to HouseLedger. The format follows [Keep a Changelog](https:
 
 ## [Unreleased]
 
+### Added
+
+- A gold progress bar while a scan reads the auction house's listings.
+
+### Changed
+
+- The **Scan** button greys out and counts down the 15-minute wait, like "Scan (12m)", instead of looking ready.
+- The status line is shorter and leaves out the realm: "6154 prices (Horde). Next scan in 13 min."
+- In the saved price lines, a window with no more scans than the one before says "same as 7 days" instead of repeating the same numbers.
+
 ## [0.3.0] - 2026-11-10
 
 First public release.

@@ -81,6 +81,8 @@ function FrameMethods:GetRight() return self.right end
 function FrameMethods:GetHeight() return self.height end
 function FrameMethods:SetTextColor(r, g, b) self.color = { r, g, b } end
 function FrameMethods:SetTexture(texture) self.texture = texture end
+function FrameMethods:SetMinMaxValues(min, max) self.min, self.max = min, max end
+function FrameMethods:SetValue(value) self.value = value end
 
 --- Makes a fake frame, font string or texture with empty state.
 -- @param kind the frame type, such as "Button" or "FontString"
@@ -395,7 +397,8 @@ local function MainFrame() return _G.HouseLedgerFrame end
 -- @return the button, or nil
 local function ButtonNamed(label)
     for _, object in ipairs(world.frames) do
-        if object.kind == "Button" and object.text == label then
+        -- "Scan" also finds the Scan button while it shows its countdown, "Scan (12m)".
+        if object.kind == "Button" and (object.text == label or object.text:sub(1, #label + 2) == label .. " (") then
             return object
         end
     end
@@ -615,8 +618,11 @@ do
     Click("Scan")
     Check("scan click sends one request", world.replicateCalls == 1)
     Check("scan button locks while waiting", not ButtonNamed("Scan").enabled)
+    Check("no progress bar before the listings arrive", not MainFrame().scanBar.shown)
     Fire("REPLICATE_ITEM_LIST_UPDATE")
     Check("first batch reads, rest is queued", #world.timers == 1)
+    Check("the progress bar shows how much is read", MainFrame().scanBar.shown
+        and MainFrame().scanBar.value == 500 and MainFrame().scanBar.max == 1200)
     -- The wiki says the event fires again for each item that loads.
     Fire("REPLICATE_ITEM_LIST_UPDATE")
     Fire("REPLICATE_ITEM_LIST_UPDATE")
@@ -628,8 +634,15 @@ do
         priced = priced + 1
     end
     Check("scan saves one price per item id", priced == 300)
-    Check("scan unlocks the button", ButtonNamed("Scan").enabled)
-    Check("status reports the save", ScanLine():find("Saved 300 prices", 1, true) ~= nil)
+    Check("after the scan the button counts down the 15 minutes", not ButtonNamed("Scan").enabled
+        and ButtonNamed("Scan").text == "Scan (15m)")
+    Check("the progress bar hides when the read is done", not MainFrame().scanBar.shown)
+    Check("status reports the save", ScanLine() == "Saved 300 prices (Alliance).")
+    Advance(8)
+    Check("then the idle line, without the realm", ScanLine() == "300 prices (Alliance). Next scan in 15 min.")
+    Advance(15 * 60)
+    Check("15 minutes later the button is ready again", ButtonNamed("Scan").enabled
+        and ButtonNamed("Scan").text == "Scan" and ScanLine() == "300 prices (Alliance). Scan is ready.")
     Check("seller names are never saved", not DeepFind(HouseLedgerDB, "SellerBob"))
     Check("one request for the whole scan", world.replicateCalls == 1)
 end
@@ -659,7 +672,8 @@ do
     OpenHouse()
     Click("Scan")
     Advance(61) -- ANSWER_WAIT is 60 seconds; no event arrives
-    Check("no answer unlocks the button", ButtonNamed("Scan").enabled)
+    Check("no answer: the button waits out the 15 minutes", not ButtonNamed("Scan").enabled
+        and ButtonNamed("Scan").text:find("^Scan %(1[45]m%)$") ~= nil)
     Click("Scan")
     Check("no answer: retry inside 15 min sends nothing", world.replicateCalls == 1)
 end
@@ -1022,7 +1036,7 @@ do
     Check("details: 1 day", Detail(1, "1 day, 1 scan", "<money 100>"))
     Check("details: 3 days", Detail(2, "3 days, 3 scans", "<money 100>"))
     Check("details: 7 days", Detail(3, "7 days, 5 scans", "<money 100>"))
-    Check("details: 14 days", Detail(4, "14 days, 5 scans", "<money 100>"))
+    Check("details: 14 days with no more scans says it matches 7 days", Detail(4, "14 days, 5 scans", "|cff9d9d9dsame as 7 days|r"))
     Check("details: std dev", Detail(5, "Std dev, earlier scans", "none"))
     Check("the status line keeps counting rows", StatusLine() == "Showing 1-1 of 1.")
     row:GetScript("OnEnter")(row)

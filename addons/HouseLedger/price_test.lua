@@ -280,7 +280,8 @@ do
     Check("window lines: 1 day with one scan is just its price", Line(1, "1 day, 1 scan", "115c"))
     Check("window lines: 3 days, average and range", Line(2, "3 days, 3 scans", "avg 105c (100c - 115c)"))
     Check("window lines: 7 days", Line(3, "7 days, 4 scans", "avg 104c (100c - 115c)"))
-    Check("window lines: 14 days is shown even when it adds no scans", Line(4, "14 days, 4 scans", "avg 104c (100c - 115c)"))
+    Check("window lines: 14 days keeps its place but doesn't repeat 7 days' numbers",
+        Line(4, "14 days, 4 scans", "|cff9d9d9dsame as 7 days|r"))
     Check("window lines: no spread when the earlier scans match", Line(5, "Std dev, earlier scans", "none"))
     local spread = P.WindowLines(P.Stats(History({ 100, 110, 90 }, 100)), Coins)
     Check("window lines: the spread of the earlier scans", spread[5].right == "10c")
@@ -290,6 +291,16 @@ do
     Check("window lines: no spread before 2 earlier scans",
         young[5].left == "Std dev, earlier scans" and young[5].right == "after 2 more scans")
     Check("window lines: no stats, no lines", P.WindowLines(nil, Coins) == nil)
+    local longer = P.WindowLines(P.Stats(History({ 100, 100, 100, 100, 100, 100, 100, 100, 100 }, 100)), Coins)
+    Check("window lines: a window with more scans than the last shows its numbers",
+        longer[4].left == "14 days, 10 scans" and not longer[4].right:find("same as", 1, true))
+end
+
+do
+    Check("scan button: ready", P.ScanButtonText(0) == "Scan")
+    Check("scan button: seconds under a minute", P.ScanButtonText(45) == "Scan (45s)")
+    Check("scan button: whole minutes, rounded up", P.ScanButtonText(61) == "Scan (2m)"
+        and P.ScanButtonText(900) == "Scan (15m)")
 end
 
 do
@@ -304,7 +315,7 @@ do
 end
 
 do
-    Check("house label reads side, realm", P.HouseLabel("Horde|Some Realm") == "Horde, Some Realm")
+    Check("house label is the side only, so the realm stays off screen", P.HouseLabel("Horde|Some Realm") == "Horde")
     Check("house label keeps a key with no realm", P.HouseLabel("Neutral") == "Neutral")
     Check("house label handles nil", P.HouseLabel(nil) == "")
 end
