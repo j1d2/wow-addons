@@ -245,7 +245,13 @@ local function Setup(opts)
         world.tooltip.items[#world.tooltip.items + 1] = itemID
     end
     _G.C_Item = {
-        GetItemQualityColor = function() return 1, 1, 1 end,
+        -- Like the game: a quality outside 0 to 8 (the scan's -1 for "not known yet") is a usage error.
+        GetItemQualityColor = function(quality)
+            if type(quality) ~= "number" or quality < 0 or quality > 8 then
+                error("Usage: local r, g, b, qualityString = C_Item.GetItemQualityColor(quality)")
+            end
+            return 1, 1, 1
+        end,
         GetItemName = function(location) return "Item " .. location.itemID end,
         GetItemIcon = function() return 134400 end,
         -- A bag can be worn but is not equipment to the house; world.equippable
@@ -1633,6 +1639,7 @@ do
         P.Consider(best, 1, 1, day < 5 and 100 or 50, "Cheap Today", 2)
         P.Consider(best, 3, 1, day < 5 and 100 or 150, "Pricier", 3)
         P.Consider(best, 4, 1, 100, "Same", 1)
+        P.Consider(best, 5, 1, day < 5 and 100 or 80, "Unknown Quality", -1) -- down 20%, not a deal
         P.Commit(db, "Alliance|TestRealm", best, world.now - (5 - day) * 24 * 60 * 60 - 2 * 60 * 60)
     end
     _G.HouseLedgerDB = db
@@ -1666,6 +1673,8 @@ do
     end
     Check("> shows the biggest drops", Step(panel.marketNext) == "Biggest drops at last scan (2 h ago)"
         and rows[1].nameText.text == "Cheap Today")
+    Check("an item whose quality the scan didn't know shows without an error",
+        rows[2].nameText.text == "Unknown Quality" and rows[2].shown)
     Check("> again shows the biggest rises", Step(panel.marketNext) == "Biggest rises at last scan (2 h ago)"
         and rows[1].nameText.text == "Pricier" and StatusLine() == "Showing 1-1 of 1 rises.")
     Check("and wraps around to deals", Step(panel.marketNext):find("^Deals") ~= nil)

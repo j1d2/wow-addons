@@ -37,6 +37,15 @@ PriceLedger.DEAL_SIGMAS = 2
 
 local SECONDS_PER_DAY = 24 * 60 * 60
 
+--- Whether a value is an item quality the game knows: a whole number from 0 (Poor) to 8.
+-- A scan reports -1 for an item it hasn't loaded, and the game's quality color function
+-- rejects that.
+-- @param quality the value to check
+-- @return true for a real quality
+function PriceLedger.IsQuality(quality)
+    return type(quality) == "number" and quality >= 0 and quality <= 8 and quality == math.floor(quality)
+end
+
 --- Formats a time with the game's date function, or Lua's offline.
 -- @param format a date format string, such as "%Y%m%d"
 -- @param seconds a time() value
@@ -168,7 +177,7 @@ function PriceLedger.EnsureDB(db)
                     if row.name ~= nil and type(row.name) ~= "string" then
                         row.name = nil
                     end
-                    if row.quality ~= nil and type(row.quality) ~= "number" then
+                    if row.quality ~= nil and not PriceLedger.IsQuality(row.quality) then
                         row.quality = nil
                     end
                 end
@@ -235,7 +244,7 @@ function PriceLedger.Consider(best, itemID, count, buyout, name, quality)
     if type(name) ~= "string" or name == "" then
         name = current and current.name
     end
-    if type(quality) ~= "number" then
+    if not PriceLedger.IsQuality(quality) then
         quality = current and current.quality
     end
     if current == nil then

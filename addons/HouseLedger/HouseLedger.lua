@@ -354,8 +354,11 @@ end
 local function ItemLook(itemKey, result)
     local info = itemKey and C_AuctionHouse.GetItemKeyInfo(itemKey)
     if result and result.savedName then
-        return result.savedName, info and info.iconFileID or QUESTION_MARK_ICON,
-            result.savedQuality or (info and info.quality)
+        local quality = result.savedQuality
+        if not HouseLedgerPrice.IsQuality(quality) then
+            quality = info and info.quality
+        end
+        return result.savedName, info and info.iconFileID or QUESTION_MARK_ICON, quality
     end
     if info and info.itemName and info.itemName ~= "" then
         return info.itemName, info.iconFileID or QUESTION_MARK_ICON, info.quality
@@ -385,7 +388,8 @@ local function FillRow(row, result)
     row.result = result
     row.nameText:SetText(name)
     local r, g, b = 1, 1, 1
-    if quality and C_Item and type(C_Item.GetItemQualityColor) == "function" then
+    -- The game rejects anything but a real quality, such as a scan's -1 for "not known yet".
+    if HouseLedgerPrice.IsQuality(quality) and C_Item and type(C_Item.GetItemQualityColor) == "function" then
         r, g, b = C_Item.GetItemQualityColor(quality)
     end
     row.nameText:SetTextColor(r, g, b)

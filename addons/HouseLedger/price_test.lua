@@ -474,6 +474,8 @@ do
     P.Consider(best, 2589, 1, 8)
     Check("a cheaper listing without a name keeps the name", best[2589].name == "Linen Cloth"
         and best[2589].buyout == 8)
+    P.Consider(best, 2590, 1, 5, "Odd Item", -1)
+    Check("a quality the scan didn't know (-1) isn't kept", best[2590].quality == nil)
 
     local db = P.EmptyDB()
     P.Commit(db, "Alliance|Test", best, At(0))
@@ -485,8 +487,12 @@ do
     Check("a later scan without the name keeps the saved one", row.name == "Linen Cloth" and row.unit == 9)
 
     local items = P.EnsureDB({ version = 3, houses = { ["Alliance|Test"] = { items = {
-        [1] = { unit = 5, seen = 1, days = {}, name = 7, quality = "rare" } } } } }).houses["Alliance|Test"].items
+        [1] = { unit = 5, seen = 1, days = {}, name = 7, quality = "rare" },
+        [2] = { unit = 5, seen = 1, days = {}, name = "Odd", quality = -1 },
+        [3] = { unit = 5, seen = 1, days = {}, name = "Epic", quality = 4 } } } } }).houses["Alliance|Test"].items
     Check("a damaged saved name or quality is dropped", items[1].name == nil and items[1].quality == nil)
+    Check("a saved -1 quality (not known) is dropped; a real one stays", items[2].quality == nil
+        and items[3].quality == 4)
 end
 
 -- Market: deals, drops and rises at the last scan
