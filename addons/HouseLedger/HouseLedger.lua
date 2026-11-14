@@ -59,7 +59,7 @@ local FILTER_HEIGHT = 26
 local CHART_WIDTH = 170
 local CHART_HEIGHT = 74
 local SELL_CHART_WIDTH = 260
-local SELL_CHART_HEIGHT = 80
+local SELL_CHART_HEIGHT = 70
 -- Bar colors: earlier days blue, the latest day gold, a day's range a faint band above its low.
 local CHART_BAR_COLOR = { 0.35, 0.6, 1, 0.9 }
 local CHART_LATEST_COLOR = { 1, 0.82, 0, 1 }
@@ -118,6 +118,7 @@ local SELL_LINES = {
     { "spread", "Std dev, earlier scans" },
     { "based", "Based on" },
     { "trend", "Trend vs 7-day avg" },
+    { "typical", "Typical (7-day avg)" },
 }
 local SELL_LINE_HEIGHT = 20
 local BUY_HELP = "Type an item name. One click sends one search."
@@ -765,11 +766,13 @@ local function ShowSellResults(summary, complete)
             end
         end
         values.based:SetText(HouseLedgerPrice.CountText(stats))
+        values.typical:SetText(stats.typical and CopperToText(stats.typical) or "-")
         ShowChart(sellPanel.chart, HouseLedgerPrice.Lookup(HouseLedgerDB, pendingSell.itemID, PlayerHouseKey()))
     else
         values.based:SetText("No saved prices yet")
     end
     if summary == nil then
+        sellPanel.hint:SetText(HouseLedgerPrice.SellAdvice(nil, false))
         SetSellStatus("No one is selling " .. pendingSell.name .. " right now.")
         return
     end
@@ -782,10 +785,7 @@ local function ShowSellResults(summary, complete)
         trend = HouseLedgerPrice.SteadyText(verdict)
     end
     values.trend:SetText(trend ~= "" and trend or "-")
-    if verdict.deal then
-        sellPanel.hint:SetText(HouseLedgerPrice.DEAL_ICON
-            .. " The lowest is far under its 7-day average. Waiting may sell for more.")
-    end
+    sellPanel.hint:SetText(HouseLedgerPrice.SellAdvice(verdict, true))
     local text = "Lowest of " .. HouseLedgerPrice.ListingText(summary) .. " for " .. pendingSell.name .. "."
     if complete == false then
         -- Asking for the rest would be another query; leave that to a new drop.
@@ -1485,7 +1485,7 @@ local function BuildSellPanel()
     end
     sellPanel.chart = BuildChart(sellPanel, SELL_CHART_WIDTH, SELL_CHART_HEIGHT)
     sellPanel.chart:SetPoint("TOPLEFT", sellPanel, "TOPLEFT", 24,
-        -LIST_TOP - 72 - #SELL_LINES * SELL_LINE_HEIGHT - 34)
+        -LIST_TOP - 72 - #SELL_LINES * SELL_LINE_HEIGHT - 48)
     sellPanel.hint = Cell(sellPanel, "GameFontHighlight", "LEFT")
     sellPanel.hint:SetPoint("TOPLEFT", sellPanel, "TOPLEFT", 24, -LIST_TOP - 72 - #SELL_LINES * SELL_LINE_HEIGHT - 10)
     sellPanel.hint:SetPoint("RIGHT", sellPanel, "RIGHT", -16, 0)

@@ -600,6 +600,19 @@ do
     Check("no days, no chart", P.ChartDays({}, At(0)) == nil and P.ChartDays(nil, nil) == nil)
 end
 
+-- Sell advice in plain words
+do
+    Check("advice: no one else selling", P.SellAdvice(nil, false)
+        == "No one else is selling it right now, so you set the price.")
+    Check("advice: no saved history yet", P.SellAdvice({}, true) == "Not enough saved prices for advice yet."
+        and P.SellAdvice(nil, true) == "Not enough saved prices for advice yet.")
+    Check("advice: high", P.SellAdvice({ trend = "up" }, true) == "Prices are high today. A good time to sell.")
+    Check("advice: low", P.SellAdvice({ trend = "down" }, true) == "Prices are low today. Waiting may sell for more.")
+    Check("advice: normal", P.SellAdvice({ trend = "flat" }, true) == "Prices are about normal today.")
+    Check("advice: far under is the deal note", P.SellAdvice({ trend = "down", deal = true }, true)
+        == P.DEAL_ICON .. " The lowest is far under its 7-day average. Waiting may sell for more.")
+end
+
 if failed > 0 then
     io.write(string.format("%d failed\n", failed))
     os.exit(1)

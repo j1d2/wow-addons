@@ -1306,6 +1306,9 @@ do
     Check("Sell shows the saved counts", SellValue("based") == "4 scans over 4 days")
     Check("seller view: a higher price is a green up arrow",
         SellValue("trend"):find("NPE_ArrowUp", 1, true) ~= nil and SellValue("trend"):find("20ff20", 1, true) ~= nil)
+    Check("Sell shows the typical price", SellValue("typical") == "<money 100>")
+    Check("and says what it means in plain words",
+        MainFrame().sellPanel.hint.text == "Prices are high today. A good time to sell.")
     Check("Sell saves nothing", SavedItemCount() == before)
     Check("seller names are never saved", not SavedAnywhere(HouseLedgerDB, "SellerBob"))
 end
@@ -1464,6 +1467,13 @@ do
     world.commodityResults = { { unitPrice = 103, quantity = 5 } }
     Fire("COMMODITY_SEARCH_RESULTS_UPDATED", 2589)
     Check("Sell: a quiet price reads steady", SellValue("trend") == "|cff9d9d9dsteady +3%|r")
+    Check("Sell: and the advice says normal", MainFrame().sellPanel.hint.text == "Prices are about normal today.")
+    Click("Reset")
+    Drop({ itemID = 2589, commodity = true })
+    world.commodityResults = {}
+    Fire("COMMODITY_SEARCH_RESULTS_UPDATED", 2589)
+    Check("Sell: no one selling says so in the advice",
+        MainFrame().sellPanel.hint.text == "No one else is selling it right now, so you set the price.")
 end
 
 -- Two-way tabs: our tabs are secure click buttons. The game itself
