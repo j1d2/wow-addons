@@ -85,6 +85,8 @@ function FrameMethods:SetMinMaxValues(min, max) self.min, self.max = min, max en
 -- A dropdown keeps the menu generator it was given, as Blizzard's DropdownButton does.
 function FrameMethods:SetupMenu(generator) self.menuGenerator = generator end
 function FrameMethods:SetChecked(checked) self.checked = checked == true end
+function FrameMethods:SetHeight(height) self.height = height end
+function FrameMethods:SetColorTexture(r, g, b, a) self.colorTexture = { r, g, b, a } end
 function FrameMethods:GetChecked() return self.checked end
 function FrameMethods:SetValue(value) self.value = value end
 
@@ -1926,6 +1928,73 @@ do
     Check("settings send nothing", #world.browseQueries == 0 and world.replicateCalls == 1)
     Click("Buy")
     Check("Buy hides the Settings panel", frame.buyPanel.shown and not panel.shown)
+end
+
+-- ---------------------------------------------------------------------
+-- 14-day chart: Buy and Market details, and the Sell tab
+-- ---------------------------------------------------------------------
+
+--- The bars of a chart that show, by day slot.
+-- @param chart the chart frame
+-- @return list of heights (nil for a hidden bar)
+local function BarHeights(chart)
+    local heights = {}
+    for index, bar in ipairs(chart.bars) do
+        heights[index] = bar.shown and bar.height or false
+    end
+    return heights
+end
+
+do
+    Setup({ screenRight = 1400 })
+    Load()
+    SaveDailyHistory(5)
+    OpenHouse()
+    world.browseResults = BrowseResults(4306, 4306, 70)
+    Fire("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
+    local panel = MainFrame().buyPanel
+    Check("the chart waits for a row click", not panel.chart.shown)
+    local queries = #world.browseQueries
+    local row = ResultRows()[1]
+    row:GetScript("OnClick")(row)
+    local chart = panel.chart
+    local heights = BarHeights(chart)
+    Check("a row click shows its 14-day chart", chart.shown and #chart.bars == 14)
+    Check("days with scans have bars, the rest none", heights[14] and heights[10] and not heights[9] and not heights[1])
+    Check("bars scale to the chart's top price", heights[14] == chart.barArea and heights[10] == chart.barArea)
+    Check("the latest day is gold", chart.bars[14].colorTexture[1] == 1 and chart.bars[13].colorTexture[1] < 1)
+    Check("the chart says its top price", chart.topText.text == "<money 100>")
+    Check("the chart sends nothing", #world.browseQueries == queries)
+    Click("Clear")
+    Check("Clear hides the chart", not panel.chart.shown)
+end
+
+do
+    Setup({ screenRight = 1100 })
+    Load()
+    SaveDailyHistory(5)
+    OpenHouse()
+    world.browseResults = BrowseResults(4306, 4306, 70)
+    Fire("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
+    local row = ResultRows()[1]
+    row:GetScript("OnClick")(row)
+    Check("a narrow window leaves the chart out", not MainFrame().buyPanel.chart.shown)
+end
+
+do
+    Setup()
+    Load()
+    SaveDailyHistory(4, 2589)
+    OpenHouse()
+    Click("Sell")
+    local chart = MainFrame().sellPanel.chart
+    Check("the Sell chart waits for an item", not chart.shown)
+    Drop({ itemID = 2589, commodity = true })
+    world.commodityResults = { { itemID = 2589, unitPrice = 120, quantity = 2, owners = {} } }
+    Fire("COMMODITY_SEARCH_RESULTS_UPDATED", 2589)
+    Check("a dropped item with saved prices shows its chart", chart.shown and BarHeights(chart)[14])
+    Click("Reset")
+    Check("Reset hides it", not chart.shown)
 end
 
 if failed > 0 then

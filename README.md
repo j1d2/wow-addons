@@ -63,12 +63,12 @@ Auction house prices, remembered. One Scan a day builds a 14-day price history o
 2. **Scan:** saves today's prices for the whole auction house (every 15 minutes at most; the button counts down the wait).
 3. **Price** is the cheapest one up right now; **Avg 7d** is your saved 7-day average.
 4. **Trend:** a green arrow means cheaper than usual, a red one pricier, grey "steady" about the same, and a ⭐ marks a deal.
-5. **Click a row** for its saved prices over 1, 3, 7 and 14 days.
+5. **Click a row** for its saved prices over 1, 3, 7 and 14 days, with a 14-day chart beside them when the window is wide enough.
 
 **Sell tab** (right):
 1. **Drop an item** here, or right-click it in your bags.
 2. **Right now:** the lowest price up, how many are at that price, and how many in all.
-3. **History:** your saved averages and ranges over 1, 3, 7 and 14 days.
+3. **History:** your saved averages and ranges over 1, 3, 7 and 14 days, and a 14-day chart.
 4. **Trend** against your 7-day average.
 5. **Reset** empties the tab; **Scan** saves today's prices.
 
