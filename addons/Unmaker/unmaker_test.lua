@@ -1065,6 +1065,13 @@ do
         end
     end
     Check("History shows who unmade each item", Shown() == "Blue Ring/Tester,Old Cloak/Alt")
+    local whenOK = false
+    for _, f in ipairs(world.frames) do
+        if f.historyRow and f.shown and f.entry.name == "Old Cloak" then
+            whenOK = f.whenText.text == os.date("%m-%d %H:%M", 1762800000)
+        end
+    end
+    Check("the When column is month-day then time, year-month-day order", whenOK)
     local names = {}
     for index, choice in ipairs(MenuChoices(panel.whoDropdown)) do
         names[index] = choice.text

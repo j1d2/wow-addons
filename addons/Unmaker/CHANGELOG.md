@@ -14,6 +14,7 @@ All notable changes to Unmaker. The format follows [Keep a Changelog](https://ke
 ### Changed
 
 - The Stats tab picks a character from a dropdown instead of the < and > arrows, so any character is one click away.
+- The window is a little wider, so History dates and item names fit. History dates read month-day then time ("11-14 11:13"); a row's tooltip adds the year.
 
 ## [0.3.0] - 2026-11-13
 

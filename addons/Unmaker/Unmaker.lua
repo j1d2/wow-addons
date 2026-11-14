@@ -19,7 +19,7 @@ local DISENCHANT_SPELL = 13262
 local BAGS = { 0, 1, 2, 3, 4 } -- the backpack and four bags; the reagent bag holds no gear
 local ROW_COUNT = 10
 local ROW_HEIGHT = 24
-local WIDTH = 480
+local WIDTH = 520
 local LIST_TOP = 64 -- the Items tab starts this far below the window's top edge
 -- On the Items tab: the filter row, then the column headings, then the list.
 local FILTER_HEIGHT = 26
@@ -245,14 +245,17 @@ local function Render()
     UpdateButtons()
 end
 
---- Format a time for the History tab, like "11/12 03:58".
+--- Format a time for the History tab in year-month-day order: "11-12 03:58" in the column,
+-- "2026-11-12 03:58" with the year in the row's tooltip.
 -- @param seconds a time() value
+-- @param withYear true to include the year
 -- @return the text
-local function FormatWhen(seconds)
+local function FormatWhen(seconds, withYear)
+    local format = withYear and "%Y-%m-%d %H:%M" or "%m-%d %H:%M"
     if type(date) == "function" then
-        return date("%m/%d %H:%M", seconds)
+        return date(format, seconds)
     end
-    return os.date("%m/%d %H:%M", seconds)
+    return os.date(format, seconds)
 end
 
 --- Fill the Stats tab: the facts, then the lifetime materials, most first.
@@ -632,9 +635,9 @@ end
 local HISTORY_COLUMNS = {
     { key = "name", label = "Item", x = 0, width = 150 },
     { key = "level", label = "ilvl", x = 155, width = 35 },
-    { key = "who", label = "Who", x = 195, width = 70 },
-    { key = nil, label = "Got", x = 270, width = 110 },
-    { key = "time", label = "When", x = 385, width = 60 },
+    { key = "who", label = "Who", x = 195, width = 80 },
+    { key = nil, label = "Got", x = 280, width = 120 },
+    { key = "time", label = "When", x = 405, width = 80 },
 }
 
 --- Build the History tab: clickable headings that sort, then ten rows, newest first by default.
@@ -713,7 +716,7 @@ local function BuildHistory()
                 if entry.link then
                     GameTooltip:SetHyperlink(entry.link)
                 end
-                GameTooltip:AddLine("Unmade by " .. S.WhoText(entry, playerRealm) .. ", " .. FormatWhen(entry.time))
+                GameTooltip:AddLine("Unmade by " .. S.WhoText(entry, playerRealm) .. ", " .. FormatWhen(entry.time, true))
                 GameTooltip:Show()
             end
         end)
@@ -853,7 +856,7 @@ local function BuildFilterAndHeader()
 
     -- Blizzard's own dropdown, as HouseLedger's filters use on Forever.
     local quality = CreateFrame("DropdownButton", nil, filterRow, "WowStyle1DropdownTemplate")
-    quality:SetWidth(150)
+    quality:SetWidth(170) -- room for "Uncommon & down" without cutting it off
     quality:SetPoint("LEFT", filterRow, "LEFT", 2, 0)
     quality:SetupMenu(function(_, root)
         for _, choice in ipairs(R.QUALITY_CHOICES) do
