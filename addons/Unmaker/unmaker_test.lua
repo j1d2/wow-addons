@@ -1034,6 +1034,58 @@ do
     Check("it follows the character dropdown", chart.shown and chart.bars[14].shown)
 end
 
+-- History: who unmade it and a character filter ---------------------------------------------
+
+do
+    local old = { stats = { total = 1, bestSession = 1 }, history = {
+        { itemID = 7, name = "Old Cloak", quality = 2, level = 9, character = "Alt", time = 1762800000,
+            mats = { { name = "Strange Dust", quantity = 4 } } },
+    } }
+    Start({ bags = StandardBags(), db = old })
+    _G.SlashCmdList.UNMAKER("")
+    Click(_G.UnmakerNextButton)
+    FinishCast(0, 2)
+    _G.UnmakerFrameTab3:GetScript("OnClick")(_G.UnmakerFrameTab3)
+    local panel, headers = nil, {}
+    local function Shown()
+        local names = {}
+        for _, f in ipairs(world.frames) do
+            if f.historyRow and f.shown then
+                names[#names + 1] = f.entry.name .. "/" .. f.whoText.text
+            end
+        end
+        return table.concat(names, ",")
+    end
+    for _, f in ipairs(world.frames) do
+        if f.historyRow then
+            panel = f.parent
+        end
+        if f.sortKey then
+            headers[f.sortKey] = f
+        end
+    end
+    Check("History shows who unmade each item", Shown() == "Blue Ring/Tester,Old Cloak/Alt")
+    local names = {}
+    for index, choice in ipairs(MenuChoices(panel.whoDropdown)) do
+        names[index] = choice.text
+    end
+    Check("the character dropdown lists all characters, then each A to Z",
+        table.concat(names, ",") == "All characters,Alt,Tester")
+    Pick(panel.whoDropdown, "Alt")
+    Check("picking a character shows only theirs, old entries without a realm included",
+        Shown() == "Old Cloak/Alt" and Picked(panel.whoDropdown) == "Alt")
+    Pick(panel.whoDropdown, "All characters")
+    headers.who:GetScript("OnClick")(headers.who)
+    Check("the Who heading sorts by character, A to Z", Shown() == "Old Cloak/Alt,Blue Ring/Tester"
+        and headers.who.label.text:find("NPE_ArrowUp", 1, true) ~= nil)
+    headers.who:GetScript("OnClick")(headers.who)
+    Check("clicking it again reverses it", Shown() == "Blue Ring/Tester,Old Cloak/Alt"
+        and headers.who.label.text:find("NPE_ArrowDown", 1, true) ~= nil)
+    headers.time:GetScript("OnClick")(headers.time)
+    Check("another heading moves the arrow there", headers.time.label.text:find("NPE_Arrow", 1, true) ~= nil
+        and headers.who.label.text == "Who")
+end
+
 if failed > 0 then
     io.write(string.format("%d failed\n", failed))
     os.exit(1)

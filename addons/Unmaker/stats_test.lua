@@ -269,6 +269,33 @@ do
         and S.ChartDays(S.EnsureStats({}, "Testrealm"), DAY2) == nil)
 end
 
+-- History: who unmade it, filtering by character, reversed sorts
+do
+    local history = {
+        { name = "Old Cloak", character = "Alt", time = 1, level = 9 },
+        { name = "Boots", character = "Tester", realm = "Testrealm", time = 2, level = 13 },
+        { name = "Ring", character = "Alt", realm = "Otherrealm", time = 3, level = 20 },
+        { name = "Lost", time = 4 },
+    }
+    local function Names(list)
+        local names = {}
+        for index, entry in ipairs(list) do
+            names[index] = entry.name
+        end
+        return table.concat(names, ",")
+    end
+    Check("filter: no character keeps everything", #S.FilterHistory(history, nil, "Testrealm") == 4)
+    Check("filter: an entry saved without a realm counts for this realm",
+        Names(S.FilterHistory(history, "Alt-Testrealm", "Testrealm")) == "Old Cloak")
+    Check("filter: another realm's character is apart", Names(S.FilterHistory(history, "Alt-Otherrealm", "Testrealm")) == "Ring")
+    Check("who: an entry's character label, by name on this realm",
+        S.WhoText(history[1], "Testrealm") == "Alt" and S.WhoText(history[3], "Testrealm") == "Alt-Otherrealm"
+        and S.WhoText(history[4], "Testrealm") == "?")
+    Check("sort by who, A to Z, unknown last", Names(S.SortHistory(history, "who")) == "Ring,Old Cloak,Boots,Lost")
+    Check("a reversed sort flips it", Names(S.SortHistory(history, "time", true)) == "Old Cloak,Boots,Ring,Lost"
+        and Names(S.SortHistory(history, "level", true)) == "Lost,Old Cloak,Boots,Ring")
+end
+
 if failed > 0 then
     io.write(string.format("%d failed\n", failed))
     os.exit(1)

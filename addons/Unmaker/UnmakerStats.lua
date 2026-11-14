@@ -388,14 +388,47 @@ local SORTS = {
     quality = { field = "quality" },
     level = { field = "level" },
     time = { field = "time" },
+    -- Who unmade it, A to Z; entries with no character go last.
+    who = { field = "character", ascending = true, missingLast = true },
 }
+
+--- The history entries one character made, or all of them. An entry saved before realms were
+-- kept counts for this realm, as the per-character totals rebuilt from history do.
+-- @param history the saved history list
+-- @param key a character's key, or nil for every entry
+-- @param realm this character's realm
+-- @return a new list, in the same order
+function S.FilterHistory(history, key, realm)
+    local kept = {}
+    for _, entry in ipairs(history) do
+        if key == nil or S.CharacterKey(entry.character, entry.realm or realm) == key then
+            kept[#kept + 1] = entry
+        end
+    end
+    return kept
+end
+
+--- Who made a history entry, as the History tab shows it: the name on this realm,
+-- "Name-Realm" on another, "?" when not saved.
+-- @param entry a history entry
+-- @param realm this character's realm
+-- @return the text
+function S.WhoText(entry, realm)
+    local key = S.CharacterKey(entry.character, entry.realm or realm)
+    return key and S.CharacterLabel(key, realm) or "?"
+end
 
 --- A sorted copy of the history. The saved list is left as it is.
 -- @param history the saved history list
--- @param key "time" (newest first), "name" (A to Z), "quality" or "level" (highest first)
+-- @param key "time" (newest first), "name" or "who" (A to Z), "quality" or "level" (highest first)
+-- @param reverse optional; true flips the direction (ties still put the newer entry first)
 -- @return a new list
-function S.SortHistory(history, key)
+function S.SortHistory(history, key, reverse)
     local sort = SORTS[key] or SORTS.time
+    local ascending = sort.ascending
+    if reverse then
+        ascending = not ascending
+    end
     local copy, order = {}, {}
     for index, entry in ipairs(history) do
         copy[index] = entry
@@ -404,13 +437,16 @@ function S.SortHistory(history, key)
     -- Ties go to the newer entry: the later time, then the one recorded later.
     table.sort(copy, function(a, b)
         local va, vb = a[sort.field], b[sort.field]
+        if sort.missingLast and (va == nil or vb == nil) and va ~= vb then
+            return vb == nil
+        end
         if sort.ascending then
             va, vb = va or "", vb or ""
         else
             va, vb = va or 0, vb or 0
         end
         if va ~= vb then
-            if sort.ascending then
+            if ascending then
                 return va < vb
             end
             return va > vb
