@@ -49,6 +49,7 @@ Auction house prices, remembered. One Scan a day builds a 14-day price history o
 - **Hover any item:** the last price, a trend arrow and a ⭐ for a deal. Hold **Shift** for the 1, 3, 7 and 14-day averages and ranges.
 - **Buy tab:** search, then compare today's price with your 7-day average. Click a row for 1, 3, 7 and 14 days.
 - **Sell tab:** drop an item in to see the lowest price now and its history. Then post it in Blizzard's window.
+- **Market tab:** the deals, biggest drops and biggest rises from your last scan, with no searching.
 - **Never** buys, posts or scans by itself.
 
 <p align="center">
@@ -69,6 +70,8 @@ Auction house prices, remembered. One Scan a day builds a 14-day price history o
 3. **History:** your saved averages and ranges over 1, 3, 7 and 14 days.
 4. **Trend** against your 7-day average.
 5. **Reset** empties the tab; **Scan** saves today's prices.
+
+**Market tab:** use **<** and **>** to switch between **Deals**, **Biggest drops** and **Biggest rises** at your last scan. It reads only your saved prices, so it never sends a search. Click a row for its 1, 3, 7 and 14 days. Item names fill in from your next scan.
 
 <p align="center"><sub>Game art in the screenshots © Blizzard Entertainment, Inc.</sub></p>
 

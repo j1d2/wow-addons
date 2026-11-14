@@ -160,6 +160,21 @@ function PriceLedger.EnsureDB(db)
             end
         end
     end
+    -- Item names and qualities are optional, saved by scans from late 2026 on.
+    for _, house in pairs(db.houses) do
+        if type(house) == "table" and type(house.items) == "table" then
+            for _, row in pairs(house.items) do
+                if type(row) == "table" then
+                    if row.name ~= nil and type(row.name) ~= "string" then
+                        row.name = nil
+                    end
+                    if row.quality ~= nil and type(row.quality) ~= "number" then
+                        row.quality = nil
+                    end
+                end
+            end
+        end
+    end
     db.version = PriceLedger.DB_VERSION
     return db
 end
@@ -197,11 +212,15 @@ end
 --- Folds one listing into the lowest-price table for this scan.
 -- A buyout of 0 is a bid-only listing and is ignored. A cheaper unit price
 -- replaces the stored one; the same unit price adds its stack to qty.
--- @param best itemID -> { buyout, count, qty }; changed in place
+-- The item's name and quality are kept from any listing that has them: the
+-- game leaves the name nil for an item it hasn't loaded yet.
+-- @param best itemID -> { buyout, count, qty, name, quality }; changed in place
 -- @param itemID the item's id
 -- @param count stack size
 -- @param buyout stack buyout in copper
-function PriceLedger.Consider(best, itemID, count, buyout)
+-- @param name optional item name
+-- @param quality optional item quality
+function PriceLedger.Consider(best, itemID, count, buyout, name, quality)
     if type(itemID) ~= "number" or itemID <= 0 then
         return
     end
@@ -213,15 +232,22 @@ function PriceLedger.Consider(best, itemID, count, buyout)
     end
 
     local current = best[itemID]
+    if type(name) ~= "string" or name == "" then
+        name = current and current.name
+    end
+    if type(quality) ~= "number" then
+        quality = current and current.quality
+    end
     if current == nil then
-        best[itemID] = { buyout = buyout, count = count, qty = count }
+        best[itemID] = { buyout = buyout, count = count, qty = count, name = name, quality = quality }
         return
     end
+    current.name, current.quality = name, quality
 
     local incoming = buyout * current.count
     local stored = current.buyout * count
     if incoming < stored then
-        best[itemID] = { buyout = buyout, count = count, qty = count }
+        best[itemID] = { buyout = buyout, count = count, qty = count, name = name, quality = quality }
         return
     end
     if incoming == stored then
@@ -310,7 +336,10 @@ function PriceLedger.Commit(db, houseKey, best, now)
     for itemID, listing in pairs(best) do
         local unit = PriceLedger.UnitCopper(listing.buyout, listing.count)
         if unit > 0 then
-            PriceLedger.Remember(house, itemID, unit, listing.qty, now)
+            local row = PriceLedger.Remember(house, itemID, unit, listing.qty, now)
+            -- A scan that didn't get the name keeps the one saved before.
+            row.name = listing.name or row.name
+            row.quality = listing.quality or row.quality
             saved = saved + 1
         end
     end
@@ -460,6 +489,63 @@ function PriceLedger.LowestListing(listings)
         end
     end
     return summary
+end
+
+--- Sorts market entries by how far the price moved, then by name and item id.
+-- @param list entries from PriceLedger.Market, sorted in place
+-- @param biggestRiseFirst true for the highest trendPct first, false for the lowest
+local function SortByMove(list, biggestRiseFirst)
+    table.sort(list, function(a, b)
+        if a.trendPct ~= b.trendPct then
+            if biggestRiseFirst then
+                return a.trendPct > b.trendPct
+            end
+            return a.trendPct < b.trendPct
+        end
+        if (a.name or "") ~= (b.name or "") then
+            return (a.name or "") < (b.name or "")
+        end
+        return a.itemID < b.itemID
+    end)
+end
+
+--- The Market tab's three lists, from the items the house's last scan saw.
+-- Reads saved data only. Items missing from the last scan are left out.
+-- @param house a house table, or nil
+-- @return { scannedAt, deals, drops, rises }; each list holds entries
+--   { itemID, name, quality, unit, qty, typical, trendPct, deal }. Deals are
+--   the deals, most under the typical price first; drops are every item
+--   trending down (deals included), biggest drop first; rises are items
+--   trending up, biggest rise first.
+function PriceLedger.Market(house)
+    local market = { deals = {}, drops = {}, rises = {} }
+    if type(house) ~= "table" or type(house.items) ~= "table" then
+        return market
+    end
+    market.scannedAt = house.scannedAt
+    for itemID, row in pairs(house.items) do
+        if type(row) == "table" and row.seen == house.scannedAt then
+            local stats = PriceLedger.Stats(row)
+            if stats and type(stats.trendPct) == "number" then
+                local entry = {
+                    itemID = itemID, name = row.name, quality = row.quality, unit = stats.unit,
+                    qty = row.qty, typical = stats.typical, trendPct = stats.trendPct, deal = stats.deal == true,
+                }
+                if entry.deal then
+                    market.deals[#market.deals + 1] = entry
+                end
+                if stats.trend == "down" then
+                    market.drops[#market.drops + 1] = entry
+                elseif stats.trend == "up" then
+                    market.rises[#market.rises + 1] = entry
+                end
+            end
+        end
+    end
+    SortByMove(market.deals, false)
+    SortByMove(market.drops, false)
+    SortByMove(market.rises, true)
+    return market
 end
 
 --- A house key as people read it: its side, "Horde|Realm" becomes "Horde". The realm is left

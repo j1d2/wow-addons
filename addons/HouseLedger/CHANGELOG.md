@@ -6,6 +6,8 @@ All notable changes to HouseLedger. The format follows [Keep a Changelog](https:
 
 ### Added
 
+- A **Market** tab: the deals, biggest drops and biggest rises from your last scan, switched with **<** and **>**. It reads only saved prices, so it never sends a search.
+- Scans also save each item's name and quality, for the Market tab.
 - A gold progress bar while a scan reads the auction house's listings.
 
 ### Changed

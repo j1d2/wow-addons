@@ -464,6 +464,73 @@ do
     Check("blank side and realm get a stable key", key == "Unknown|Forever")
 end
 
+-- Item names from the scan
+do
+    local best = {}
+    P.Consider(best, 2589, 1, 10)
+    P.Consider(best, 2589, 1, 12, "Linen Cloth", 1)
+    Check("a name comes from any listing of the item, not only the cheapest",
+        best[2589].name == "Linen Cloth" and best[2589].quality == 1 and best[2589].buyout == 10)
+    P.Consider(best, 2589, 1, 8)
+    Check("a cheaper listing without a name keeps the name", best[2589].name == "Linen Cloth"
+        and best[2589].buyout == 8)
+
+    local db = P.EmptyDB()
+    P.Commit(db, "Alliance|Test", best, At(0))
+    local row = db.houses["Alliance|Test"].items[2589]
+    Check("the scan saves the item's name and quality", row.name == "Linen Cloth" and row.quality == 1)
+    local later = {}
+    P.Consider(later, 2589, 1, 9)
+    P.Commit(db, "Alliance|Test", later, At(1))
+    Check("a later scan without the name keeps the saved one", row.name == "Linen Cloth" and row.unit == 9)
+
+    local items = P.EnsureDB({ version = 3, houses = { ["Alliance|Test"] = { items = {
+        [1] = { unit = 5, seen = 1, days = {}, name = 7, quality = "rare" } } } } }).houses["Alliance|Test"].items
+    Check("a damaged saved name or quality is dropped", items[1].name == nil and items[1].quality == nil)
+end
+
+-- Market: deals, drops and rises at the last scan
+do
+    local db = P.EmptyDB()
+    local plan = {
+        [1] = { name = "Cheap Today", prices = { 100, 100, 100, 100, 50 } },  -- deal, -50%
+        [2] = { name = "Bit Lower", prices = { 100, 110, 90, 100, 80 } },     -- down, no deal
+        [3] = { name = "Pricier", prices = { 100, 100, 100, 100, 150 } },     -- up +50%
+        [4] = { name = "Same", prices = { 100, 100, 100, 100, 100 } },        -- flat
+        [5] = { name = "Gone Now", prices = { 100, 100, 100, 100 } },         -- not in the last scan
+        [6] = { name = "Also Cheap", prices = { 200, 200, 200, 200, 120 } },  -- deal, -40%
+    }
+    for day = 1, 5 do
+        local best = {}
+        for itemID, item in pairs(plan) do
+            if item.prices[day] then
+                P.Consider(best, itemID, 1, item.prices[day], item.name, 2)
+            end
+        end
+        P.Commit(db, "Alliance|Test", best, At(day - 5))
+    end
+    local house = db.houses["Alliance|Test"]
+    local function IDs(list)
+        local ids = {}
+        for index, entry in ipairs(list) do
+            ids[index] = entry.itemID
+        end
+        return table.concat(ids, ",")
+    end
+    local market = P.Market(house)
+    Check("deals: only deals at the last scan, most under typical first", IDs(market.deals) == "1,6")
+    Check("drops: every item down at the last scan, deals included, biggest drop first",
+        IDs(market.drops) == "1,6,2")
+    Check("rises: items up at the last scan, biggest rise first", IDs(market.rises) == "3")
+    local first = market.deals[1]
+    Check("an entry carries what the row shows", first.name == "Cheap Today" and first.quality == 2
+        and first.unit == 50 and first.qty == 1 and first.typical == 100 and first.deal == true
+        and math.abs(first.trendPct + 0.5) < 1e-9)
+    Check("the market remembers which scan it is from", market.scannedAt == house.scannedAt)
+    Check("an empty house has empty views", #P.Market({ items = {} }).deals == 0
+        and #P.Market(nil).rises == 0)
+end
+
 if failed > 0 then
     io.write(string.format("%d failed\n", failed))
     os.exit(1)

@@ -137,8 +137,9 @@ end
 -- @param count stack size
 -- @param buyout stack buyout in copper
 -- @return the listing
-local function Listing(itemID, count, buyout)
-    return { itemID = itemID, count = count, buyout = buyout }
+-- @param noName optional; true when the game hasn't loaded the item, so its name is nil
+local function Listing(itemID, count, buyout, noName)
+    return { itemID = itemID, count = count, buyout = buyout, noName = noName }
 end
 
 --- Builds a fresh fake game world and loads both addon files into it.
@@ -313,7 +314,7 @@ local function Setup(opts)
             if row == nil then
                 return nil
             end
-            return "Item " .. row.itemID, 134400, row.count, 1, true, 1, "",
+            return (not row.noName) and ("Item " .. row.itemID) or nil, 134400, row.count, 1, true, 1, "",
                 0, 0, row.buyout, 0, nil, nil,
                 "SellerBob", "SellerBob-TestRealm", 0, row.itemID, true
         end,
@@ -355,6 +356,10 @@ local function Setup(opts)
         HasFullItemSearchResults = function() return not world.partialResults end,
         GetBrowseResults = function() return world.browseResults or {} end,
         HasFullBrowseResults = function() return true end,
+        MakeItemKey = function(itemID, itemLevel, itemSuffix, petSpecies)
+            return { itemID = itemID, itemLevel = itemLevel or 0, itemSuffix = itemSuffix or 0,
+                battlePetSpeciesID = petSpecies or 0 }
+        end,
         GetItemKeyInfo = function(itemKey)
             if world.noItemInfo then
                 return nil
@@ -644,6 +649,8 @@ do
     Check("15 minutes later the button is ready again", ButtonNamed("Scan").enabled
         and ButtonNamed("Scan").text == "Scan" and ScanLine() == "300 prices (Alliance). Scan is ready.")
     Check("seller names are never saved", not DeepFind(HouseLedgerDB, "SellerBob"))
+    Check("item names are saved", house.items[1001] and house.items[1001].name == "Item 1001"
+        and house.items[1001].quality == 1)
     Check("one request for the whole scan", world.replicateCalls == 1)
 end
 
@@ -821,7 +828,7 @@ end
 -- It is the first font string made on the Buy panel.
 -- @return its text
 local function StatusLine()
-    return MainFrame().buyPanel.fontStrings[1].text
+    return MainFrame().buyPanel.statusText.text
 end
 
 --- The list frame the result rows sit in.
@@ -1180,7 +1187,7 @@ do
     Load()
     OpenHouse()
     local frame = MainFrame()
-    Check("window has Buy and Sell tabs", TabNamed("Buy") ~= nil and TabNamed("Sell") ~= nil and frame.numTabs == 2)
+    Check("window has Buy, Sell and Market tabs", TabNamed("Buy") ~= nil and TabNamed("Sell") ~= nil and frame.numTabs == 3)
     Check("Buy tab is open first", frame.selectedTab == 1 and frame.buyPanel.shown and not frame.sellPanel.shown)
     Click("Sell")
     Check("Sell tab click opens the Sell panel", frame.selectedTab == 2 and frame.sellPanel.shown and not frame.buyPanel.shown)
@@ -1610,6 +1617,99 @@ do
     world.commodityResults = { { unitPrice = 90, quantity = 3 } }
     BlizzardPostItem({ itemID = 2589, commodity = true })
     Check("results already in show at once", SellValue("low") == "<money 90>")
+end
+
+-- ---------------------------------------------------------------------
+-- Market tab: deals, drops and rises from saved data only
+-- ---------------------------------------------------------------------
+
+do
+    Setup({ listings = { Listing(1, 1, 50, true) } })
+    world.now = 1762900000
+    local P = HouseLedgerPrice
+    local db = P.EmptyDB()
+    for day = 1, 5 do
+        local best = {}
+        P.Consider(best, 1, 1, day < 5 and 100 or 50, "Cheap Today", 2)
+        P.Consider(best, 3, 1, day < 5 and 100 or 150, "Pricier", 3)
+        P.Consider(best, 4, 1, 100, "Same", 1)
+        P.Commit(db, "Alliance|TestRealm", best, world.now - (5 - day) * 24 * 60 * 60 - 2 * 60 * 60)
+    end
+    _G.HouseLedgerDB = db
+    Load()
+    OpenHouse()
+    local frame = MainFrame()
+    world.browseResults = BrowseResults(10, 12)
+    Fire("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
+    local queries, scans = #world.browseQueries, world.replicateCalls
+
+    local market = TabNamed("Market")
+    Check("the window has a Market tab", market ~= nil and frame.numTabs == 3)
+    Check("Market is a plain tab that presses nothing on Blizzard's window",
+        market and not market.template:find("SecureActionButtonTemplate", 1, true)
+        and market.attributes.clickbutton == nil)
+    Click("Market")
+    local panel = frame.buyPanel
+    local rows = ResultRows()
+    Check("Market shows the list without the search box", frame.selectedTab == 3 and panel.shown
+        and not SearchBox().shown and panel.marketLabel.shown)
+    Check("it opens on deals at the last scan", panel.marketLabel.text == "Deals at last scan (2 h ago)")
+    Check("a deal row shows the saved name, last-scan price and the deal star",
+        rows[1].nameText.text == "Cheap Today" and rows[1].priceText.text == "<money 50>"
+        and rows[1].trendText.text:find(HouseLedgerPrice.DEAL_ICON, 1, true) ~= nil and not rows[2].shown)
+    Check("the Price heading says it is the scanned price", panel.marketMode and frame.buyPanel.priceHeading.text == "Scanned")
+    Check("status counts the deals", StatusLine() == "Showing 1-1 of 1 deals.")
+
+    local function Step(button)
+        button:GetScript("OnClick")(button)
+        return panel.marketLabel.text
+    end
+    Check("> shows the biggest drops", Step(panel.marketNext) == "Biggest drops at last scan (2 h ago)"
+        and rows[1].nameText.text == "Cheap Today")
+    Check("> again shows the biggest rises", Step(panel.marketNext) == "Biggest rises at last scan (2 h ago)"
+        and rows[1].nameText.text == "Pricier" and StatusLine() == "Showing 1-1 of 1 rises.")
+    Check("and wraps around to deals", Step(panel.marketNext):find("^Deals") ~= nil)
+    Check("< goes the other way", Step(panel.marketPrev):find("^Biggest rises") ~= nil)
+
+    rows[1]:GetScript("OnClick")(rows[1])
+    Check("a row click shows its saved prices", panel.detailTitle.text == "Pricier, 5 scans over 5 days")
+    rows[1]:GetScript("OnEnter")(rows[1])
+    Check("Market sends nothing: tab, arrows, row click and hover",
+        #world.browseQueries == queries and world.replicateCalls == scans)
+
+    Click("Buy")
+    Check("Buy brings the search back, with its results kept", SearchBox().shown and not panel.marketLabel.shown
+        and ResultRows()[1].nameText.text == "Item 10" and frame.buyPanel.priceHeading.text == "Price")
+    Click("Market")
+    BlizzardTab(AuctionHouseFrameDisplayMode.ItemSell)
+    Check("a Blizzard tab change moves off Market", frame.selectedTab == 2 and frame.sellPanel.shown)
+
+    -- In combat the tab marking waits, and combat's end lands on Market.
+    Click("Buy")
+    world.inCombat = true
+    Click("Market")
+    Check("in combat: nothing protected is changed by the Market tab", (world.blocked or 0) == 0)
+    world.inCombat = false
+    Fire("PLAYER_REGEN_ENABLED")
+    Check("after combat: Market is the open tab", frame.selectedTab == 3 and panel.marketLabel.shown)
+
+    -- A new scan refreshes the list. The game hasn't loaded this item's name: the old one stays.
+    Advance(15 * 60)
+    Click("Scan")
+    Fire("REPLICATE_ITEM_LIST_UPDATE")
+    RunTimers()
+    Check("a scan without the item's name keeps the saved one",
+        HouseLedgerDB.houses["Alliance|TestRealm"].items[1].name == "Cheap Today")
+    Check("after a scan the Market list is from the new scan", panel.marketLabel.text:find("just now", 1, true) ~= nil)
+end
+
+do
+    Setup()
+    Load()
+    OpenHouse()
+    Click("Market")
+    Check("Market with nothing saved says to scan", StatusLine() == "No prices saved yet. Click Scan once."
+        and not ResultRows()[1].shown)
 end
 
 if failed > 0 then
