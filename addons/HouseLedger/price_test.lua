@@ -537,6 +537,36 @@ do
         and #P.Market(nil).rises == 0)
 end
 
+-- Filters: name, quality and item level
+do
+    local labels = {}
+    for index, choice in ipairs(P.QUALITY_CHOICES) do
+        labels[index] = choice.label .. "=" .. tostring(choice.min)
+    end
+    Check("quality choices: any, then each quality and up", table.concat(labels, ",")
+        == "Any quality=nil,Common & up=1,Uncommon & up=2,Rare & up=3,Epic & up=4")
+
+    Check("an item level box reads whole numbers only", P.ParseLevel(" 25 ") == 25 and P.ParseLevel("") == nil
+        and P.ParseLevel("2x") == nil and P.ParseLevel(nil) == nil and P.ParseLevel("0") == nil)
+
+    local boots = { name = "Linen Boots", quality = 1, level = 10 }
+    Check("no filter passes everything", P.PassesFilter(boots, {}) and P.PassesFilter({}, {}))
+    Check("name: a part of the name, any case", P.PassesFilter(boots, { text = "LINEN b" })
+        and not P.PassesFilter(boots, { text = "wool" }))
+    Check("name: special characters are plain text", P.PassesFilter({ name = "Potion (Minor)" }, { text = "(min" })
+        and not P.PassesFilter({ name = "Potion" }, { text = "%a" }))
+    Check("quality: that quality and up", P.PassesFilter(boots, { minQuality = 1 })
+        and not P.PassesFilter(boots, { minQuality = 2 }))
+    Check("quality: an unknown quality doesn't pass a quality filter",
+        not P.PassesFilter({ name = "x" }, { minQuality = 1 }))
+    Check("level: inside the range, ends included", P.PassesFilter(boots, { minLevel = 10, maxLevel = 10 })
+        and not P.PassesFilter(boots, { minLevel = 11 }) and not P.PassesFilter(boots, { maxLevel = 9 }))
+    Check("level: no item level (0 or unknown) doesn't pass a level filter",
+        not P.PassesFilter({ level = 0 }, { minLevel = 1 }) and not P.PassesFilter({}, { maxLevel = 50 }))
+    Check("a filter is active once a quality or level is set", not P.FilterActive({})
+        and not P.FilterActive({ text = "x" }) and P.FilterActive({ minQuality = 2 }) and P.FilterActive({ maxLevel = 3 }))
+end
+
 if failed > 0 then
     io.write(string.format("%d failed\n", failed))
     os.exit(1)

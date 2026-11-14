@@ -53,7 +53,11 @@ local LIST_BOTTOM = STATUS_HEIGHT + DETAIL_HEIGHT
 local HEADER_HEIGHT = 26
 local ROW_HEIGHT = 18
 -- (538 - 60 - 148 - 26) / 18 = 16 rows.
-local VISIBLE_ROWS = math.floor((HOUSE_HEIGHT - LIST_TOP - LIST_BOTTOM - HEADER_HEIGHT) / ROW_HEIGHT)
+-- The filter row (quality, item level, and Market's name filter) sits between the top row and the list.
+local FILTER_HEIGHT = 26
+-- The filter row's center, below the window's top edge.
+local FILTER_ROW_Y = -LIST_TOP - 2 - FILTER_HEIGHT / 2
+local VISIBLE_ROWS = math.floor((HOUSE_HEIGHT - LIST_TOP - FILTER_HEIGHT - LIST_BOTTOM - HEADER_HEIGHT) / ROW_HEIGHT)
 local WHEEL_STEP = 3
 
 local COLUMN_WIDTH = { price = 96, avail = 48, typical = 96, trend = 72 }
@@ -129,7 +133,12 @@ local rows = {}
 -- Last browse results and how far the list is scrolled. Scrolling and
 -- clicking only re-read these; they never ask the house again.
 local results = {}
+-- The search results that pass the filters, in the same order.
+local shownResults = {}
 local scrollOffset = 0
+-- Quality and item level limits, shared by Buy and Market; Market's name filter text.
+local filter = {}
+local marketText = ""
 -- The Market tab: which view, its rows (shaped like browse results), and the
 -- PriceLedger.Market lists, kept until the house has a newer scan.
 local marketView = 1
@@ -432,7 +441,7 @@ local function ActiveList()
     if currentTab == MARKET_TAB then
         return marketList, marketOffset
     end
-    return results, scrollOffset
+    return shownResults, scrollOffset
 end
 
 --- The house the Market tab reads: the player's own once it has a scan, else the last one scanned.
@@ -457,6 +466,39 @@ local function SavedItemKey(itemID)
     return { itemID = itemID, itemLevel = 0, itemSuffix = 0, battlePetSpeciesID = 0 }
 end
 
+--- A saved item's name, quality and base item level, for Market's filters: the scan's saved
+-- name and quality first, then the game's item data. The game loads an item it doesn't have yet;
+-- GET_ITEM_INFO_RECEIVED filters again once it arrives.
+-- @param entry a PriceLedger.Market entry
+-- @return { name, quality, level }, any of them nil when not known
+local function SavedItemLook(entry)
+    local name, quality, level
+    local getInfo = C_Item and C_Item.GetItemInfo or GetItemInfo
+    if type(getInfo) == "function" then
+        local _
+        name, _, quality, level = getInfo(entry.itemID)
+    end
+    if HouseLedgerPrice.IsQuality(entry.quality) then
+        quality = entry.quality
+    end
+    return { name = entry.name or name, quality = quality, level = level }
+end
+
+--- Keeps the search results that pass the quality and item level filters, using each result's
+-- own item level. Reads what the search brought back; sends nothing.
+local function FilterResults()
+    shownResults = {}
+    local check = HouseLedgerPrice.FilterActive(filter)
+    for _, result in ipairs(results) do
+        local name, _, quality = ItemLook(result.itemKey, result)
+        local level = result.itemKey and result.itemKey.itemLevel
+        if not check or HouseLedgerPrice.PassesFilter({ name = name, quality = quality, level = level }, filter) then
+            shownResults[#shownResults + 1] = result
+        end
+    end
+    shownResults.from = #results
+end
+
 --- Rebuilds the Market rows for the chosen view. The three lists are worked out once per scan.
 -- Reads saved data only.
 local function RefreshMarket()
@@ -466,12 +508,19 @@ local function RefreshMarket()
         marketCache.house = house
     end
     marketList = {}
-    for _, entry in ipairs(marketCache[MARKET_VIEWS[marketView].key]) do
-        marketList[#marketList + 1] = {
-            itemKey = SavedItemKey(entry.itemID), minPrice = entry.unit, totalQuantity = entry.qty,
-            savedName = entry.name, savedQuality = entry.quality,
-        }
+    local view = marketCache[MARKET_VIEWS[marketView].key]
+    local limits = { text = marketText, minQuality = filter.minQuality, minLevel = filter.minLevel,
+        maxLevel = filter.maxLevel }
+    local check = limits.text ~= "" or HouseLedgerPrice.FilterActive(limits)
+    for _, entry in ipairs(view) do
+        if not check or HouseLedgerPrice.PassesFilter(SavedItemLook(entry), limits) then
+            marketList[#marketList + 1] = {
+                itemKey = SavedItemKey(entry.itemID), minPrice = entry.unit, totalQuantity = entry.qty,
+                savedName = entry.name, savedQuality = entry.quality,
+            }
+        end
     end
+    marketList.from = #view
     marketOffset = math.min(marketOffset, math.max(0, #marketList - VISIBLE_ROWS))
 end
 
@@ -512,16 +561,23 @@ local function RenderRows()
     if market then
         buyPanel.marketLabel:SetText(MarketLabel())
     end
+    local from = list.from or #list
     if #list == 0 then
-        SetStatus(market and MarketEmptyText() or "No results.")
+        if from > 0 then
+            SetStatus(string.format("Nothing matches the filters (%d hidden).", from))
+        else
+            SetStatus(market and MarketEmptyText() or "No results.")
+        end
         return
     end
     local last = math.min(#list, offset + VISIBLE_ROWS)
+    local filtered = from > #list and string.format(" (filtered from %d)", from) or ""
     if market then
-        SetStatus(string.format("Showing %d-%d of %d %s.", offset + 1, last, #list, MARKET_VIEWS[marketView].noun))
+        SetStatus(string.format("Showing %d-%d of %d %s%s.", offset + 1, last, #list,
+            MARKET_VIEWS[marketView].noun, filtered))
         return
     end
-    local text = string.format("Showing %d-%d of %d.", scrollOffset + 1, last, #results)
+    local text = string.format("Showing %d-%d of %d%s.", scrollOffset + 1, last, #list, filtered)
     if type(C_AuctionHouse.HasFullBrowseResults) == "function" and not C_AuctionHouse.HasFullBrowseResults() then
         text = text .. " The house has more; narrow the search."
     end
@@ -540,6 +596,7 @@ end
 --- Reads the new browse results, scrolls to the top and draws them.
 local function ShowResults()
     results = C_AuctionHouse.GetBrowseResults() or {}
+    FilterResults()
     scrollOffset = 0
     if currentTab == MARKET_TAB then
         -- Kept for when the Buy tab opens again.
@@ -840,12 +897,23 @@ local function SetMarketMode(market)
     for _, control in ipairs(buyPanel.marketControls) do
         if market then control:Show() else control:Hide() end
     end
+    -- Market's name filter takes the start of the filter row; Buy's name is its search box.
+    local quality = buyPanel.qualityDropdown
+    quality:ClearAllPoints()
+    if market then
+        buyPanel.filterNameBox:Show()
+        quality:SetPoint("LEFT", buyPanel.filterNameBox, "RIGHT", 10, 0)
+    else
+        buyPanel.filterNameBox:Hide()
+        quality:SetPoint("LEFT", frame, "TOPLEFT", 14, FILTER_ROW_Y)
+    end
     buyPanel.priceHeading:SetText(market and "Scanned" or "Price")
     ClearDetails()
     if market then
         RefreshMarket()
         RenderRows()
     elseif #results > 0 then
+        FilterResults()
         RenderRows()
     else
         for _, row in ipairs(rows) do
@@ -854,6 +922,25 @@ local function SetMarketMode(market)
         end
         SetStatus(BUY_HELP)
     end
+end
+
+--- After a filter changed: filters the open list again from what is already here. Sends nothing.
+local function ApplyFilters()
+    filter.minLevel = HouseLedgerPrice.ParseLevel(buyPanel.minLevelBox:GetText())
+    filter.maxLevel = HouseLedgerPrice.ParseLevel(buyPanel.maxLevelBox:GetText())
+    marketText = strtrim(buyPanel.filterNameBox:GetText() or "")
+    if currentTab == MARKET_TAB then
+        marketOffset = 0
+        RefreshMarket()
+    else
+        scrollOffset = 0
+        FilterResults()
+        if #results == 0 then
+            return
+        end
+    end
+    ClearDetails()
+    RenderRows()
 end
 
 --- Market's < and > arrows: the previous or next view, wrapping around.
@@ -899,6 +986,7 @@ local function ClearSearch()
     searchBox:SetText("")
     searchBox:ClearFocus()
     results = {}
+    shownResults = {}
     scrollOffset = 0
     for _, row in ipairs(rows) do
         row.result = nil
@@ -922,8 +1010,9 @@ end
 -- Sends nothing for a too-short text, a closed house, or a busy throttle.
 local function SendSearch()
     local text = strtrim(searchBox:GetText() or "")
-    if strlenutf8(text) < MIN_SEARCH_LENGTH then
-        SetStatus("Type at least 2 letters.")
+    -- A quality or item level filter makes an empty name a real search, as in Blizzard's window.
+    if strlenutf8(text) < MIN_SEARCH_LENGTH and not (text == "" and HouseLedgerPrice.FilterActive(filter)) then
+        SetStatus("Type at least 2 letters, or pick a quality or item level.")
         return
     end
     if not AuctionHouseFrame or not AuctionHouseFrame:IsShown() then
@@ -936,12 +1025,17 @@ local function SendSearch()
     end
 
     -- One click, one query. No follow-up timer.
+    -- The quality filter goes with the search; item level filters the results it brings back.
+    local qualities = {}
+    for quality = filter.minQuality or 0, #QUALITY_FILTERS - 1 do
+        qualities[#qualities + 1] = QUALITY_FILTERS[quality + 1]
+    end
     C_AuctionHouse.SendBrowseQuery({
         searchString = text,
         sorts = PRICE_SORT,
-        filters = QUALITY_FILTERS,
+        filters = qualities,
     })
-    SetStatus("Searching for " .. text .. "...")
+    SetStatus(text ~= "" and ("Searching for " .. text .. "...") or "Searching...")
 end
 
 --- Ends the scan: back to idle with Scan enabled, and a pending read batch does nothing.
@@ -1342,6 +1436,65 @@ local function BuildTabs()
     SelectTab(BUY_TAB)
 end
 
+--- Makes the filter row: Market's name filter, the quality dropdown and the item level range.
+-- Every change filters what is already shown; none sends anything.
+local function BuildFilterRow()
+    --- A small edit box that filters as the player types.
+    -- @param width the box width
+    -- @param numeric true for an item level box
+    -- @return the edit box
+    local function FilterBox(width, numeric)
+        local box = CreateFrame("EditBox", nil, buyPanel, "InputBoxTemplate")
+        box:SetSize(width, 20)
+        box:SetAutoFocus(false)
+        if numeric then
+            box:SetNumeric(true)
+            box:SetMaxLetters(3)
+        end
+        box:SetScript("OnTextChanged", function(_, userInput)
+            if userInput then
+                ApplyFilters()
+            end
+        end)
+        box:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
+        box:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+        return box
+    end
+
+    local nameBox = FilterBox(140, false)
+    nameBox:SetPoint("LEFT", frame, "TOPLEFT", 20, FILTER_ROW_Y)
+    nameBox:Hide()
+    buyPanel.filterNameBox = nameBox
+
+    -- Blizzard's own dropdown, as its auction house filter uses on Forever.
+    local quality = CreateFrame("DropdownButton", nil, buyPanel, "WowStyle1DropdownTemplate")
+    quality:SetWidth(130)
+    quality:SetPoint("LEFT", frame, "TOPLEFT", 14, FILTER_ROW_Y)
+    quality:SetupMenu(function(_, root)
+        for _, choice in ipairs(HouseLedgerPrice.QUALITY_CHOICES) do
+            root:CreateRadio(choice.label, function(picked)
+                return filter.minQuality == picked.min
+            end, function(picked)
+                filter.minQuality = picked.min
+                ApplyFilters()
+            end, choice)
+        end
+    end)
+    buyPanel.qualityDropdown = quality
+
+    local levelLabel = Cell(buyPanel, "GameFontNormalSmall", "LEFT")
+    levelLabel:SetPoint("LEFT", quality, "RIGHT", 12, 0)
+    levelLabel:SetText("ilvl")
+    local minBox = FilterBox(34, true)
+    minBox:SetPoint("LEFT", levelLabel, "RIGHT", 10, 0)
+    local dash = Cell(buyPanel, "GameFontHighlightSmall", "LEFT")
+    dash:SetPoint("LEFT", minBox, "RIGHT", 2, 0)
+    dash:SetText("-")
+    local maxBox = FilterBox(34, true)
+    maxBox:SetPoint("LEFT", dash, "RIGHT", 8, 0)
+    buyPanel.minLevelBox, buyPanel.maxLevelBox = minBox, maxBox
+end
+
 --- Makes the HouseLedger window, hidden until the auction house opens.
 -- Its OnUpdate times out a scan that got no answer and refreshes the idle
 -- scan line once a second.
@@ -1448,7 +1601,7 @@ local function BuildFrame()
     end
 
     local list = CreateFrame("Frame", nil, buyPanel)
-    list:SetPoint("TOPLEFT", frame, "TOPLEFT", 8, -LIST_TOP - 2)
+    list:SetPoint("TOPLEFT", frame, "TOPLEFT", 8, -LIST_TOP - 2 - FILTER_HEIGHT)
     list:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -10, LIST_BOTTOM + 2)
     list:EnableMouseWheel(true)
     list:SetScript("OnMouseWheel", function(_, delta)
@@ -1456,6 +1609,7 @@ local function BuildFrame()
     end)
     BuildHeader(list)
     buyPanel.priceHeading = header.priceText
+    BuildFilterRow()
     for index = 1, VISIBLE_ROWS do
         rows[index] = BuildRow(list, index)
     end
@@ -1748,6 +1902,7 @@ eventFrame:RegisterEvent("AUCTION_HOUSE_SHOW")
 eventFrame:RegisterEvent("AUCTION_HOUSE_CLOSED")
 eventFrame:RegisterEvent("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
 eventFrame:RegisterEvent("ITEM_KEY_ITEM_INFO_RECEIVED")
+eventFrame:RegisterEvent("GET_ITEM_INFO_RECEIVED")
 eventFrame:RegisterEvent("COMMODITY_SEARCH_RESULTS_UPDATED")
 eventFrame:RegisterEvent("ITEM_SEARCH_RESULTS_UPDATED")
 eventFrame:RegisterEvent("REPLICATE_ITEM_LIST_UPDATE")
@@ -1832,9 +1987,21 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
         return
     end
 
-    if event == "ITEM_KEY_ITEM_INFO_RECEIVED" and #(ActiveList()) > 0 then
-        -- An item's name and icon arrived; redraw the rows in place.
-        RenderRows()
+    if event == "ITEM_KEY_ITEM_INFO_RECEIVED" or event == "GET_ITEM_INFO_RECEIVED" then
+        -- An item's name, icon, quality or level arrived: filter again and redraw in place.
+        if frame == nil or not frame:IsShown() then
+            return
+        end
+        if currentTab == MARKET_TAB and buyPanel.marketMode then
+            if event == "GET_ITEM_INFO_RECEIVED" and marketText == "" and not HouseLedgerPrice.FilterActive(filter) then
+                return
+            end
+            RefreshMarket()
+            RenderRows()
+        elseif #results > 0 and event == "ITEM_KEY_ITEM_INFO_RECEIVED" then
+            FilterResults()
+            RenderRows()
+        end
         return
     end
 
