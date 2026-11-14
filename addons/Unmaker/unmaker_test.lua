@@ -565,6 +565,21 @@ do
 end
 
 do
+    -- Settings are shared by every character, so an alt without Enchanting has them on too.
+    Start({ bags = StandardBags(), knows = false })
+    _G.UnmakerDB.settings.openOnLoot = true
+    _G.UnmakerDB.settings.openOnBags = true
+    Fire("BAG_UPDATE_DELAYED")
+    world.bags[2] = { [1] = Gear(21, "New Gloves", 2, { equipLoc = "INVTYPE_HAND" }) }
+    Fire("BAG_UPDATE_DELAYED")
+    Check("Open when I loot does nothing on a character without Disenchant", not _G.UnmakerFrame.shown)
+    world.callbacks["ContainerFrame.OpenBag"]()
+    Check("Open with my bags does nothing on a character without Disenchant", not _G.UnmakerFrame.shown)
+    _G.SlashCmdList.UNMAKER("")
+    Check("but /unmaker still opens it there", _G.UnmakerFrame.shown)
+end
+
+do
     Start({ bags = StandardBags() })
     _G.SlashCmdList.UNMAKER("")
     local panel = _G.UnmakerNextButton.parent

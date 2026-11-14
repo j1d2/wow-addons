@@ -694,12 +694,13 @@ local function CurrentLinks()
     return links
 end
 
---- After the bags change: redraw, and open the window when new gear to disenchant arrived and
--- "Open when I loot" is on.
+--- After the bags change: redraw, and open the window when new gear to disenchant arrived,
+-- "Open when I loot" is on and this character knows Disenchant (settings are shared by every
+-- character, so an alt without Enchanting has the setting on too).
 local function OnBagsChanged()
     Refresh()
     local links = CurrentLinks()
-    if seenLinks and db.settings.openOnLoot then
+    if seenLinks and db.settings.openOnLoot and KnowsDisenchant() then
         for link in pairs(links) do
             if not seenLinks[link] then
                 SetShown(true)
@@ -710,10 +711,10 @@ local function OnBagsChanged()
     seenLinks = links
 end
 
---- When a Blizzard bag window opens: open Unmaker too if "Open with my bags" is on and there is
--- something to disenchant.
+--- When a Blizzard bag window opens: open Unmaker too if "Open with my bags" is on, this
+-- character knows Disenchant and there is something to disenchant.
 local function OnBagOpened()
-    if db and db.settings.openOnBags then
+    if db and db.settings.openOnBags and KnowsDisenchant() then
         Refresh()
         if #rows > 0 then
             SetShown(true)
