@@ -82,6 +82,8 @@ function FrameMethods:GetHeight() return self.height end
 function FrameMethods:SetTextColor(r, g, b) self.color = { r, g, b } end
 function FrameMethods:SetTexture(texture) self.texture = texture end
 function FrameMethods:SetMinMaxValues(min, max) self.min, self.max = min, max end
+-- A dropdown keeps the menu generator it was given, as Blizzard's DropdownButton does.
+function FrameMethods:SetupMenu(generator) self.menuGenerator = generator end
 function FrameMethods:SetValue(value) self.value = value end
 
 --- Makes a fake frame, font string or texture with empty state.
@@ -245,6 +247,14 @@ local function Setup(opts)
         world.tooltip.items[#world.tooltip.items + 1] = itemID
     end
     _G.C_Item = {
+        -- The item cache: world.itemInfo[itemID] = { name, quality, level }, or nil until loaded.
+        GetItemInfo = function(itemID)
+            local info = (world.itemInfo or {})[itemID]
+            if info == nil then
+                return nil
+            end
+            return info.name, "|Hitem:" .. itemID .. "|h", info.quality, info.level
+        end,
         -- Like the game: a quality outside 0 to 8 (the scan's -1 for "not known yet") is a usage error.
         GetItemQualityColor = function(quality)
             if type(quality) ~= "number" or quality < 0 or quality > 8 then
@@ -371,7 +381,8 @@ local function Setup(opts)
                 return nil
             end
             return {
-                itemName = "Item " .. itemKey.itemID, quality = 1, iconFileID = 134400,
+                itemName = "Item " .. itemKey.itemID, quality = (world.qualities or {})[itemKey.itemID] or 1,
+                iconFileID = 134400,
                 isEquipment = world.equipment == true,
             }
         end,
@@ -431,6 +442,56 @@ end
 local function ScanLine()
     local list = MainFrame().fontStrings
     return list[#list].text
+end
+
+--- The radio choices a fake dropdown's menu shows, as Blizzard's menu would build them.
+-- @param dropdown the dropdown
+-- @return list of { text, isSelected, setSelected, data }
+local function MenuChoices(dropdown)
+    local choices = {}
+    local root = {
+        CreateRadio = function(_, text, isSelected, setSelected, data)
+            choices[#choices + 1] = { text = text, isSelected = isSelected, setSelected = setSelected, data = data }
+        end,
+    }
+    setmetatable(root, { __index = function() return Noop end })
+    dropdown.menuGenerator(dropdown, root)
+    return choices
+end
+
+--- Picks a choice in a fake dropdown's menu, as a player's click would.
+-- @param dropdown the dropdown
+-- @param label the choice's text
+local function Pick(dropdown, label)
+    for _, choice in ipairs(MenuChoices(dropdown)) do
+        if choice.text == label then
+            choice.setSelected(choice.data)
+            return
+        end
+    end
+    error("no menu choice " .. label)
+end
+
+--- The text of the dropdown's selected choice.
+-- @param dropdown the dropdown
+-- @return the text, or nil
+local function Picked(dropdown)
+    for _, choice in ipairs(MenuChoices(dropdown)) do
+        if choice.isSelected(choice.data) then
+            return choice.text
+        end
+    end
+end
+
+--- Types into a fake edit box, firing its OnTextChanged as the player's typing does.
+-- @param box the edit box
+-- @param text the new text
+local function Type(box, text)
+    box:SetText(text)
+    local changed = box:GetScript("OnTextChanged")
+    if changed then
+        changed(box, true)
+    end
 end
 
 --- A mouse click: OnClick, then PostClick when the button has one.
@@ -935,7 +996,7 @@ do
     -- 1400 screen edge - 816 house edge - 4 gap - 8 margin
     Check("window fills the space beside the house", MainFrame().width == 572)
     Check("typical column shows when there is room", TypicalColumnShown())
-    Check("rows fill the height above the details block", #ResultRows() == 16)
+    Check("rows fill the height above the details block", #ResultRows() == 15)
 end
 
 do
@@ -997,19 +1058,19 @@ do
     Check("row shows the live price with coins", rows[1].priceText.text == "<money 10>")
     Check("row shows how many are up", rows[1].availText.text == "1")
     Check("row shows the item icon", rows[1].icon.texture == 134400)
-    -- The details block under the list leaves room for 16 rows.
-    Check("the list has 16 rows", #rows == 16)
-    Check("status counts what is shown", StatusLine() == "Showing 1-16 of 30.")
-    Check("the last row shows the 16th result", rows[16].nameText.text == "Item 16")
+    -- The filter row and the details block leave room for 15 rows.
+    Check("the list has 15 rows", #rows == 15)
+    Check("status counts what is shown", StatusLine() == "Showing 1-15 of 30.")
+    Check("the last row shows the 15th result", rows[15].nameText.text == "Item 15")
 
     local queries = #world.browseQueries
     WheelDown()
     Check("mouse wheel scrolls three rows", rows[1].nameText.text == "Item 4")
-    Check("status follows the scroll", StatusLine() == "Showing 4-19 of 30.")
+    Check("status follows the scroll", StatusLine() == "Showing 4-18 of 30.")
     for _ = 1, 5 do
         WheelDown()
     end
-    Check("scroll stops at the last result", rows[16].nameText.text == "Item 30" and rows[1].nameText.text == "Item 15")
+    Check("scroll stops at the last result", rows[15].nameText.text == "Item 30" and rows[1].nameText.text == "Item 16")
     for _ = 1, 6 do
         WheelUp()
     end
@@ -1719,6 +1780,106 @@ do
     Click("Market")
     Check("Market with nothing saved says to scan", StatusLine() == "No prices saved yet. Click Scan once."
         and not ResultRows()[1].shown)
+end
+
+-- ---------------------------------------------------------------------
+-- Filters: quality and item level on Buy and Market, and a name filter on Market
+-- ---------------------------------------------------------------------
+
+do
+    Setup()
+    Load()
+    OpenHouse()
+    local panel = MainFrame().buyPanel
+    Check("Buy shows the quality and item level filters, not Market's name filter",
+        panel.qualityDropdown.shown and panel.minLevelBox.shown and panel.maxLevelBox.shown
+        and not panel.filterNameBox.shown)
+    Check("quality starts at any", Picked(panel.qualityDropdown) == "Any quality")
+    SearchBox():SetText("")
+    Click("Search")
+    Check("no name and no filter sends nothing", #world.browseQueries == 0
+        and StatusLine() == "Type at least 2 letters, or pick a quality or item level.")
+    Pick(panel.qualityDropdown, "Rare & up")
+    Check("picking a quality sends nothing", #world.browseQueries == 0 and Picked(panel.qualityDropdown) == "Rare & up")
+    Click("Search")
+    local query = world.browseQueries[1]
+    Check("with a quality, an empty name searches once, asking for those qualities only",
+        #world.browseQueries == 1 and query.searchString == ""
+        and table.concat(query.filters, ",") == "9,10")
+
+    world.qualities = { [1] = 3, [2] = 3, [3] = 4, [4] = 2 }
+    world.browseResults = {}
+    for itemID, level in ipairs({ 5, 10, 20, 30 }) do
+        world.browseResults[itemID] = { itemKey = { itemID = itemID, itemLevel = level, itemSuffix = 0 },
+            minPrice = 100, totalQuantity = 1 }
+    end
+    Fire("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
+    local rows = ResultRows()
+    Check("results below the quality are left out", rows[1].nameText.text == "Item 1" and rows[3].nameText.text == "Item 3"
+        and not rows[4].shown and StatusLine() == "Showing 1-3 of 3 (filtered from 4).")
+    Type(panel.minLevelBox, "10")
+    Check("a minimum item level filters the results by their own item level, sending nothing",
+        rows[1].nameText.text == "Item 2" and rows[2].nameText.text == "Item 3" and not rows[3].shown
+        and #world.browseQueries == 1)
+    Type(panel.maxLevelBox, "15")
+    Check("and a maximum", rows[1].nameText.text == "Item 2" and not rows[2].shown)
+    Pick(panel.qualityDropdown, "Any quality")
+    Type(panel.maxLevelBox, "")
+    Check("loosening the filters shows what the search already brought", rows[3].nameText.text == "Item 4"
+        and #world.browseQueries == 1)
+    Click("Search")
+    Check("a search with only a level filter asks for every quality", #world.browseQueries == 2
+        and table.concat(world.browseQueries[2].filters, ",") == "6,7,8,9,10")
+end
+
+do
+    Setup()
+    world.now = 1762900000
+    local P = HouseLedgerPrice
+    local db = P.EmptyDB()
+    for day = 1, 5 do
+        local best = {}
+        P.Consider(best, 1, 1, day < 5 and 100 or 50, "Cheap Today", 2)
+        P.Consider(best, 2, 1, day < 5 and 100 or 70, "Cheap Cloak", 3)
+        P.Consider(best, 5, 1, day < 5 and 100 or 80, "Mystery", -1)
+        P.Commit(db, "Alliance|TestRealm", best, world.now - (5 - day) * 24 * 60 * 60)
+    end
+    _G.HouseLedgerDB = db
+    world.itemInfo = { [1] = { name = "Cheap Today", quality = 2, level = 12 },
+        [2] = { name = "Cheap Cloak", quality = 3, level = 25 } }
+    Load()
+    OpenHouse()
+    local panel = MainFrame().buyPanel
+    Click("Market")
+    panel.marketNext:GetScript("OnClick")(panel.marketNext) -- Biggest drops: all three
+    local rows = ResultRows()
+    Check("Market shows its name filter with the others", panel.filterNameBox.shown and panel.qualityDropdown.shown)
+    Check("all three drops show unfiltered", rows[3].shown and not rows[4].shown)
+    Type(panel.filterNameBox, "CHEAP")
+    Check("the name filter keeps matching names, any case", rows[1].nameText.text == "Cheap Today"
+        and rows[2].nameText.text == "Cheap Cloak" and not rows[3].shown
+        and StatusLine() == "Showing 1-2 of 2 drops (filtered from 3).")
+    Pick(panel.qualityDropdown, "Rare & up")
+    Check("the quality filter uses the saved quality", rows[1].nameText.text == "Cheap Cloak" and not rows[2].shown)
+    Pick(panel.qualityDropdown, "Any quality")
+    Type(panel.filterNameBox, "")
+    Type(panel.minLevelBox, "20")
+    Check("the level filter uses the item's base level; unknown items wait until loaded",
+        rows[1].nameText.text == "Cheap Cloak" and not rows[2].shown)
+    world.itemInfo[5] = { name = "Mystery", quality = 2, level = 30 }
+    local timers = #world.timers
+    for _ = 1, 3 do
+        Fire("GET_ITEM_INFO_RECEIVED", 5, true)
+    end
+    Check("a burst of item-info events filters once, on the next frame", #world.timers == timers + 1
+        and not rows[2].shown)
+    RunTimers()
+    Check("once the game loads an item, the filter counts it", rows[1].nameText.text == "Cheap Cloak"
+        and rows[2].nameText.text == "Mystery")
+    Type(panel.minLevelBox, "")
+    Click("Buy")
+    Check("Buy hides Market's name filter", not panel.filterNameBox.shown)
+    Check("filters send nothing on Market", #world.browseQueries == 0 and world.replicateCalls == 0)
 end
 
 if failed > 0 then

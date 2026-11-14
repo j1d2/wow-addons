@@ -6,6 +6,7 @@ All notable changes to HouseLedger. The format follows [Keep a Changelog](https:
 
 ### Added
 
+- Filters on the Buy and Market tabs: a quality dropdown and an item level range, plus a name filter on Market. On Buy the quality goes with your Search click, and you can search with no name once a quality or item level is set. Changing a filter re-filters what's already shown and sends nothing.
 - A **Market** tab: the deals, biggest drops and biggest rises from your last scan, switched with **<** and **>**. It reads only saved prices, so it never sends a search.
 - Scans also save each item's name and quality, for the Market tab.
 - A gold progress bar while a scan reads the auction house's listings.

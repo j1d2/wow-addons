@@ -46,6 +46,65 @@ function PriceLedger.IsQuality(quality)
     return type(quality) == "number" and quality >= 0 and quality <= 8 and quality == math.floor(quality)
 end
 
+-- The quality filter's choices, in menu order: any, or one quality and up.
+PriceLedger.QUALITY_CHOICES = {
+    { label = "Any quality" },
+    { label = "Common & up", min = 1 },
+    { label = "Uncommon & up", min = 2 },
+    { label = "Rare & up", min = 3 },
+    { label = "Epic & up", min = 4 },
+}
+
+--- Reads an item level box: a whole number from 1 up, or nil when empty or not a number.
+-- @param text the box's text
+-- @return the level, or nil
+function PriceLedger.ParseLevel(text)
+    if type(text) ~= "string" then
+        return nil
+    end
+    local digits = text:match("^%s*(%d+)%s*$")
+    local level = digits and tonumber(digits)
+    if level and level >= 1 then
+        return level
+    end
+    return nil
+end
+
+--- Whether a filter limits quality or item level (a name alone doesn't count).
+-- @param filter { text, minQuality, minLevel, maxLevel }, each optional
+-- @return true when a quality or level limit is set
+function PriceLedger.FilterActive(filter)
+    return filter.minQuality ~= nil or filter.minLevel ~= nil or filter.maxLevel ~= nil
+end
+
+--- Whether an item passes a filter. Pure: the caller looks the item up.
+-- An item whose quality or level isn't known doesn't pass a limit on it; an item level of 0
+-- (not gear) counts as unknown.
+-- @param item { name, quality, level }, each optional
+-- @param filter { text, minQuality, minLevel, maxLevel }, each optional; text matches any part
+--   of the name, ignoring case
+-- @return true when it passes
+function PriceLedger.PassesFilter(item, filter)
+    if type(filter.text) == "string" and filter.text ~= "" then
+        if type(item.name) ~= "string" or not item.name:lower():find(filter.text:lower(), 1, true) then
+            return false
+        end
+    end
+    if filter.minQuality and not (PriceLedger.IsQuality(item.quality) and item.quality >= filter.minQuality) then
+        return false
+    end
+    if filter.minLevel or filter.maxLevel then
+        local level = item.level
+        if type(level) ~= "number" or level <= 0 then
+            return false
+        end
+        if (filter.minLevel and level < filter.minLevel) or (filter.maxLevel and level > filter.maxLevel) then
+            return false
+        end
+    end
+    return true
+end
+
 --- Formats a time with the game's date function, or Lua's offline.
 -- @param format a date format string, such as "%Y%m%d"
 -- @param seconds a time() value
