@@ -108,6 +108,7 @@ local frame
 local searchBox
 local statusText
 local scanText
+local scanBar -- the read's progress, shown only while reading
 local scanButton
 local buyPanel
 local sellPanel
@@ -256,11 +257,39 @@ local function Clock()
     return time()
 end
 
---- Enables the Scan button, once the window is built.
-local function EnableScanButton()
-    if scanButton then
+--- Updates the Scan button while no scan runs: "Scan" and enabled when a scan is allowed,
+-- otherwise greyed out with the wait, like "Scan (12m)". Only the button's own text and state
+-- change; nothing is sent.
+local function RefreshScanButton()
+    if not scanButton or scanState ~= "idle" then
+        return
+    end
+    local wait = HouseLedgerPrice.SecondsUntil(HouseLedgerDB.replicateAt, time())
+    local text = HouseLedgerPrice.ScanButtonText(wait)
+    if scanButton:GetText() ~= text then
+        scanButton:SetText(text)
+    end
+    if wait > 0 then
+        scanButton:Disable()
+    else
         scanButton:Enable()
     end
+end
+
+--- Shows the read's progress bar at a number of listings read, or hides it.
+-- @param read listings read so far, or nil to hide the bar
+-- @param total how many listings the house sent
+local function ShowScanProgress(read, total)
+    if not scanBar then
+        return
+    end
+    if read == nil or total == nil or total <= 0 then
+        scanBar:Hide()
+        return
+    end
+    scanBar:SetMinMaxValues(0, total)
+    scanBar:SetValue(read)
+    scanBar:Show()
 end
 
 --- Updates the scan line while no scan is running.
@@ -282,13 +311,13 @@ local function RefreshIdleScanLine()
     local label = HouseLedgerPrice.HouseLabel(key)
     if wait > 0 and priced > 0 then
         SetScanStatus(string.format(
-            "%d prices for %s. Next scan in %s.",
+            "%d prices (%s). Next scan in %s.",
             priced, label, RemainingText(wait)
         ))
         return
     end
     if priced > 0 then
-        SetScanStatus(string.format("%d prices for %s. Scan is ready.", priced, label))
+        SetScanStatus(string.format("%d prices (%s). Scan is ready.", priced, label))
         return
     end
     if wait > 0 then
@@ -751,7 +780,8 @@ end
 local function StopReading()
     readToken = readToken + 1
     scanState = "idle"
-    EnableScanButton()
+    ShowScanProgress(nil)
+    RefreshScanButton()
 end
 
 --- Saves a finished read and says how many prices were saved.
@@ -768,7 +798,7 @@ local function FinishRead(token, best)
     end
     local saved = HouseLedgerPrice.Commit(HouseLedgerDB, scanHouseKey, best, time())
     StopReading()
-    SetScanStatus(string.format("Saved %d prices for %s.", saved, HouseLedgerPrice.HouseLabel(scanHouseKey)), 8)
+    SetScanStatus(string.format("Saved %d prices (%s).", saved, HouseLedgerPrice.HouseLabel(scanHouseKey)), 8)
 end
 
 --- Reads one batch of READ_BATCH replicate listings, then the next on the next frame.
@@ -802,6 +832,7 @@ local function ReadListings(token, index, total, best)
     end
 
     SetScanStatus(string.format("Reading listings %d of %d...", nextIndex, total))
+    ShowScanProgress(nextIndex, total)
     C_Timer.After(0, function()
         ReadListings(token, nextIndex, total, best)
     end)
@@ -819,6 +850,7 @@ local function BeginRead()
     readToken = readToken + 1
     acceptAnswerUntil = 0
     SetScanStatus(string.format("Reading %d listings...", total))
+    ShowScanProgress(0, total)
     ReadListings(readToken, 0, total, {})
 end
 
@@ -1259,6 +1291,16 @@ local function BuildFrame()
     scanText:SetWordWrap(false)
     scanText:SetText("")
 
+    -- A thin gold bar in the gap above the scan line, while a scan's listings are read.
+    scanBar = CreateFrame("StatusBar", nil, frame)
+    scanBar:SetHeight(4)
+    scanBar:SetPoint("BOTTOMLEFT", scanText, "TOPLEFT", 0, 3)
+    scanBar:SetPoint("RIGHT", frame, "RIGHT", -14, 0)
+    scanBar:SetStatusBarTexture("Interface\\TargetingFrame\\UI-StatusBar")
+    scanBar:SetStatusBarColor(1, 0.82, 0)
+    scanBar:Hide()
+    frame.scanBar = scanBar
+
     local tick = 0
     frame:SetScript("OnUpdate", function(_, elapsed)
         if scanState == "waiting" and (Clock() - waitStarted) >= ANSWER_WAIT then
@@ -1275,9 +1317,11 @@ local function BuildFrame()
         end
         tick = 0
         RefreshIdleScanLine()
+        RefreshScanButton()
     end)
 
     RefreshIdleScanLine()
+    RefreshScanButton()
 end
 
 --- The item Blizzard's Sell window holds now, or nil.
