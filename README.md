@@ -150,12 +150,13 @@ Disenchanting without the hunt through your bags. One window lists everything yo
 2. **Got:** the materials each disenchant gave.
 
 <p align="center">
-  <img src="docs/screenshots/unmaker-settings.png" alt="Unmaker's Settings tab: keep epics, keep soulbound gear, hide equipment-set items, open when you loot, open with your bags" width="420">
+  <img src="docs/screenshots/unmaker-settings.png" alt="Unmaker's Settings tab: keep epics, keep soulbound gear, hide equipment-set items, open when you loot, open with your bags, show the button above the bags" width="420">
 </p>
 
 **Settings tab:**
 1. **What starts unchecked or hidden:** epics, soulbound gear and items in your equipment sets.
 2. **When the window opens by itself:** when you loot gear to disenchant, or with your bags. Only on characters that know Disenchant.
+3. **Bag button:** show or hide the Unmaker button above your bags. On by default; `/unmaker` opens the window either way.
 
 <p align="center"><sub>Game art in the screenshots © Blizzard Entertainment, Inc.</sub></p>
 
