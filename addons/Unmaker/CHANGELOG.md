@@ -4,6 +4,10 @@ All notable changes to Unmaker. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Changed
+
+- The Stats tab picks a character from a dropdown instead of the < and > arrows, so any character is one click away.
+
 ## [0.3.0] - 2026-11-13
 
 ### Added

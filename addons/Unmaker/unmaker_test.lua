@@ -96,6 +96,8 @@ function FrameMethods:SetUserPlaced(placed) self.userPlaced = placed end
 function FrameMethods:ClearAllPoints() self.point = nil end
 function FrameMethods:SetPoint(...) self.point = { ... } end
 function FrameMethods:GetPoint() return unpack(self.point or {}) end
+-- A dropdown keeps the menu generator it was given, as Blizzard's DropdownButton does.
+function FrameMethods:SetupMenu(generator) self.menuGenerator = generator end
 for _, method in ipairs({ "SetSize", "SetAllPoints", "SetColorTexture", "SetJustifyH", "SetJustifyV",
     "SetHeight", "SetWidth", "SetWordWrap",
     "RegisterForDrag", "EnableMouse", "EnableMouseWheel", "SetMovable",
@@ -106,6 +108,46 @@ end
 --- A mouse click as the game runs it: PreClick, then for a secure button the action its
 -- attributes describe, then OnClick and PostClick.
 -- @param button the fake button
+local function NoMenuCall() end
+
+--- The radio choices a fake dropdown's menu shows, as Blizzard's menu would build them.
+-- @param dropdown the dropdown
+-- @return list of { text, isSelected, setSelected, data }
+local function MenuChoices(dropdown)
+    local choices = {}
+    local root = setmetatable({
+        CreateRadio = function(_, text, isSelected, setSelected, data)
+            choices[#choices + 1] = { text = text, isSelected = isSelected, setSelected = setSelected, data = data }
+        end,
+    }, { __index = function() return NoMenuCall end })
+    dropdown.menuGenerator(dropdown, root)
+    return choices
+end
+
+--- Picks a choice in a fake dropdown's menu, as a player's click would.
+-- @param dropdown the dropdown
+-- @param label the choice's text
+local function Pick(dropdown, label)
+    for _, choice in ipairs(MenuChoices(dropdown)) do
+        if choice.text == label then
+            choice.setSelected(choice.data)
+            return
+        end
+    end
+    error("no menu choice " .. label)
+end
+
+--- The text of the dropdown's selected choice.
+-- @param dropdown the dropdown
+-- @return the text, or nil
+local function Picked(dropdown)
+    for _, choice in ipairs(MenuChoices(dropdown)) do
+        if choice.isSelected(choice.data) then
+            return choice.text
+        end
+    end
+end
+
 local function Click(button)
     local pre = button:GetScript("PreClick")
     if pre then
@@ -823,24 +865,29 @@ do
             statsPanel = f
         end
     end
-    local function Step(button)
-        button:GetScript("OnClick")(button)
-        return statsPanel.viewText.text, PanelText(statsPanel)
+    local dropdown = statsPanel.viewDropdown
+    local function Show(label)
+        Pick(dropdown, label)
+        return Picked(dropdown), PanelText(statsPanel)
     end
-    Check("the Stats tab starts on all characters", statsPanel.viewText.text == "All characters"
+    local names = {}
+    for index, choice in ipairs(MenuChoices(dropdown)) do
+        names[index] = choice.text
+    end
+    Check("the character dropdown lists all characters, then each A to Z",
+        table.concat(names, ",") == "All characters,Alt,Tester")
+    Check("the Stats tab starts on all characters", Picked(dropdown) == "All characters"
         and PanelText(statsPanel):find("Lifetime\n2", 1, true) ~= nil)
-    local label, text = Step(statsPanel.nextButton)
-    Check("the next arrow shows the first character A to Z, rebuilt from old history", label == "Alt"
+    local label, text = Show("Alt")
+    Check("picking a character shows its stats, rebuilt from old history", label == "Alt"
         and text:find("Lifetime\n1", 1, true) ~= nil and text:find("4 Strange Dust", 1, true) ~= nil
         and text:find("This session\n-", 1, true) ~= nil)
-    label, text = Step(statsPanel.nextButton)
-    Check("then this character, with its own session", label == "Tester"
+    label, text = Show("Tester")
+    Check("this character shows its own session", label == "Tester"
         and text:find("Lifetime\n1", 1, true) ~= nil and text:find("This session\n1", 1, true) ~= nil
         and text:find("Lesser Magic Essence", 1, true) ~= nil and text:find("Strange Dust", 1, true) == nil)
-    label = Step(statsPanel.nextButton)
-    Check("and back around to all characters", label == "All characters")
-    label = Step(statsPanel.prevButton)
-    Check("the back arrow goes the other way", label == "Tester")
+    label, text = Show("All characters")
+    Check("and all characters again", label == "All characters" and text:find("Lifetime\n2", 1, true) ~= nil)
 end
 
 if failed > 0 then
