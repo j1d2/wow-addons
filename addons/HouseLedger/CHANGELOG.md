@@ -13,7 +13,7 @@ All notable changes to HouseLedger. The format follows [Keep a Changelog](https:
 - A 14-day price chart: one bar per day's lowest price (the latest day in gold) with a faint band up to that day's highest. It shows beside a clicked row's details on Buy and Market when the window is wide enough, and under the lines on the Sell tab.
 - A **Settings** tab: turn the prices on item tooltips off, or always show the 1, 3, 7 and 14-day lines without holding Shift.
 - Filters on the Buy and Market tabs: a quality dropdown and an item level range, plus a name filter on Market. On Buy the quality goes with your Search click, and you can search with no name once a quality or item level is set. Changing a filter re-filters what's already shown and sends nothing.
-- A **Market** tab: the deals, biggest drops and biggest rises from your last scan, switched with **<** and **>**. It reads only saved prices, so it never sends a search.
+- A **Market** tab: the deals, biggest drops and biggest rises from your last scan, picked from a dropdown. It reads only saved prices, so it never sends a search.
 - Scans also save each item's name and quality, for the Market tab.
 - A gold progress bar while a scan reads the auction house's listings.
 

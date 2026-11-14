@@ -1735,26 +1735,28 @@ do
     local panel = frame.buyPanel
     local rows = ResultRows()
     Check("Market shows the list without the search box", frame.selectedTab == 3 and panel.shown
-        and not SearchBox().shown and panel.marketLabel.shown)
-    Check("it opens on deals at the last scan", panel.marketLabel.text == "Deals at last scan (2 h ago)")
+        and not SearchBox().shown and panel.marketLabel.shown and panel.marketDropdown.shown)
+    Check("it opens on deals at the last scan", Picked(panel.marketDropdown) == "Deals"
+        and panel.marketLabel.text == "at last scan (2 h ago)" and panel.marketDropdown.shown)
+    local views = {}
+    for index, choice in ipairs(MenuChoices(panel.marketDropdown)) do
+        views[index] = choice.text
+    end
+    Check("the view dropdown lists the three views", table.concat(views, ",") == "Deals,Biggest drops,Biggest rises")
     Check("a deal row shows the saved name, last-scan price and the deal star",
         rows[1].nameText.text == "Cheap Today" and rows[1].priceText.text == "<money 50>"
         and rows[1].trendText.text:find(HouseLedgerPrice.DEAL_ICON, 1, true) ~= nil and not rows[2].shown)
     Check("the Price heading says it is the scanned price", panel.marketMode and frame.buyPanel.priceHeading.text == "Scanned")
     Check("status counts the deals", StatusLine() == "Showing 1-1 of 1 deals.")
 
-    local function Step(button)
-        button:GetScript("OnClick")(button)
-        return panel.marketLabel.text
-    end
-    Check("> shows the biggest drops", Step(panel.marketNext) == "Biggest drops at last scan (2 h ago)"
+    Pick(panel.marketDropdown, "Biggest drops")
+    Check("picking Biggest drops shows them", Picked(panel.marketDropdown) == "Biggest drops"
         and rows[1].nameText.text == "Cheap Today")
     Check("an item whose quality the scan didn't know shows without an error",
         rows[2].nameText.text == "Unknown Quality" and rows[2].shown)
-    Check("> again shows the biggest rises", Step(panel.marketNext) == "Biggest rises at last scan (2 h ago)"
-        and rows[1].nameText.text == "Pricier" and StatusLine() == "Showing 1-1 of 1 rises.")
-    Check("and wraps around to deals", Step(panel.marketNext):find("^Deals") ~= nil)
-    Check("< goes the other way", Step(panel.marketPrev):find("^Biggest rises") ~= nil)
+    Pick(panel.marketDropdown, "Biggest rises")
+    Check("picking Biggest rises shows them", rows[1].nameText.text == "Pricier"
+        and StatusLine() == "Showing 1-1 of 1 rises.")
 
     rows[1]:GetScript("OnClick")(rows[1])
     Check("a row click shows its saved prices", panel.detailTitle.text == "Pricier, 5 scans over 5 days")
@@ -1764,6 +1766,7 @@ do
 
     Click("Buy")
     Check("Buy brings the search back, with its results kept", SearchBox().shown and not panel.marketLabel.shown
+        and not panel.marketDropdown.shown
         and ResultRows()[1].nameText.text == "Item 10" and frame.buyPanel.priceHeading.text == "Price")
     Click("Market")
     BlizzardTab(AuctionHouseFrameDisplayMode.ItemSell)
@@ -1866,7 +1869,7 @@ do
     OpenHouse()
     local panel = MainFrame().buyPanel
     Click("Market")
-    panel.marketNext:GetScript("OnClick")(panel.marketNext) -- Biggest drops: all three
+    Pick(panel.marketDropdown, "Biggest drops") -- all three
     local rows = ResultRows()
     Check("Market shows its name filter with the others", panel.filterNameBox.shown and panel.qualityDropdown.shown)
     Check("all three drops show unfiltered", rows[3].shown and not rows[4].shown)
@@ -2151,7 +2154,7 @@ do
     OpenHouse()
     Click("Market")
     local panel = MainFrame().buyPanel
-    panel.marketNext:GetScript("OnClick")(panel.marketNext) -- Biggest drops
+    Pick(panel.marketDropdown, "Biggest drops")
     local rows = ResultRows()
     Check("Market starts in its own order, biggest drop first", RowNames() == "Cheap Today,Also Cheap")
     Check("Market shows the base item level", rows[1].ilvlText.text == "12" and rows[2].ilvlText.text == "25")
@@ -2161,8 +2164,8 @@ do
     Check("with the arrow on its heading", panel.headerTexts.ilvl.text:find("NPE_ArrowDown", 1, true) ~= nil)
     SortBy("price")
     Check("Market's price heading keeps its name with the arrow", panel.headerTexts.price.text:find("^Scanned") ~= nil)
-    panel.marketNext:GetScript("OnClick")(panel.marketNext)
-    panel.marketPrev:GetScript("OnClick")(panel.marketPrev)
+    Pick(panel.marketDropdown, "Biggest rises")
+    Pick(panel.marketDropdown, "Biggest drops")
     Check("switching the Market view goes back to its own order", RowNames() == "Cheap Today,Also Cheap"
         and not panel.headerTexts.price.text:find("Arrow", 1, true))
     Click("Buy")
