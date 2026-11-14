@@ -642,6 +642,39 @@ function PriceLedger.FindByName(house, text, limit)
     return found
 end
 
+--- A sorted copy of a list, by one value per item: a column click in the window. Items with no
+-- value go last either way, and equal values keep their order, so sorting is stable.
+-- @param list the items; left as it is
+-- @param valueOf function(item) -> a number or a string, or nil when unknown
+-- @param ascending true for low to high (A to Z), false for high to low
+-- @return a new list
+function PriceLedger.SortList(list, valueOf, ascending)
+    local keyed = {}
+    for index, item in ipairs(list) do
+        keyed[index] = { item = item, value = valueOf(item), index = index }
+    end
+    table.sort(keyed, function(a, b)
+        if a.value == nil or b.value == nil then
+            if (a.value == nil) ~= (b.value == nil) then
+                return b.value == nil
+            end
+            return a.index < b.index
+        end
+        if a.value ~= b.value then
+            if ascending then
+                return a.value < b.value
+            end
+            return a.value > b.value
+        end
+        return a.index < b.index
+    end)
+    local sorted = {}
+    for index, entry in ipairs(keyed) do
+        sorted[index] = entry.item
+    end
+    return sorted
+end
+
 --- Sorts market entries by how far the price moved, then by name and item id.
 -- @param list entries from PriceLedger.Market, sorted in place
 -- @param biggestRiseFirst true for the highest trendPct first, false for the lowest

@@ -2077,6 +2077,98 @@ do
         and _G.HouseLedgerPriceCheck.status.text == "Type 2 letters of an item's name.")
 end
 
+-- ---------------------------------------------------------------------
+-- ilvl column and sorting by a column click
+-- ---------------------------------------------------------------------
+
+--- Clicks a column heading's sort button.
+-- @param key the column: name, ilvl, price, avail, typical or trend
+local function SortBy(key)
+    local button = MainFrame().buyPanel.sortButtons[key]
+    button:GetScript("OnClick")(button)
+end
+
+--- The names in the shown rows, top first.
+-- @return the names joined with commas
+local function RowNames()
+    local names = {}
+    for _, row in ipairs(ResultRows()) do
+        if row.shown then
+            names[#names + 1] = row.nameText.text
+        end
+    end
+    return table.concat(names, ",")
+end
+
+do
+    Setup()
+    Load()
+    OpenHouse()
+    world.browseResults = {}
+    for index, spec in ipairs({ { 30, 300, 5 }, { 10, 100, 0 }, { 20, 200, 25 } }) do
+        world.browseResults[index] = { itemKey = { itemID = index, itemLevel = spec[3], itemSuffix = 0 },
+            minPrice = spec[2], totalQuantity = spec[1] }
+    end
+    Fire("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
+    local panel = MainFrame().buyPanel
+    local rows = ResultRows()
+    Check("Buy shows each result's own item level, blank without one", rows[1].ilvlText.text == "5"
+        and rows[2].ilvlText.text == "" and rows[3].ilvlText.text == "25" and panel.headerTexts.ilvl.text == "ilvl")
+    local queries = #world.browseQueries
+    SortBy("price")
+    Check("a heading click sorts by it, cheapest first", RowNames() == "Item 2,Item 3,Item 1")
+    Check("the heading shows the sort arrow", panel.headerTexts.price.text:find("NPE_ArrowUp", 1, true) ~= nil)
+    SortBy("price")
+    Check("clicking it again reverses the sort", RowNames() == "Item 1,Item 3,Item 2"
+        and panel.headerTexts.price.text:find("NPE_ArrowDown", 1, true) ~= nil)
+    SortBy("ilvl")
+    Check("ilvl sorts highest first, items without one last", RowNames() == "Item 3,Item 1,Item 2"
+        and not panel.headerTexts.price.text:find("Arrow", 1, true))
+    SortBy("avail")
+    Check("Avail. sorts most first", RowNames() == "Item 1,Item 3,Item 2")
+    SortBy("name")
+    Check("Item sorts A to Z", RowNames() == "Item 1,Item 2,Item 3")
+    Fire("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
+    Check("a new search keeps the chosen sort", RowNames() == "Item 1,Item 2,Item 3")
+    Check("sorting sends nothing", #world.browseQueries == queries)
+end
+
+do
+    Setup()
+    world.now = 1762900000
+    local P = HouseLedgerPrice
+    local db = P.EmptyDB()
+    for day = 1, 5 do
+        local best = {}
+        P.Consider(best, 1, 1, day < 5 and 100 or 50, "Cheap Today", 2)
+        P.Consider(best, 2, 1, day < 5 and 100 or 70, "Also Cheap", 3)
+        P.Commit(db, "Alliance|TestRealm", best, world.now - (5 - day) * 24 * 60 * 60)
+    end
+    _G.HouseLedgerDB = db
+    world.itemInfo = { [1] = { name = "Cheap Today", quality = 2, level = 12 },
+        [2] = { name = "Also Cheap", quality = 3, level = 25 } }
+    Load()
+    OpenHouse()
+    Click("Market")
+    local panel = MainFrame().buyPanel
+    panel.marketNext:GetScript("OnClick")(panel.marketNext) -- Biggest drops
+    local rows = ResultRows()
+    Check("Market starts in its own order, biggest drop first", RowNames() == "Cheap Today,Also Cheap")
+    Check("Market shows the base item level", rows[1].ilvlText.text == "12" and rows[2].ilvlText.text == "25")
+    Check("the Market price heading keeps its name", panel.headerTexts.price.text == "Scanned")
+    SortBy("ilvl")
+    Check("Market sorts by a heading too", RowNames() == "Also Cheap,Cheap Today")
+    Check("with the arrow on its heading", panel.headerTexts.ilvl.text:find("NPE_ArrowDown", 1, true) ~= nil)
+    SortBy("price")
+    Check("Market's price heading keeps its name with the arrow", panel.headerTexts.price.text:find("^Scanned") ~= nil)
+    panel.marketNext:GetScript("OnClick")(panel.marketNext)
+    panel.marketPrev:GetScript("OnClick")(panel.marketPrev)
+    Check("switching the Market view goes back to its own order", RowNames() == "Cheap Today,Also Cheap"
+        and not panel.headerTexts.price.text:find("Arrow", 1, true))
+    Click("Buy")
+    Check("Buy's heading says Price again", panel.headerTexts.price.text == "Price")
+end
+
 if failed > 0 then
     io.write(string.format("%d failed\n", failed))
     os.exit(1)

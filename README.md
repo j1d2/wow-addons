@@ -62,7 +62,7 @@ Auction house prices, remembered. One Scan a day builds a 14-day price history o
 **Buy tab** (left):
 1. **Search:** type a name and click **Search**. **Clear** empties the list. Under it, pick a **quality** and an **ilvl** range; with one set you can search with no name.
 2. **Scan:** saves today's prices for the whole auction house (every 15 minutes at most; the button counts down the wait).
-3. **Price** is the cheapest one up right now; **Avg 7d** is your saved 7-day average.
+3. **Price** is the cheapest one up right now; **Avg 7d** is your saved 7-day average. Click any heading to sort by it, and again to reverse.
 4. **Trend:** a green arrow means cheaper than usual, a red one pricier, grey "steady" about the same, and a ⭐ marks a deal.
 5. **Click a row** for its saved prices over 1, 3, 7 and 14 days, with a 14-day chart beside them when the window is wide enough.
 
