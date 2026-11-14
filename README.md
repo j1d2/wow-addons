@@ -148,7 +148,7 @@ Disenchanting without the hunt through your bags. One window lists everything yo
 ### TL;DR
 
 - **Open it** with `/unmaker`, or the **Unmaker** button above your bags.
-- **Every Uncommon, Rare and Epic** weapon and armor piece in your bags is listed. **Uncheck** what you want to keep; Unmaker remembers.
+- **Every Uncommon, Rare and Epic** weapon and armor piece in your bags is listed, with its item level and vendor price. **Uncheck** what you want to keep; Unmaker remembers. Filter by quality and item level, and click a heading to sort.
 - **Disenchant next** disenchants the next checked item. One click per item, which is Blizzard's rule. Bind it to a key in the game's Key Bindings menu.
 - **Epics and soulbound gear start unchecked.** Change that on the **Settings** tab.
 - **Stats and History tabs:** how many items you've unmade (this session, today, lifetime) on each character and all of them together, the materials you got, fun facts, and a sortable list of every recent disenchant.
@@ -162,7 +162,7 @@ Disenchanting without the hunt through your bags. One window lists everything yo
 **Items tab** (left):
 1. **Unmade:** how many items you've disenchanted this session and in total.
 2. **Checkboxes:** uncheck what you want to keep. Unmaker remembers.
-3. **Disenchant next:** one click disenchants the next checked item. You can bind it to a key.
+3. **Disenchant next:** one click disenchants the next checked item shown in the list (filters and sorting change which one is next). You can bind it to a key.
 4. **Disenchant selected:** disenchants only the row you clicked, if it's checked.
 5. **Tabs:** Items, Stats, History and Settings.
 

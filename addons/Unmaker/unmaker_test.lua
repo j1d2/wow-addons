@@ -101,7 +101,8 @@ function FrameMethods:SetupMenu(generator) self.menuGenerator = generator end
 for _, method in ipairs({ "SetSize", "SetAllPoints", "SetColorTexture", "SetJustifyH", "SetJustifyV",
     "SetHeight", "SetWidth", "SetWordWrap",
     "RegisterForDrag", "EnableMouse", "EnableMouseWheel", "SetMovable",
-    "SetClampedToScreen", "SetFrameStrata", "SetTitle", "SetPortraitToAsset", "SetID" }) do
+    "SetClampedToScreen", "SetFrameStrata", "SetTitle", "SetPortraitToAsset", "SetID",
+    "SetAutoFocus", "SetNumeric", "SetMaxLetters", "ClearFocus" }) do
     FrameMethods[method] = function() end
 end
 
@@ -145,6 +146,17 @@ local function Picked(dropdown)
         if choice.isSelected(choice.data) then
             return choice.text
         end
+    end
+end
+
+--- Types into a fake edit box, firing its OnTextChanged as the player's typing does.
+-- @param box the edit box
+-- @param text the new text
+local function Type(box, text)
+    box:SetText(text)
+    local changed = box:GetScript("OnTextChanged")
+    if changed then
+        changed(box, true)
     end
 end
 
@@ -227,8 +239,23 @@ local function Load(setup)
             end
         end,
         IsCosmeticItem = function() return false end,
-        GetCurrentItemLevel = function() return 20 end,
+        -- A record's own level and vendor price when the scenario gives them (level, sell).
+        GetCurrentItemLevel = function(location)
+            local record = world.bags[location.bag] and world.bags[location.bag][location.slot]
+            return record and record.level or 20
+        end,
+        GetItemInfo = function(itemID)
+            for _, bag in pairs(world.bags) do
+                for _, record in pairs(bag) do
+                    if record.itemID == itemID then
+                        return record.itemName, record.hyperlink, record.quality, record.level or 20, 1, "", "",
+                            1, record.equipLoc, record.iconFileID, record.sell
+                    end
+                end
+            end
+        end,
     }
+    _G.GetMoneyString = function(copper) return "<money " .. copper .. ">" end
     _G.ItemLocation = { CreateFromBagAndSlot = function(_, bag, slot) return { bag = bag, slot = slot } end }
     _G.C_EquipmentSet = {
         GetEquipmentSetIDs = function() return { 1 } end,
@@ -888,6 +915,92 @@ do
         and text:find("Lesser Magic Essence", 1, true) ~= nil and text:find("Strange Dust", 1, true) == nil)
     label, text = Show("All characters")
     Check("and all characters again", label == "All characters" and text:find("Lifetime\n2", 1, true) ~= nil)
+end
+
+-- Items tab: quality and item level filters, vendor price and sortable columns ----------------
+
+--- The shown rows' item names, top first.
+-- @return the names joined with commas
+local function ShownNames()
+    local names = {}
+    for _, rowFrame in ipairs(ShownRows()) do
+        names[#names + 1] = rowFrame.row.name
+    end
+    return table.concat(names, ",")
+end
+
+--- Bags with item levels and vendor prices on the standard items.
+-- @return the bags
+local function PricedBags()
+    local bags = StandardBags()
+    bags[0][1].level, bags[0][1].sell = 10, 120 -- Green Vest
+    bags[0][2].level = 20 -- Blue Ring, no vendor price
+    bags[0][3].level, bags[0][3].sell = 30, 500 -- Purple Axe
+    bags[1][1].level = 25 -- Bound Boots
+    return bags
+end
+
+do
+    Start({ bags = PricedBags() })
+    _G.SlashCmdList.UNMAKER("")
+    local panel = _G.UnmakerNextButton.parent
+    Check("the Items tab has a quality filter starting at any", panel.qualityDropdown ~= nil
+        and Picked(panel.qualityDropdown) == "Any quality" and panel.minLevelBox ~= nil and panel.maxLevelBox ~= nil)
+    Check("rows start in quality order", ShownNames() == "Purple Axe,Blue Ring,Bound Boots,Green Vest")
+    local rows = ShownRows()
+    Check("each row shows its item level and vendor price", rows[4].levelText.text == "10"
+        and rows[4].vendorText.text == "<money 120>" and rows[2].vendorText.text == "-")
+
+    Pick(panel.qualityDropdown, "Uncommon & down")
+    Check("Uncommon & down hides rare and epic gear", ShownNames() == "Bound Boots,Green Vest")
+    Check("the count says what the filters hide", (Lines()):find("1 of 2 checked (2 hidden by filters)", 1, true) ~= nil)
+    Check("Disenchant next counts the shown rows", _G.UnmakerNextButton.text == "Disenchant next (1)")
+    Fire("BAG_UPDATE_DELAYED")
+    Check("a bag change keeps the filter", ShownNames() == "Bound Boots,Green Vest")
+    Click(_G.UnmakerNextButton)
+    Check("Disenchant next takes the first checked row you see, never a hidden one",
+        #world.casts == 1 and world.casts[1].bag == 0 and world.casts[1].slot == 1)
+end
+
+do
+    Start({ bags = PricedBags() })
+    _G.SlashCmdList.UNMAKER("")
+    local panel = _G.UnmakerNextButton.parent
+    Type(panel.minLevelBox, "15")
+    Type(panel.maxLevelBox, "25")
+    Check("an item level range filters by each item's level", ShownNames() == "Blue Ring,Bound Boots")
+    Type(panel.minLevelBox, "")
+    Type(panel.maxLevelBox, "")
+
+    local function SortBy(key)
+        local button = panel.sortButtons[key]
+        button:GetScript("OnClick")(button)
+    end
+    SortBy("vendor")
+    Check("Vendor sorts highest first, items with no price last", ShownNames() == "Purple Axe,Green Vest,Blue Ring,Bound Boots"
+        and panel.headerTexts.vendor.text:find("NPE_ArrowDown", 1, true) ~= nil)
+    SortBy("vendor")
+    Check("again reverses it, still with no price last", ShownNames() == "Green Vest,Purple Axe,Blue Ring,Bound Boots")
+    SortBy("ilvl")
+    Check("ilvl sorts highest first", ShownNames() == "Purple Axe,Bound Boots,Blue Ring,Green Vest"
+        and panel.headerTexts.vendor.text == "Vendor")
+    SortBy("name")
+    Check("Item sorts A to Z", ShownNames() == "Blue Ring,Bound Boots,Green Vest,Purple Axe")
+    Click(_G.UnmakerNextButton)
+    Check("Disenchant next follows the sort: the first checked row in it", #world.casts == 1
+        and world.casts[1].bag == 0 and world.casts[1].slot == 2)
+end
+
+do
+    -- Open when I loot still sees gear the filters hide.
+    Start({ bags = PricedBags() })
+    _G.UnmakerDB.settings.openOnLoot = true
+    _G.SlashCmdList.UNMAKER("")
+    Pick(_G.UnmakerNextButton.parent.qualityDropdown, "Uncommon & down")
+    _G.SlashCmdList.UNMAKER("")
+    world.bags[2] = { [1] = Gear(31, "New Ring", 3, { equipLoc = "INVTYPE_FINGER" }) }
+    Fire("BAG_UPDATE_DELAYED")
+    Check("Open when I loot opens for new gear even if the filters hide it", _G.UnmakerFrame.shown)
 end
 
 if failed > 0 then
