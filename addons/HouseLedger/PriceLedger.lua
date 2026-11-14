@@ -21,8 +21,7 @@ PriceLedger.DB_VERSION = 3
 -- HouseLedgerDB.settings; an optional table, so no version change.
 PriceLedger.SETTINGS = {
     { key = "tooltipPrices", label = "Show prices on item tooltips", default = true },
-    { key = "tooltipDetails", label = "Always show the 1, 3, 7 and 14-day lines on tooltips (no need to hold Shift)",
-        default = false },
+    { key = "tooltipDetails", label = "Show the day lines on tooltips without holding Shift", default = false },
 }
 PriceLedger.SCAN_INTERVAL = 15 * 60
 
