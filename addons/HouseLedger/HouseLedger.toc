@@ -1,6 +1,6 @@
 ## Interface: 16001
 ## Title: HouseLedger
-## Notes: Scan the auction house once, keep the prices, show the last price on item mouseovers.
+## Notes: Buy, sell and spot deals at the auction house with your own price history.
 ## Author: j1d2
 ## Version: 0.4.0
 ## X-License: Apache-2.0
