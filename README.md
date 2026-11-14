@@ -17,22 +17,22 @@ Found a bug or have an idea? [Open an issue](https://github.com/j1d2/wow-addons/
 
 | Addon | In one line |
 | --- | --- |
-| [HouseLedger](#houseledger) | Remembers auction house prices, so you can see what's cheap today and what to sell for. |
-| [Unmaker](#unmaker) | Lists the gear in your bags you can disenchant. Uncheck what to keep, then click through the rest. |
+| [HouseLedger](#houseledger) | Buy, sell and spot deals at the auction house with your own price history. |
+| [Unmaker](#unmaker) | Every item you can disenchant, in one list that remembers what you keep. Clear the rest with one key. |
 
 ## Install
 
-1. Download the addon's latest zip, such as `HouseLedger-0.3.0.zip`, from [Releases](https://github.com/j1d2/wow-addons/releases).
+1. Download the addon's latest zip, such as `HouseLedger-0.4.0.zip`, from [Releases](https://github.com/j1d2/wow-addons/releases).
 2. Unzip it to get the addon's folder, such as `HouseLedger`.
    - **Windows 11:** right-click the zip, choose **Extract All**, and open the new folder. The `HouseLedger` folder is inside it.
    - **macOS:** double-click the zip.
-   - **Linux:** `unzip HouseLedger-0.3.0.zip`
+   - **Linux:** `unzip HouseLedger-0.4.0.zip`
 3. Open the game's AddOns folder. In the Battle.net app, select World of Warcraft, click the gear next to **Play**, and choose **Show in Explorer** (Windows) or **Show in Finder** (macOS). Then open `_forever_`, `Interface`, `AddOns`. If `Interface` or `AddOns` isn't there yet, create it. The usual places:
    - **Windows 11:** `C:\Program Files (x86)\World of Warcraft\_forever_\Interface\AddOns`
    - **macOS:** `/Applications/World of Warcraft/_forever_/Interface/AddOns`
    - **Linux (Wine, Lutris and the like):** the same `World of Warcraft/_forever_/Interface/AddOns` path inside your Wine prefix's `Program Files (x86)`
    - New to WoW on Linux? [wow-battlenet-linux](https://github.com/j1d2/wow-battlenet-linux) is a guide to installing Battle.net and WoW Forever with Lutris.
-4. Quit the game, then move the addon's folder into `AddOns`. The `.toc` file must sit one level down: `AddOns/HouseLedger/HouseLedger.toc`, not `AddOns/HouseLedger-0.3.0/HouseLedger/HouseLedger.toc`.
+4. Quit the game, then move the addon's folder into `AddOns`. The `.toc` file must sit one level down: `AddOns/HouseLedger/HouseLedger.toc`, not `AddOns/HouseLedger-0.4.0/HouseLedger/HouseLedger.toc`.
 5. Start the game. On the character screen, click **AddOns** and make sure the addon is ticked.
 
 **Updating:** quit the game, delete the old addon folder, and move the new one in. Saved prices are kept, because the game stores them in its own `WTF` folder, not in the addon's folder.
@@ -41,11 +41,11 @@ Found a bug or have an idea? [Open an issue](https://github.com/j1d2/wow-addons/
 
 ## HouseLedger
 
-Auction house prices, remembered. One Scan a day builds a 14-day price history on your own computer.
+**Your auction house, with memory.** The Buy, Sell and Market tabs all work from a price history kept on your own computer. Every Scan adds to it, and the more you scan, the sharper it gets.
 
 ### TL;DR
 
-- **Scan** at the auction house saves today's prices. You can scan every 15 minutes; once a day builds the history.
+- **Scan** at the auction house saves today's prices. Scan as often as every 15 minutes; every scan adds to your history.
 - **Hover any item:** the last price, a trend arrow and a ⭐ for a deal. Hold **Shift** for the 1, 3, 7 and 14-day averages and ranges.
 - **Buy tab:** search, then compare today's price with your 7-day average. Click a row for 1, 3, 7 and 14 days.
 - **Sell tab:** drop an item in to see the lowest price now and its history. Then post it in Blizzard's window.
@@ -143,7 +143,7 @@ Its Buy and Sell tabs switch Blizzard's tabs too, and the reverse.
 
 ## Unmaker
 
-Disenchanting without the hunt through your bags. One window lists everything you can disenchant.
+**Stop digging through your bags for things to disenchant.** Unmaker lists every item you can disenchant in one window. Uncheck what you keep, then clear the rest one click at a time.
 
 ### TL;DR
 

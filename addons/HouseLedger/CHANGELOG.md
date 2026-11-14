@@ -4,6 +4,10 @@ All notable changes to HouseLedger. The format follows [Keep a Changelog](https:
 
 ## [Unreleased]
 
+### Changed
+
+- A new one-line description in the game's AddOns list.
+
 ## [0.4.0] - 2026-11-14
 
 ### Added
