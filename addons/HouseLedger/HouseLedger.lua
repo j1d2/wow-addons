@@ -162,6 +162,9 @@ local marketText = ""
 -- searches, Market's resets when the view changes.
 local buySort = {}
 local marketSort = {}
+-- The lowest quality the last search asked the house for (0 is every quality). A looser quality
+-- filter can't show what that search left out, so the status line says to search again.
+local searchedQuality = 0
 -- True while one refilter waits for the next frame, so a burst of item-info events filters once.
 local refilterPending = false
 -- The Market tab: which view, its rows (shaped like browse results), and the
@@ -654,9 +657,20 @@ local function RenderRows()
         buyPanel.marketLabel:SetText(MarketLabel())
     end
     local from = list.from or #list
+    -- What the search's page can't show: more on the house, or qualities it didn't ask for.
+    local notes = ""
+    if not market then
+        if (filter.minQuality or 0) < searchedQuality then
+            notes = notes .. " Search again to include lower qualities."
+        end
+        if type(C_AuctionHouse.HasFullBrowseResults) == "function" and not C_AuctionHouse.HasFullBrowseResults() then
+            notes = notes .. " The house has more; narrow the search."
+        end
+    end
     if #list == 0 then
         if from > 0 then
-            SetStatus(string.format("Nothing matches the filters (%d hidden).", from))
+            SetStatus(string.format(market and "Nothing matches the filters (%d hidden)."
+                or "Nothing on this page matches the filters (%d hidden).", from) .. notes)
         else
             SetStatus(market and MarketEmptyText() or "No results.")
         end
@@ -669,11 +683,7 @@ local function RenderRows()
             MARKET_VIEWS[marketView].noun, filtered))
         return
     end
-    local text = string.format("Showing %d-%d of %d%s.", scrollOffset + 1, last, #list, filtered)
-    if type(C_AuctionHouse.HasFullBrowseResults) == "function" and not C_AuctionHouse.HasFullBrowseResults() then
-        text = text .. " The house has more; narrow the search."
-    end
-    SetStatus(text)
+    SetStatus(string.format("Showing %d-%d of %d%s.", scrollOffset + 1, last, #list, filtered) .. notes)
 end
 
 --- Empties the details block under the Buy list.
@@ -1188,9 +1198,11 @@ end
 -- Sends nothing for a too-short text, a closed house, or a busy throttle.
 local function SendSearch()
     local text = strtrim(searchBox:GetText() or "")
-    -- A quality or item level filter makes an empty name a real search, as in Blizzard's window.
-    if strlenutf8(text) < MIN_SEARCH_LENGTH and not (text == "" and HouseLedgerPrice.FilterActive(filter)) then
-        SetStatus("Type at least 2 letters, or pick a quality or item level.")
+    -- A quality filter makes an empty name a real search, as in Blizzard's window. Item level
+    -- alone doesn't: it only filters the page that comes back, so the house would send its first
+    -- page of everything.
+    if strlenutf8(text) < MIN_SEARCH_LENGTH and not (text == "" and filter.minQuality) then
+        SetStatus("Type at least 2 letters, or pick a quality.")
         return
     end
     if not AuctionHouseFrame or not AuctionHouseFrame:IsShown() then
@@ -1213,6 +1225,7 @@ local function SendSearch()
         sorts = PRICE_SORT,
         filters = qualities,
     })
+    searchedQuality = filter.minQuality or 0
     SetStatus(text ~= "" and ("Searching for " .. text .. "...") or "Searching...")
 end
 

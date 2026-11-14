@@ -380,7 +380,7 @@ local function Setup(opts)
         GetItemSearchResultInfo = function(_, index) return world.itemResults[index] end,
         HasFullItemSearchResults = function() return not world.partialResults end,
         GetBrowseResults = function() return world.browseResults or {} end,
-        HasFullBrowseResults = function() return true end,
+        HasFullBrowseResults = function() return not world.partialBrowse end,
         MakeItemKey = function(itemID, itemLevel, itemSuffix, petSpecies)
             return { itemID = itemID, itemLevel = itemLevel or 0, itemSuffix = itemSuffix or 0,
                 battlePetSpeciesID = petSpecies or 0 }
@@ -1816,7 +1816,7 @@ do
     SearchBox():SetText("")
     Click("Search")
     Check("no name and no filter sends nothing", #world.browseQueries == 0
-        and StatusLine() == "Type at least 2 letters, or pick a quality or item level.")
+        and StatusLine() == "Type at least 2 letters, or pick a quality.")
     Pick(panel.qualityDropdown, "Rare & up")
     Check("picking a quality sends nothing", #world.browseQueries == 0 and Picked(panel.qualityDropdown) == "Rare & up")
     Click("Search")
@@ -1845,9 +1845,25 @@ do
     Type(panel.maxLevelBox, "")
     Check("loosening the filters shows what the search already brought", rows[3].nameText.text == "Item 4"
         and #world.browseQueries == 1)
+    Check("and says a lower quality needs a new search, since the house only sent the higher ones",
+        StatusLine():find("Search again to include lower qualities.", 1, true) ~= nil)
+    Pick(panel.qualityDropdown, "Epic & up")
+    Check("a tighter quality just filters the page", StatusLine():find("Search again", 1, true) == nil)
+    Pick(panel.qualityDropdown, "Any quality")
     Click("Search")
-    Check("a search with only a level filter asks for every quality", #world.browseQueries == 2
+    Check("an empty name with only an item level sends nothing: the house never sees item level",
+        #world.browseQueries == 1 and StatusLine() == "Type at least 2 letters, or pick a quality.")
+    SearchBox():SetText("linen")
+    Click("Search")
+    Check("a name with a level filter asks for every quality", #world.browseQueries == 2
         and table.concat(world.browseQueries[2].filters, ",") == "6,7,8,9,10")
+    Fire("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
+    Check("after the new search the lower-quality note goes away", StatusLine():find("Search again", 1, true) == nil)
+
+    world.partialBrowse = true
+    Type(panel.minLevelBox, "99")
+    Check("when the filters hide a whole partial page, it says the house has more",
+        StatusLine() == "Nothing on this page matches the filters (4 hidden). The house has more; narrow the search.")
 end
 
 do
