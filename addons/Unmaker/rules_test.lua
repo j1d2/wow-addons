@@ -51,6 +51,29 @@ do
         and db.kept[200] == nil)
 end
 
+-- Saved window position
+do
+    Check("no saved position means none", R.EnsureDB(nil).position == nil)
+    local db = R.EnsureDB({ position = { point = "TOPLEFT", relativePoint = "TOPLEFT", x = 120.5, y = -80 } })
+    Check("a good saved position is kept", db.position ~= nil and db.position.point == "TOPLEFT"
+        and db.position.relativePoint == "TOPLEFT" and db.position.x == 120.5 and db.position.y == -80)
+    for why, broken in pairs({
+        ["not a table"] = "TOPLEFT",
+        ["unknown point"] = { point = "UPWARDS", relativePoint = "TOPLEFT", x = 1, y = 1 },
+        ["relative point not a name"] = { point = "TOPLEFT", relativePoint = 3, x = 1, y = 1 },
+        ["x not a number"] = { point = "TOPLEFT", relativePoint = "TOPLEFT", x = "1", y = 1 },
+        ["x not a number (NaN)"] = { point = "TOPLEFT", relativePoint = "TOPLEFT", x = 0 / 0, y = 1 },
+        ["y infinite"] = { point = "TOPLEFT", relativePoint = "TOPLEFT", x = 1, y = 1 / 0 },
+    }) do
+        Check("a damaged saved position is dropped: " .. why, R.EnsureDB({ position = broken }).position == nil)
+    end
+    local position = R.Position("BOTTOMRIGHT", "BOTTOMRIGHT", -10, 20)
+    Check("a dropped window's anchor becomes a position", position ~= nil and position.point == "BOTTOMRIGHT"
+        and position.relativePoint == "BOTTOMRIGHT" and position.x == -10 and position.y == 20)
+    Check("an anchor the game didn't give in full is not saved", R.Position("CENTER", nil, 0, 0) == nil
+        and R.Position(nil, nil, nil, nil) == nil)
+end
+
 -- What can be disenchanted
 do
     Check("Uncommon armor can be disenchanted", R.CanDisenchant(Item()))

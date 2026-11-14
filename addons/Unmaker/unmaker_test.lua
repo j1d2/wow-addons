@@ -83,9 +83,20 @@ function FrameMethods:IsProtected()
 end
 function FrameMethods:CreateTexture() return NewFrame("Texture", nil, self) end
 function FrameMethods:CreateFontString() return NewFrame("FontString", nil, self) end
-function FrameMethods:StartMoving() self.moving = true end
-function FrameMethods:StopMovingOrSizing() self.moving = false end
-for _, method in ipairs({ "SetSize", "SetPoint", "SetAllPoints", "SetColorTexture", "SetJustifyH", "SetJustifyV",
+-- Moving a frame makes it "user placed", as in the game; dropping it anchors it where
+-- world.dropAt says, the way the game re-anchors a dragged frame.
+function FrameMethods:StartMoving() self.moving = true; self.userPlaced = true end
+function FrameMethods:StopMovingOrSizing()
+    self.moving = false
+    if world.dropAt then
+        self.point = world.dropAt
+    end
+end
+function FrameMethods:SetUserPlaced(placed) self.userPlaced = placed end
+function FrameMethods:ClearAllPoints() self.point = nil end
+function FrameMethods:SetPoint(...) self.point = { ... } end
+function FrameMethods:GetPoint() return unpack(self.point or {}) end
+for _, method in ipairs({ "SetSize", "SetAllPoints", "SetColorTexture", "SetJustifyH", "SetJustifyV",
     "SetHeight", "SetWidth", "SetWordWrap",
     "RegisterForDrag", "EnableMouse", "EnableMouseWheel", "SetMovable",
     "SetClampedToScreen", "SetFrameStrata", "SetTitle", "SetPortraitToAsset", "SetID" }) do
@@ -596,6 +607,33 @@ do
     Check("the window can be dragged", _G.UnmakerFrame.moving)
     _G.UnmakerFrame:GetScript("OnDragStop")(_G.UnmakerFrame)
     Check("and dropped", not _G.UnmakerFrame.moving)
+end
+
+do
+    Start({ bags = StandardBags() })
+    local point = _G.UnmakerFrame.point
+    Check("the window starts in the middle of the screen", point[1] == "CENTER" and point[2] == _G.UIParent
+        and point[4] == 0 and point[5] == 0)
+    world.dropAt = { "TOPLEFT", _G.UIParent, "TOPLEFT", 120.5, -80 }
+    _G.UnmakerFrame:GetScript("OnDragStart")(_G.UnmakerFrame)
+    _G.UnmakerFrame:GetScript("OnDragStop")(_G.UnmakerFrame)
+    local saved = _G.UnmakerDB.position
+    Check("dropping the window saves where it is", saved ~= nil and saved.point == "TOPLEFT"
+        and saved.relativePoint == "TOPLEFT" and saved.x == 120.5 and saved.y == -80)
+    Check("and Unmaker keeps the spot itself, not the game's layout file", _G.UnmakerFrame.userPlaced == false)
+
+    local db = _G.UnmakerDB
+    Start({ bags = StandardBags(), db = db })
+    point = _G.UnmakerFrame.point
+    Check("after a reload the window opens where it was left", point[1] == "TOPLEFT"
+        and point[2] == _G.UIParent and point[3] == "TOPLEFT" and point[4] == 120.5 and point[5] == -80)
+
+    Start({ bags = StandardBags() })
+    _G.UnmakerFrame:GetScript("OnDragStart")(_G.UnmakerFrame)
+    world.inCombat = true
+    world.dropAt = { "BOTTOM", _G.UIParent, "BOTTOM", 5, 5 }
+    _G.UnmakerFrame:GetScript("OnDragStop")(_G.UnmakerFrame)
+    Check("a drop that the game blocks in combat saves nothing", _G.UnmakerDB.position == nil)
 end
 
 --- The text of the window's line that starts with "Unmade:".
