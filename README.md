@@ -155,34 +155,39 @@ Disenchanting without the hunt through your bags. One window lists everything yo
 - **Never** disenchants without your click, and does nothing in combat.
 
 <p align="center">
-  <img src="docs/screenshots/unmaker-items.png" alt="Unmaker's Items tab: the Unmade counts, a checkbox list of gear to disenchant, the Disenchant selected and Disenchant next buttons, and the four tabs" width="420">
+  <img src="docs/screenshots/unmaker-items.png" alt="Unmaker's Items tab: the Unmade counts, the quality and item level filters, sortable Item, ilvl and Vendor headings, a checkbox list of gear to disenchant, the Disenchant selected and Disenchant next buttons, and the four tabs" width="420">
   <img src="docs/screenshots/unmaker-bags.png" alt="The Unmaker button above the bag window" width="400">
 </p>
 
 **Items tab** (left):
 1. **Unmade:** how many items you've disenchanted this session and in total.
-2. **Checkboxes:** uncheck what you want to keep. Unmaker remembers.
-3. **Disenchant next:** one click disenchants the next checked item shown in the list (filters and sorting change which one is next). You can bind it to a key.
-4. **Disenchant selected:** disenchants only the row you clicked, if it's checked.
-5. **Tabs:** Items, Stats, History and Settings.
+2. **Filters:** pick a quality ("Rare & down", "Uncommon & down") and an item level range. The line under the list says how many items the filters hide.
+3. **Headings:** click Item, ilvl or Vendor to sort, and again to reverse. **Vendor** is what a vendor would pay for the item.
+4. **Checkboxes:** uncheck what you want to keep. Unmaker remembers.
+5. **Disenchant next:** one click disenchants the next checked item shown in the list (filters and sorting change which one is next). You can bind it to a key.
+6. **Disenchant selected:** disenchants only the row you clicked, if it's checked.
+7. **Tabs:** Items, Stats, History and Settings.
 
 **Bag window** (right):
 1. The **Unmaker** button above your bags opens and closes the window.
 
 <p align="center">
-  <img src="docs/screenshots/unmaker-stats.png" alt="Unmaker's Stats tab: counts, the character dropdown open, fun facts and lifetime materials" width="420">
-  <img src="docs/screenshots/unmaker-history.png" alt="Unmaker's History tab: sortable headings and the loot from each disenchant" width="420">
+  <img src="docs/screenshots/unmaker-stats.png" alt="Unmaker's Stats tab: counts, the character dropdown, a 14-day chart, fun facts and lifetime materials" width="420">
+  <img src="docs/screenshots/unmaker-history.png" alt="Unmaker's History tab: the character dropdown, sortable headings, who unmade each item (names hidden) and the loot from each disenchant" width="420">
 </p>
 
 **Stats tab** (left):
 1. **Counts:** lifetime, today and this session.
 2. **Characters:** the dropdown picks all your characters together or one of them.
-3. **Fun facts:** your most-unmade item, best item, busiest day and first disenchant.
-4. **Materials:** everything your disenchants have given you.
+3. **Chart:** how many items you unmade each day for 14 days, today in gold. It follows the dropdown.
+4. **Fun facts:** your most-unmade item, best item, busiest day and first disenchant.
+5. **Materials:** everything your disenchants have given you.
 
 **History tab** (right):
-1. Click a heading to sort, and again to reverse. The dropdown above shows one character's disenchants.
-2. **Got:** the materials each disenchant gave.
+1. **Characters:** show every character's disenchants, or just one character's.
+2. **Headings:** click one to sort, and again to reverse. Dates read month-day, then time; hover a row to see the year.
+3. **Who:** the character that unmade the item (names are hidden in this picture).
+4. **Got:** the materials each disenchant gave.
 
 <p align="center">
   <img src="docs/screenshots/unmaker-settings.png" alt="Unmaker's Settings tab: keep epics, keep soulbound gear, hide equipment-set items, open when you loot, open with your bags, show the button above the bags" width="420">
