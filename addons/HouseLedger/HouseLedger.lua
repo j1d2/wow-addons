@@ -69,7 +69,11 @@ local FILTER_ROW_Y = -LIST_TOP - 2 - FILTER_HEIGHT / 2
 local VISIBLE_ROWS = math.floor((HOUSE_HEIGHT - LIST_TOP - FILTER_HEIGHT - LIST_BOTTOM - HEADER_HEIGHT) / ROW_HEIGHT)
 local WHEEL_STEP = 3
 
-local COLUMN_WIDTH = { price = 96, avail = 48, typical = 96, trend = 72 }
+local COLUMN_WIDTH = { ilvl = 34, price = 96, avail = 48, typical = 96, trend = 72 }
+-- Column headings, and the way each first sorts when clicked (true is low to high, A to Z).
+local HEADER_LABELS = { name = "Item", ilvl = "ilvl", price = "Price", avail = "Avail.", typical = "Avg 7d", trend = "Trend" }
+local SORT_FIRST_ASCENDING = { name = true, ilvl = false, price = true, avail = false, typical = true, trend = true }
+local SORT_KEYS = { "name", "ilvl", "price", "avail", "typical", "trend" }
 local COLUMN_GAP = 6
 local ICON_SIZE = 16
 -- Shown until the game has loaded an item's icon.
@@ -154,6 +158,10 @@ local scrollOffset = 0
 -- Quality and item level limits, shared by Buy and Market; Market's name filter text.
 local filter = {}
 local marketText = ""
+-- The column each list is sorted by, if any ({ key, ascending }); Buy keeps its sort across
+-- searches, Market's resets when the view changes.
+local buySort = {}
+local marketSort = {}
 -- True while one refilter waits for the next frame, so a burst of item-info events filters once.
 local refilterPending = false
 -- The Market tab: which view, its rows (shaped like browse results), and the
@@ -405,6 +413,30 @@ local function SavedStats(itemID)
     return saved and saved.stats
 end
 
+--- A row's item level: a search result's own (from its item key); a Market row's base level from
+-- the game's item data, kept once known.
+-- @param result a search result or a Market row
+-- @return the level, or nil when it has none (0) or isn't known yet
+local function RowLevel(result)
+    local level
+    if result.market then
+        level = result.level
+        if level == nil then
+            local getInfo = C_Item and C_Item.GetItemInfo or GetItemInfo
+            if type(getInfo) == "function" then
+                level = select(4, getInfo(result.itemKey.itemID))
+                result.level = level
+            end
+        end
+    else
+        level = result.itemKey and result.itemKey.itemLevel
+    end
+    if type(level) == "number" and level > 0 then
+        return level
+    end
+    return nil
+end
+
 --- Fills one list row from a browse result and shows it.
 -- The trend and deal mark judge the live price against the saved stats.
 -- @param row a row button from BuildRow
@@ -420,6 +452,7 @@ local function FillRow(row, result)
     end
     row.nameText:SetTextColor(r, g, b)
     row.icon:SetTexture(icon)
+    row.ilvlText:SetText(tostring(RowLevel(result) or ""))
     row.priceText:SetText(CopperToText(result.minPrice))
     row.availText:SetText(tostring(result.totalQuantity or 0))
 
@@ -501,6 +534,46 @@ local function SavedItemLook(entry)
     return { name = entry.name or name, quality = quality, level = level }
 end
 
+--- A row's value in one column, for sorting. Reads saved data and the game's item data only.
+-- @param result a search result or a Market row
+-- @param key the column: name, ilvl, price, avail, typical or trend
+-- @return a number or lowercase name, or nil when not known
+local function SortValue(result, key)
+    if key == "name" then
+        local name = ItemLook(result.itemKey, result)
+        return name and name:lower()
+    elseif key == "ilvl" then
+        return RowLevel(result)
+    elseif key == "price" then
+        return result.minPrice
+    elseif key == "avail" then
+        return result.totalQuantity
+    end
+    if result.market then
+        return key == "typical" and result.typical or result.trendPct
+    end
+    local stats = SavedStats(result.itemKey and result.itemKey.itemID)
+    if key == "typical" then
+        return stats and stats.typical
+    end
+    return HouseLedgerPrice.Judge(stats, result.minPrice).trendPct
+end
+
+--- A list sorted by the chosen column, keeping its "filtered from" count; as it was without one.
+-- @param list the rows to sort
+-- @param sort { key, ascending }
+-- @return the sorted list
+local function Sorted(list, sort)
+    if sort.key == nil then
+        return list
+    end
+    local sorted = HouseLedgerPrice.SortList(list, function(result)
+        return SortValue(result, sort.key)
+    end, sort.ascending)
+    sorted.from = list.from
+    return sorted
+end
+
 --- Keeps the search results that pass the quality and item level filters, using each result's
 -- own item level. Reads what the search brought back; sends nothing.
 local function FilterResults()
@@ -514,6 +587,7 @@ local function FilterResults()
         end
     end
     shownResults.from = #results
+    shownResults = Sorted(shownResults, buySort)
 end
 
 --- Rebuilds the Market rows for the chosen view. The three lists are worked out once per scan.
@@ -533,11 +607,13 @@ local function RefreshMarket()
         if not check or HouseLedgerPrice.PassesFilter(SavedItemLook(entry), limits) then
             marketList[#marketList + 1] = {
                 itemKey = SavedItemKey(entry.itemID), minPrice = entry.unit, totalQuantity = entry.qty,
-                savedName = entry.name, savedQuality = entry.quality,
+                savedName = entry.name, savedQuality = entry.quality, market = true,
+                typical = entry.typical, trendPct = entry.trendPct,
             }
         end
     end
     marketList.from = #view
+    marketList = Sorted(marketList, marketSort)
     marketOffset = math.min(marketOffset, math.max(0, #marketList - VISIBLE_ROWS))
 end
 
@@ -942,6 +1018,43 @@ local function DropItem()
     SetSellStatus("Searching for " .. name .. "...")
 end
 
+--- Writes the column headings: Market's price is "Scanned", and the sorted column gets an arrow.
+local function RefreshHeader()
+    local sort = currentTab == MARKET_TAB and marketSort or buySort
+    for key, text in pairs(buyPanel.headerTexts) do
+        local label = HEADER_LABELS[key]
+        if key == "price" and buyPanel.marketMode then
+            label = "Scanned"
+        end
+        if sort.key == key then
+            label = label .. " |A:" .. (sort.ascending and "NPE_ArrowUp" or "NPE_ArrowDown") .. ":10:10|a"
+        end
+        text:SetText(label)
+    end
+end
+
+--- A column heading click: sorts the list by it, or reverses the sort when it is already sorted
+-- by it. Reorders what is already here; sends nothing.
+-- @param key the column
+local function SortByColumn(key)
+    local market = currentTab == MARKET_TAB
+    local sort = market and marketSort or buySort
+    if sort.key == key then
+        sort.ascending = not sort.ascending
+    else
+        sort.key, sort.ascending = key, SORT_FIRST_ASCENDING[key]
+    end
+    if market then
+        marketOffset = 0
+        RefreshMarket()
+    else
+        scrollOffset = 0
+        FilterResults()
+    end
+    RefreshHeader()
+    RenderRows()
+end
+
 --- Switches the Buy panel between its search (Buy tab) and the Market tab.
 -- On Market the search box, Clear and Search hide and the view switcher shows in their place;
 -- both share the list, its rows and the details block. Nothing is sent either way.
@@ -964,8 +1077,8 @@ local function SetMarketMode(market)
         buyPanel.filterNameBox:Hide()
         quality:SetPoint("LEFT", frame, "TOPLEFT", 14, FILTER_ROW_Y)
     end
-    buyPanel.priceHeading:SetText(market and "Scanned" or "Price")
     ClearDetails()
+    RefreshHeader()
     if market then
         RefreshMarket()
         RenderRows()
@@ -1005,6 +1118,9 @@ end
 local function StepMarket(step)
     marketView = (marketView - 1 + step) % #MARKET_VIEWS + 1
     marketOffset = 0
+    -- Each view has its own order (biggest move first); a column sort starts over.
+    marketSort.key = nil
+    RefreshHeader()
     RefreshMarket()
     ClearDetails()
     RenderRows()
@@ -1280,7 +1396,7 @@ end
 -- @param cells { parent, icon?, name, price, avail, typical, trend }
 -- @param showTypical false hides the Avg 7d column on a narrow window
 local function AnchorCells(cells, showTypical)
-    for _, key in ipairs({ "name", "price", "avail", "typical", "trend" }) do
+    for _, key in ipairs({ "name", "ilvl", "price", "avail", "typical", "trend" }) do
         cells[key]:ClearAllPoints()
     end
     cells.trend:SetPoint("RIGHT", cells.parent, "RIGHT", -4, 0)
@@ -1298,12 +1414,14 @@ local function AnchorCells(cells, showTypical)
     cells.avail:SetWidth(COLUMN_WIDTH.avail)
     cells.price:SetPoint("RIGHT", cells.avail, "LEFT", -COLUMN_GAP, 0)
     cells.price:SetWidth(COLUMN_WIDTH.price)
+    cells.ilvl:SetPoint("RIGHT", cells.price, "LEFT", -COLUMN_GAP, 0)
+    cells.ilvl:SetWidth(COLUMN_WIDTH.ilvl)
     if cells.icon then
         cells.name:SetPoint("LEFT", cells.icon, "RIGHT", 4, 0)
     else
         cells.name:SetPoint("LEFT", cells.parent, "LEFT", 4 + ICON_SIZE + 4, 0)
     end
-    cells.name:SetPoint("RIGHT", cells.price, "LEFT", -COLUMN_GAP, 0)
+    cells.name:SetPoint("RIGHT", cells.ilvl, "LEFT", -COLUMN_GAP, 0)
 end
 
 --- Makes one single-line text cell.
@@ -1328,6 +1446,7 @@ local function CellsOf(owner)
         parent = owner,
         icon = owner.icon,
         name = owner.nameText,
+        ilvl = owner.ilvlText,
         price = owner.priceText,
         avail = owner.availText,
         typical = owner.typicalText,
@@ -1349,6 +1468,7 @@ local function BuildRow(list, index)
     row.icon:SetSize(ICON_SIZE, ICON_SIZE)
     row.icon:SetPoint("LEFT", row, "LEFT", 4, 0)
     row.nameText = Cell(row, "GameFontHighlightSmall", "LEFT")
+    row.ilvlText = Cell(row, "GameFontHighlightSmall", "RIGHT")
     row.priceText = Cell(row, "GameFontHighlightSmall", "RIGHT")
     row.availText = Cell(row, "GameFontHighlightSmall", "RIGHT")
     row.typicalText = Cell(row, "GameFontHighlightSmall", "RIGHT")
@@ -1369,15 +1489,28 @@ local function BuildHeader(list)
     header:SetPoint("TOPLEFT", list, "TOPLEFT", 0, 0)
     header:SetPoint("RIGHT", list, "RIGHT", 0, 0)
     header.nameText = Cell(header, "GameFontNormalSmall", "LEFT")
+    header.ilvlText = Cell(header, "GameFontNormalSmall", "RIGHT")
     header.priceText = Cell(header, "GameFontNormalSmall", "RIGHT")
     header.availText = Cell(header, "GameFontNormalSmall", "RIGHT")
     header.typicalText = Cell(header, "GameFontNormalSmall", "RIGHT")
     header.trendText = Cell(header, "GameFontNormalSmall", "RIGHT")
-    header.nameText:SetText("Item")
-    header.priceText:SetText("Price")
-    header.availText:SetText("Avail.")
-    header.typicalText:SetText("Avg 7d")
-    header.trendText:SetText("Trend")
+    header.texts = {
+        name = header.nameText, ilvl = header.ilvlText, price = header.priceText,
+        avail = header.availText, typical = header.typicalText, trend = header.trendText,
+    }
+    -- Each heading is a button over its text: a click sorts the list by that column.
+    header.sortButtons = {}
+    for _, key in ipairs(SORT_KEYS) do
+        local text = header.texts[key]
+        text:SetText(HEADER_LABELS[key])
+        local button = CreateFrame("Button", nil, header)
+        button:SetPoint("TOPLEFT", text, "TOPLEFT", -2, 4)
+        button:SetPoint("BOTTOMRIGHT", text, "BOTTOMRIGHT", 2, -4)
+        button:SetScript("OnClick", function()
+            SortByColumn(key)
+        end)
+        header.sortButtons[key] = button
+    end
 end
 
 --- Room to the right of the auction house, between the width limits.
@@ -1970,6 +2103,7 @@ local function BuildFrame()
     end)
     BuildHeader(list)
     buyPanel.priceHeading = header.priceText
+    buyPanel.headerTexts, buyPanel.sortButtons = header.texts, header.sortButtons
     BuildFilterRow()
     for index = 1, VISIBLE_ROWS do
         rows[index] = BuildRow(list, index)
@@ -2361,9 +2495,6 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
             return
         end
         local market = currentTab == MARKET_TAB and buyPanel.marketMode
-        if market and event == "GET_ITEM_INFO_RECEIVED" and marketText == "" and not HouseLedgerPrice.FilterActive(filter) then
-            return
-        end
         if not market and (#results == 0 or event ~= "ITEM_KEY_ITEM_INFO_RECEIVED") then
             return
         end

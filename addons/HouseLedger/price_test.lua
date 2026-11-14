@@ -639,6 +639,25 @@ do
     Check("find: no house, nothing", #P.FindByName(nil, "linen") == 0)
 end
 
+-- Sorting a list by a column
+do
+    local list = { { id = 1, v = 30 }, { id = 2, v = nil }, { id = 3, v = 10 }, { id = 4, v = 30 }, { id = 5, v = 20 } }
+    local function IDs(sorted)
+        local ids = {}
+        for index, item in ipairs(sorted) do
+            ids[index] = item.id
+        end
+        return table.concat(ids, ",")
+    end
+    local function Value(item) return item.v end
+    Check("sort: ascending, ties keep their order, unknown values last",
+        IDs(P.SortList(list, Value, true)) == "3,5,1,4,2")
+    Check("sort: descending, ties still keep their order, unknown still last",
+        IDs(P.SortList(list, Value, false)) == "1,4,5,3,2")
+    Check("sort: the list given is left as it was", IDs(list) == "1,2,3,4,5")
+    Check("sort: text sorts too", IDs(P.SortList({ { id = 1, v = "b" }, { id = 2, v = "a" } }, Value, true)) == "2,1")
+end
+
 if failed > 0 then
     io.write(string.format("%d failed\n", failed))
     os.exit(1)
