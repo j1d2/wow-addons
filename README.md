@@ -170,7 +170,7 @@ Disenchanting without the hunt through your bags. One window lists everything yo
 1. The **Unmaker** button above your bags opens and closes the window.
 
 <p align="center">
-  <img src="docs/screenshots/unmaker-stats.png" alt="Unmaker's Stats tab: counts, the character switcher, fun facts and lifetime materials" width="420">
+  <img src="docs/screenshots/unmaker-stats.png" alt="Unmaker's Stats tab: counts, the character dropdown open, fun facts and lifetime materials" width="420">
   <img src="docs/screenshots/unmaker-history.png" alt="Unmaker's History tab: sortable headings and the loot from each disenchant" width="420">
 </p>
 
