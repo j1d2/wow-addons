@@ -4,6 +4,8 @@ All notable changes to Unmaker. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-13
+
 ### Added
 
 - A Settings box to hide the **Unmaker** button above your bags. `/unmaker` still opens the window.
