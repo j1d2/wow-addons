@@ -770,6 +770,28 @@ local RED = { 255, 32, 32, "ff2020" }
 local GREEN = { 32, 255, 32, "20ff20" }
 PriceLedger.DEAL_ICON = "|A:Bonus-Objective-Star:16:16:0:0|a"
 
+--- The Sell tab's advice in plain words, from the lowest listing's verdict. It says what the
+-- numbers on the tab mean; it never suggests or sets a price.
+-- @param verdict PriceLedger.Judge of the lowest listing, or nil
+-- @param listed false when no one else is selling the item
+-- @return the advice line
+function PriceLedger.SellAdvice(verdict, listed)
+    if listed == false then
+        return "No one else is selling it right now, so you set the price."
+    end
+    if type(verdict) ~= "table" or verdict.trend == nil then
+        return "Not enough saved prices for advice yet."
+    end
+    if verdict.deal then
+        return PriceLedger.DEAL_ICON .. " The lowest is far under its 7-day average. Waiting may sell for more."
+    elseif verdict.trend == "up" then
+        return "Prices are high today. A good time to sell."
+    elseif verdict.trend == "down" then
+        return "Prices are low today. Waiting may sell for more."
+    end
+    return "Prices are about normal today."
+end
+
 --- Arrow and percent for a trend, colored for who is looking.
 -- @param stats from PriceLedger.Stats, or a table with trend and trendPct
 -- @param view "buyer" (up is red, down is green) or "seller" (the reverse)

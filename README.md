@@ -69,7 +69,7 @@ Auction house prices, remembered. One Scan a day builds a 14-day price history o
 1. **Drop an item** here, or right-click it in your bags.
 2. **Right now:** the lowest price up, how many are at that price, and how many in all.
 3. **History:** your saved averages and ranges over 1, 3, 7 and 14 days, and a 14-day chart.
-4. **Trend** against your 7-day average.
+4. **Trend** against your 7-day average, the typical price, and a plain-words line such as "Prices are high today. A good time to sell."
 5. **Reset** empties the tab; **Scan** saves today's prices.
 
 **Market tab:** use **<** and **>** to switch between **Deals**, **Biggest drops** and **Biggest rises** at your last scan. Filter by name, quality and ilvl (the item's base level). It reads only your saved prices, so it never sends a search. Click a row for its 1, 3, 7 and 14 days. Item names fill in from your next scan.
