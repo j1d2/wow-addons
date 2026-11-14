@@ -210,7 +210,7 @@ Disenchanting without the hunt through your bags. One window lists everything yo
 - If a disenchant fails (you moved, say), the item stays on the list and the window shows the game's reason. If the game won't disenchant an item at all, uncheck it.
 - **Settings tab:** keep epics, keep soulbound gear, hide equipment-set items, open when you loot gear to disenchant, open with your bags, and show or hide the Unmaker button above your bags.
 - With a fast-loot addon the button may stay locked a little longer. It unlocks by itself after 10 seconds.
-- **Stats tab:** items unmade this session, today, lifetime and in your best session; counts by quality; your most-unmade item, best item and busiest day; and lifetime materials. Pick all your characters together or one of them from the dropdown at the top.
+- **Stats tab:** items unmade this session, today, lifetime and in your best session; counts by quality; your most-unmade item, best item and busiest day; and lifetime materials. Pick all your characters together or one of them from the dropdown at the top. A 14-day chart shows how many you unmade each day.
 - **History tab:** the last 500 disenchants, newest first. Click **Item**, **ilvl** or **When** to sort. Hover a row to see the item and which character unmade it.
 - Every character can see every character's stats and the shared history. They only count disenchants done with Unmaker's buttons.
 
