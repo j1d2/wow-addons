@@ -4,6 +4,8 @@ All notable changes to Unmaker. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-11-13
+
 ### Added
 
 - Stats for each character. Use the arrows at the top of the Stats tab to switch between all characters together and each character, from any character. Stats from before this version are counted per character from the History list (your last 500 disenchants); older ones count only in "All characters".
