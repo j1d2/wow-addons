@@ -55,25 +55,51 @@ Auction house prices, remembered. One Scan a day builds a 14-day price history o
 - **Never** buys, posts or scans by itself.
 
 <p align="center">
-  <img src="docs/screenshots/houseledger-buy.png" alt="HouseLedger Buy tab: search results with price, available, 7-day average and trend, and the saved stats for the selected row" width="420">
-  <img src="docs/screenshots/houseledger-sell.png" alt="HouseLedger Sell tab: lowest price now, how many are up, and saved averages over 1, 3, 7 and 14 days with the trend" width="420">
+  <img src="docs/screenshots/houseledger-buy.png" alt="HouseLedger Buy tab: name search, quality and item level filters, sortable columns with an ilvl column, and a clicked row's saved prices with its 14-day chart" width="420">
+  <img src="docs/screenshots/houseledger-market.png" alt="HouseLedger Market tab: the Biggest drops view from the last scan, with name, quality and item level filters and a clicked row's 14-day chart" width="420">
 </p>
 
 **Buy tab** (left):
-1. **Search:** type a name and click **Search**. **Clear** empties the list. Under it, pick a **quality** and an **ilvl** range. With a quality picked you can search with no name.
-2. **Scan:** saves today's prices for the whole auction house (every 15 minutes at most; the button counts down the wait).
-3. **Price** is the cheapest one up right now; **Avg 7d** is your saved 7-day average. Click any heading to sort by it, and again to reverse.
-4. **Trend:** a green arrow means cheaper than usual, a red one pricier, grey "steady" about the same, and a ⭐ marks a deal.
-5. **Click a row** for its saved prices over 1, 3, 7 and 14 days, with a 14-day chart beside them when the window is wide enough.
+1. **Search:** type a name and click **Search**. **Clear** empties the list and the filters.
+2. **Filters:** pick a **quality** and an **ilvl** range. With a quality picked you can search with no name.
+3. **Columns:** click a heading to sort by it, and again to reverse. **Price** is the cheapest up right now, **Avg 7d** your saved 7-day average, and **Trend** a green arrow for cheaper than usual, red for pricier, grey "steady" about the same, ⭐ for a deal.
+4. **Scan:** saves today's prices for the whole auction house. The button counts down the 15 minutes until you can scan again.
+5. **Click a row** for its saved prices over 1, 3, 7 and 14 days.
+6. **Its 14-day chart:** each day's lowest price, today in gold, with a faint band up to that day's highest.
 
-**Sell tab** (right):
+**Market tab** (right): your last scan, with no searching. It reads only saved prices and never sends anything.
+1. **View:** Deals, Biggest drops or Biggest rises, and how long ago you scanned.
+2. **Filters:** name, quality and ilvl (the item's base level).
+3. **Columns:** sortable like Buy. **Scanned** is the price at your last scan.
+4. **Click a row** for its day lines and (5) its chart.
+
+<p align="center">
+  <img src="docs/screenshots/houseledger-sell.png" alt="HouseLedger Sell tab: a stack's lowest price now, how many are up, its saved history, trend and typical price, a plain-words verdict and a 14-day chart" width="420">
+  <img src="docs/screenshots/houseledger-pricecheck.png" alt="HouseLedger Price Check window: a name search over saved prices, the matching items with price and trend, and one item's day lines and 14-day chart" width="290">
+</p>
+
+**Sell tab** (left):
 1. **Drop an item** here, or right-click it in your bags.
 2. **Right now:** the lowest price up, how many are at that price, and how many in all.
-3. **History:** your saved averages and ranges over 1, 3, 7 and 14 days, and a 14-day chart.
-4. **Trend** against your 7-day average, the typical price, and a plain-words line such as "Prices are high today. A good time to sell."
-5. **Reset** empties the tab; **Scan** saves today's prices.
+3. **History:** your saved averages and ranges over 1, 3, 7 and 14 days.
+4. **Trend** against your 7-day average, and the **typical** price.
+5. **In plain words:** whether today's price is high, low or about normal.
+6. **Its 14-day chart.** **Reset** empties the tab.
 
-**Market tab:** pick **Deals**, **Biggest drops** or **Biggest rises** at your last scan from the dropdown. Filter by name, quality and ilvl (the item's base level). It reads only your saved prices, so it never sends a search. Click a row for its 1, 3, 7 and 14 days. Item names fill in from your next scan.
+**Price Check** (right): type `/pc` (or `/pricecheck`) anywhere, no auction house needed.
+1. **Search** your saved prices by name.
+2. **Results:** the last price and trend.
+3. **Click a result** for its day lines and (4) its chart.
+
+<p align="center">
+  <img src="docs/screenshots/houseledger-settings.png" alt="HouseLedger Settings tab: tooltip prices, day lines without Shift, and the Price Check button" width="420">
+  <img src="docs/screenshots/houseledger-bags.png" alt="The Price Check button above the bag window" width="320">
+</p>
+
+**Settings tab** (left):
+1. **Tooltip prices** on or off.
+2. **Day lines on tooltips** without holding Shift.
+3. **The Price Check button** above your bags (right) on or off.
 
 <p align="center"><sub>Game art in the screenshots © Blizzard Entertainment, Inc.</sub></p>
 
