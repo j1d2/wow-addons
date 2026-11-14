@@ -196,6 +196,45 @@ do
     Check("the bag button shows by default", R.EnsureDB(nil).settings.bagButton == true)
 end
 
+-- Items tab filters and sorting
+do
+    local labels = {}
+    for index, choice in ipairs(R.QUALITY_CHOICES) do
+        labels[index] = choice.label .. "=" .. tostring(choice.max)
+    end
+    Check("quality choices: any, then a quality and down",
+        table.concat(labels, ",") == "Any quality=nil,Rare & down=3,Uncommon & down=2")
+    Check("an item level box reads whole numbers only", R.ParseLevel(" 25 ") == 25 and R.ParseLevel("") == nil
+        and R.ParseLevel("2x") == nil and R.ParseLevel(nil) == nil and R.ParseLevel("0") == nil)
+
+    local function Row(name, quality, level, vendor)
+        return { name = name, quality = quality, level = level, vendor = vendor }
+    end
+    local rows = { Row("Purple Axe", 4, 30, 500), Row("Blue Ring", 3, 20, nil), Row("Green Vest", 2, 10, 120),
+        Row("Green Hat", 2, nil, 80) }
+    local function Names(list)
+        local names = {}
+        for index, row in ipairs(list) do
+            names[index] = row.name
+        end
+        return table.concat(names, ",")
+    end
+    Check("no view keeps every row in its order", Names(R.ViewRows(rows, {})) == "Purple Axe,Blue Ring,Green Vest,Green Hat")
+    Check("a quality and down", Names(R.ViewRows(rows, { maxQuality = 3 })) == "Blue Ring,Green Vest,Green Hat")
+    Check("an item level range; an unknown level doesn't pass it",
+        Names(R.ViewRows(rows, { minLevel = 15, maxLevel = 30 })) == "Purple Axe,Blue Ring")
+    Check("sort by name, A to Z", Names(R.ViewRows(rows, { sortKey = "name", ascending = true }))
+        == "Blue Ring,Green Hat,Green Vest,Purple Axe")
+    Check("sort by item level, highest first, unknown last",
+        Names(R.ViewRows(rows, { sortKey = "ilvl", ascending = false })) == "Purple Axe,Blue Ring,Green Vest,Green Hat")
+    Check("sort by vendor price, highest first, unknown last; reversed keeps unknown last",
+        Names(R.ViewRows(rows, { sortKey = "vendor", ascending = false })) == "Purple Axe,Green Vest,Green Hat,Blue Ring"
+        and Names(R.ViewRows(rows, { sortKey = "vendor", ascending = true })) == "Green Hat,Green Vest,Purple Axe,Blue Ring")
+    Check("the rows given are left as they were", Names(rows) == "Purple Axe,Blue Ring,Green Vest,Green Hat")
+    Check("a view is active once a quality or level is set", not R.ViewFiltered({})
+        and not R.ViewFiltered({ sortKey = "name" }) and R.ViewFiltered({ maxQuality = 2 }) and R.ViewFiltered({ minLevel = 1 }))
+end
+
 if failed > 0 then
     io.write(string.format("%d failed\n", failed))
     os.exit(1)

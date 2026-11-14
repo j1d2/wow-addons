@@ -214,6 +214,88 @@ function R.BuildRows(items, db, session, setItemIDs)
     return rows
 end
 
+-- The Items tab's quality filter, in menu order: any, or one quality and the ones below it.
+R.QUALITY_CHOICES = {
+    { label = "Any quality" },
+    { label = "Rare & down", max = 3 },
+    { label = "Uncommon & down", max = 2 },
+}
+
+--- Reads an item level box: a whole number from 1 up, or nil when empty or not a number.
+-- @param text the box's text
+-- @return the level, or nil
+function R.ParseLevel(text)
+    if type(text) ~= "string" then
+        return nil
+    end
+    local digits = text:match("^%s*(%d+)%s*$")
+    local level = digits and tonumber(digits)
+    if level and level >= 1 then
+        return level
+    end
+    return nil
+end
+
+--- Whether a view filters rows (a sort alone doesn't).
+-- @param view { maxQuality, minLevel, maxLevel, sortKey, ascending }, each optional
+-- @return true when a quality or level limit is set
+function R.ViewFiltered(view)
+    return view.maxQuality ~= nil or view.minLevel ~= nil or view.maxLevel ~= nil
+end
+
+-- What each sortable column sorts by.
+local SORT_VALUES = {
+    name = function(row) return type(row.name) == "string" and row.name:lower() or nil end,
+    ilvl = function(row) return row.level end,
+    vendor = function(row) return row.vendor end,
+}
+
+--- The rows the Items tab shows: those that pass the view's quality and item level limits,
+-- sorted by its column if it has one. "Disenchant next" takes the first checked row of this
+-- list, so what the player sees is what it casts on. Pure; the rows given are left as they are.
+-- @param rows rows from R.BuildRows
+-- @param view { maxQuality, minLevel, maxLevel, sortKey, ascending }, each optional; an item
+--   whose level isn't known doesn't pass a level limit
+-- @return a new list
+function R.ViewRows(rows, view)
+    local shown = {}
+    for _, row in ipairs(rows) do
+        local level = type(row.level) == "number" and row.level > 0 and row.level or nil
+        local passes = not (view.maxQuality and (row.quality or 0) > view.maxQuality)
+            and not ((view.minLevel or view.maxLevel) and level == nil)
+            and not (view.minLevel and level and level < view.minLevel)
+            and not (view.maxLevel and level and level > view.maxLevel)
+        if passes then
+            shown[#shown + 1] = row
+        end
+    end
+    local valueOf = SORT_VALUES[view.sortKey]
+    if valueOf == nil then
+        return shown
+    end
+    local order = {}
+    for index, row in ipairs(shown) do
+        order[row] = index
+    end
+    table.sort(shown, function(a, b)
+        local va, vb = valueOf(a), valueOf(b)
+        if va == nil or vb == nil then
+            if (va == nil) ~= (vb == nil) then
+                return vb == nil
+            end
+            return order[a] < order[b]
+        end
+        if va ~= vb then
+            if view.ascending then
+                return va < vb
+            end
+            return va > vb
+        end
+        return order[a] < order[b]
+    end)
+    return shown
+end
+
 --- The row "Disenchant next" acts on: the first checked one.
 -- @param rows the window's rows
 -- @return a row, or nil when none is checked

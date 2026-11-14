@@ -19,13 +19,20 @@ local DISENCHANT_SPELL = 13262
 local BAGS = { 0, 1, 2, 3, 4 } -- the backpack and four bags; the reagent bag holds no gear
 local ROW_COUNT = 10
 local ROW_HEIGHT = 24
-local WIDTH = 440
-local LIST_TOP = 64 -- the list starts this far below the window's top edge
+local WIDTH = 480
+local LIST_TOP = 64 -- the Items tab starts this far below the window's top edge
+-- On the Items tab: the filter row, then the column headings, then the list.
+local FILTER_HEIGHT = 26
+local HEADER_HEIGHT = 20
+local LIST_START = LIST_TOP + FILTER_HEIGHT + HEADER_HEIGHT
 local LIST_HEIGHT = ROW_COUNT * ROW_HEIGHT
 -- Under the list: the count line, the status line (room for two lines of text), then the buttons.
 local TEXT_HEIGHT = 56
 local BUTTON_AREA = 40
-local HEIGHT = LIST_TOP + LIST_HEIGHT + TEXT_HEIGHT + BUTTON_AREA
+local HEIGHT = LIST_START + LIST_HEIGHT + TEXT_HEIGHT + BUTTON_AREA
+-- Items tab columns: their headings, and the way each first sorts when clicked (true is A to Z).
+local COLUMN_LABELS = { name = "Item", ilvl = "ilvl", vendor = "Vendor" }
+local SORT_FIRST_ASCENDING = { name = true, ilvl = false, vendor = false }
 -- After a cast, wait at most this many seconds for the loot and bag news before unlocking
 -- the buttons, so a missed event can't leave them stuck.
 local UNLOCK_AFTER = 10
@@ -41,8 +48,12 @@ local statsView -- the character the Stats tab shows (its key), or nil for all c
 local charDB -- this character's own saved data: the window's position
 local session = R.NewSession()
 session.unmade = 0
-local rows = {}
+local allRows = {} -- every row the bags hold, for "Open when I loot"
+local rows = {} -- the rows the Items tab shows: allRows through the view
 local offset = 0
+-- The Items tab's filters and sort, kept for the session: { maxQuality, minLevel, maxLevel,
+-- sortKey, ascending }.
+local view = {}
 local selected
 local state = "idle" -- idle, casting (the cast bar is up) or waiting (loot and bags settling)
 local pending
@@ -117,7 +128,10 @@ local function ReadItem(bag, slot)
     if type(ItemLocation) == "table" and type(C_Item.GetCurrentItemLevel) == "function" then
         level = C_Item.GetCurrentItemLevel(ItemLocation:CreateFromBagAndSlot(bag, slot))
     end
+    -- What a vendor pays: GetItemInfo's 11th return. Bag items are always loaded.
+    local vendor = select(11, C_Item.GetItemInfo(info.itemID))
     return {
+        vendor = type(vendor) == "number" and vendor > 0 and vendor or nil,
         bag = bag, slot = slot, itemID = info.itemID, link = info.hyperlink,
         name = info.itemName or info.hyperlink or "?", quality = info.quality,
         classID = classID, equipLoc = equipLoc or "", icon = info.iconFileID or icon,
@@ -171,6 +185,22 @@ local function UpdateButtons()
 end
 
 --- Draw the visible rows, the count and the buttons.
+--- A copper amount the way the game shows money, with coin icons; plain "1s 20c" if the game's
+-- formatter is missing.
+-- @param copper whole copper
+-- @return the text
+local function MoneyText(copper)
+    if type(GetMoneyString) == "function" then
+        return GetMoneyString(copper, true)
+    end
+    local gold, silver = math.floor(copper / 10000), math.floor(copper / 100) % 100
+    local parts = {}
+    if gold > 0 then parts[#parts + 1] = gold .. "g" end
+    if silver > 0 then parts[#parts + 1] = silver .. "s" end
+    if copper % 100 > 0 or #parts == 0 then parts[#parts + 1] = (copper % 100) .. "c" end
+    return table.concat(parts, " ")
+end
+
 local function Render()
     if not built then
         return
@@ -181,7 +211,8 @@ local function Render()
         if row then
             rowFrame.icon:SetTexture(row.icon)
             rowFrame.nameText:SetText(row.link or row.name)
-            rowFrame.levelText:SetText(row.level and ("ilvl " .. row.level) or "")
+            rowFrame.levelText:SetText(row.level and tostring(row.level) or "")
+            rowFrame.vendorText:SetText(row.vendor and MoneyText(row.vendor) or "-")
             rowFrame.check:SetChecked(row.checked)
             rowFrame.highlight:SetShown(row == selected)
             rowFrame:Show()
@@ -192,11 +223,14 @@ local function Render()
     unmadeText:SetText(string.format("Unmade: %d this session, %d lifetime", session.unmade, db.stats.total))
     if not KnowsDisenchant() then
         countText:SetText("This character doesn't know Disenchant. Learn Enchanting first.")
-    elseif #rows == 0 then
+    elseif #allRows == 0 then
         countText:SetText("Nothing in your bags to disenchant.")
+    elseif #rows == 0 then
+        countText:SetText(string.format("Nothing matches the filters (%d hidden).", #allRows))
     else
-        countText:SetText(string.format("%d of %d checked. One click disenchants one item.",
-            R.CountChecked(rows), #rows))
+        local hidden = #allRows - #rows
+        countText:SetText(string.format("%d of %d checked%s. One click disenchants one item.",
+            R.CountChecked(rows), #rows, hidden > 0 and string.format(" (%d hidden by filters)", hidden) or ""))
     end
     UpdateButtons()
 end
@@ -262,7 +296,8 @@ local function Refresh()
     if not db then
         return
     end
-    rows = R.BuildRows(ScanBags(), db, session, SetItemIDs())
+    allRows = R.BuildRows(ScanBags(), db, session, SetItemIDs())
+    rows = R.ViewRows(allRows, view)
     local keep
     for _, row in ipairs(rows) do
         if selected and row.bag == selected.bag and row.slot == selected.slot and row.link == selected.link then
@@ -389,7 +424,7 @@ end
 local function BuildRow(index)
     local rowFrame = CreateFrame("Button", nil, itemsPanel)
     rowFrame:SetSize(WIDTH - 40, ROW_HEIGHT)
-    rowFrame:SetPoint("TOPLEFT", itemsPanel, "TOPLEFT", 4, -(index - 1) * ROW_HEIGHT)
+    rowFrame:SetPoint("TOPLEFT", itemsPanel, "TOPLEFT", 4, -(FILTER_HEIGHT + HEADER_HEIGHT) - (index - 1) * ROW_HEIGHT)
 
     rowFrame.highlight = rowFrame:CreateTexture(nil, "BACKGROUND")
     rowFrame.highlight:SetAllPoints()
@@ -412,11 +447,20 @@ local function BuildRow(index)
 
     rowFrame.nameText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     rowFrame.nameText:SetPoint("LEFT", rowFrame.icon, "RIGHT", 6, 0)
-    rowFrame.nameText:SetPoint("RIGHT", rowFrame, "RIGHT", -60, 0)
+    rowFrame.nameText:SetPoint("RIGHT", rowFrame, "RIGHT", -140, 0)
     rowFrame.nameText:SetJustifyH("LEFT")
+    rowFrame.nameText:SetWordWrap(false)
+
+    rowFrame.vendorText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    rowFrame.vendorText:SetPoint("RIGHT", rowFrame, "RIGHT", -4, 0)
+    rowFrame.vendorText:SetWidth(90)
+    rowFrame.vendorText:SetJustifyH("RIGHT")
+    rowFrame.vendorText:SetWordWrap(false)
 
     rowFrame.levelText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    rowFrame.levelText:SetPoint("RIGHT", rowFrame, "RIGHT", -4, 0)
+    rowFrame.levelText:SetPoint("RIGHT", rowFrame, "RIGHT", -100, 0)
+    rowFrame.levelText:SetWidth(34)
+    rowFrame.levelText:SetJustifyH("RIGHT")
 
     rowFrame:SetScript("OnClick", function()
         selected = rowFrame.row
@@ -667,6 +711,117 @@ end
 
 --- Build the window: the frame, the Items and Settings tabs, the list, the two cast buttons,
 -- and the bag window buttons.
+--- The column headings' text: an arrow on the column the list is sorted by.
+local function RefreshHeader()
+    for key, text in pairs(itemsPanel.headerTexts) do
+        local label = COLUMN_LABELS[key]
+        if view.sortKey == key then
+            label = label .. " |A:" .. (view.ascending and "NPE_ArrowUp" or "NPE_ArrowDown") .. ":10:10|a"
+        end
+        text:SetText(label)
+    end
+end
+
+--- After a filter or sort changed: show the rows again from the top. Reads the bags as usual;
+-- sends nothing.
+local function ApplyView()
+    view.minLevel = R.ParseLevel(itemsPanel.minLevelBox:GetText())
+    view.maxLevel = R.ParseLevel(itemsPanel.maxLevelBox:GetText())
+    offset = 0
+    RefreshHeader()
+    Refresh()
+end
+
+--- A heading click: sort by that column, or reverse it when already sorted by it.
+-- @param key name, ilvl or vendor
+local function SortByColumn(key)
+    if view.sortKey == key then
+        view.ascending = not view.ascending
+    else
+        view.sortKey, view.ascending = key, SORT_FIRST_ASCENDING[key]
+    end
+    ApplyView()
+end
+
+--- Make the Items tab's filter row (a quality dropdown and an item level range) and its column
+-- headings, which sort the list when clicked.
+local function BuildFilterAndHeader()
+    local filterRow = CreateFrame("Frame", nil, itemsPanel)
+    filterRow:SetPoint("TOPLEFT", itemsPanel, "TOPLEFT", 0, 0)
+    filterRow:SetPoint("RIGHT", itemsPanel, "RIGHT", 0, 0)
+    filterRow:SetHeight(FILTER_HEIGHT)
+
+    -- Blizzard's own dropdown, as HouseLedger's filters use on Forever.
+    local quality = CreateFrame("DropdownButton", nil, filterRow, "WowStyle1DropdownTemplate")
+    quality:SetWidth(150)
+    quality:SetPoint("LEFT", filterRow, "LEFT", 2, 0)
+    quality:SetupMenu(function(_, root)
+        for _, choice in ipairs(R.QUALITY_CHOICES) do
+            root:CreateRadio(choice.label, function(picked)
+                return view.maxQuality == picked.max
+            end, function(picked)
+                view.maxQuality = picked.max
+                ApplyView()
+            end, choice)
+        end
+    end)
+    itemsPanel.qualityDropdown = quality
+
+    local levelLabel = filterRow:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    levelLabel:SetPoint("LEFT", quality, "RIGHT", 12, 0)
+    levelLabel:SetText("ilvl")
+    --- A small numeric box that filters as the player types.
+    -- @return the edit box
+    local function LevelBox()
+        local box = CreateFrame("EditBox", nil, filterRow, "InputBoxTemplate")
+        box:SetSize(34, 20)
+        box:SetAutoFocus(false)
+        box:SetNumeric(true)
+        box:SetMaxLetters(3)
+        box:SetScript("OnTextChanged", function(_, userInput)
+            if userInput then
+                ApplyView()
+            end
+        end)
+        box:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
+        box:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+        return box
+    end
+    local minBox = LevelBox()
+    minBox:SetPoint("LEFT", levelLabel, "RIGHT", 10, 0)
+    local dash = filterRow:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    dash:SetPoint("LEFT", minBox, "RIGHT", 2, 0)
+    dash:SetText("-")
+    local maxBox = LevelBox()
+    maxBox:SetPoint("LEFT", dash, "RIGHT", 8, 0)
+    itemsPanel.minLevelBox, itemsPanel.maxLevelBox = minBox, maxBox
+
+    -- Headings line up with the row cells: name after the checkbox and icon, ilvl, then vendor.
+    local header = CreateFrame("Frame", nil, itemsPanel)
+    header:SetPoint("TOPLEFT", itemsPanel, "TOPLEFT", 4, -FILTER_HEIGHT)
+    header:SetSize(WIDTH - 40, HEADER_HEIGHT)
+    local places = {
+        { key = "name", point = "LEFT", x = ROW_HEIGHT + 2 + ROW_HEIGHT - 4 + 6, width = 120, justify = "LEFT" },
+        { key = "ilvl", point = "RIGHT", x = -100, width = 50, justify = "RIGHT" },
+        { key = "vendor", point = "RIGHT", x = -4, width = 90, justify = "RIGHT" },
+    }
+    itemsPanel.headerTexts, itemsPanel.sortButtons = {}, {}
+    for _, place in ipairs(places) do
+        local text = header:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        text:SetPoint(place.point, header, place.point, place.x, 0)
+        text:SetWidth(place.width)
+        text:SetJustifyH(place.justify)
+        text:SetText(COLUMN_LABELS[place.key])
+        local button = CreateFrame("Button", nil, header)
+        button:SetPoint("TOPLEFT", text, "TOPLEFT", -2, 3)
+        button:SetPoint("BOTTOMRIGHT", text, "BOTTOMRIGHT", 2, -3)
+        button:SetScript("OnClick", function()
+            SortByColumn(place.key)
+        end)
+        itemsPanel.headerTexts[place.key], itemsPanel.sortButtons[place.key] = text, button
+    end
+end
+
 local function BuildFrame()
     frame = CreateFrame("Frame", "UnmakerFrame", UIParent, "ButtonFrameTemplate")
     frame:SetSize(WIDTH, HEIGHT)
@@ -708,13 +863,14 @@ local function BuildFrame()
         offset = math.max(0, math.min(offset - delta, #rows - ROW_COUNT))
         Render()
     end)
+    BuildFilterAndHeader()
     for index = 1, ROW_COUNT do
         rowFrames[index] = BuildRow(index)
     end
 
     -- The count and status lines belong to the Items tab, so they hide on Settings.
     countText = itemsPanel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    countText:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -(LIST_TOP + LIST_HEIGHT + 8))
+    countText:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -(LIST_START + LIST_HEIGHT + 8))
     countText:SetPoint("RIGHT", frame, "RIGHT", -16, 0)
     countText:SetJustifyH("LEFT")
     statusText = itemsPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -756,7 +912,8 @@ end
 -- @return set of links, { [link] = true }
 local function CurrentLinks()
     local links = {}
-    for _, row in ipairs(rows) do
+    -- Every row, not just the ones the filters show: hidden gear still counts as new loot.
+    for _, row in ipairs(allRows) do
         links[row.link] = true
     end
     return links
