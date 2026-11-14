@@ -55,6 +55,15 @@ local ROW_HEIGHT = 18
 -- (538 - 60 - 148 - 26) / 18 = 16 rows.
 -- The filter row (quality, item level, and Market's name filter) sits between the top row and the list.
 local FILTER_HEIGHT = 26
+-- The 14-day chart: beside the Buy details on a wide window, and under the Sell lines.
+local CHART_WIDTH = 170
+local CHART_HEIGHT = 74
+local SELL_CHART_WIDTH = 260
+local SELL_CHART_HEIGHT = 80
+-- Bar colors: earlier days blue, the latest day gold, a day's range a faint band above its low.
+local CHART_BAR_COLOR = { 0.35, 0.6, 1, 0.9 }
+local CHART_LATEST_COLOR = { 1, 0.82, 0, 1 }
+local CHART_RANGE_COLOR = { 0.35, 0.6, 1, 0.3 }
 -- The filter row's center, below the window's top edge.
 local FILTER_ROW_Y = -LIST_TOP - 2 - FILTER_HEIGHT / 2
 local VISIBLE_ROWS = math.floor((HOUSE_HEIGHT - LIST_TOP - FILTER_HEIGHT - LIST_BOTTOM - HEADER_HEIGHT) / ROW_HEIGHT)
@@ -596,6 +605,42 @@ local function ClearDetails()
         line.left:SetText("")
         line.right:SetText("")
     end
+    buyPanel.chart:Hide()
+end
+
+--- Draws an item's saved 14 days on a chart: one bar per day's low, a faint band up to its high,
+-- the latest day in gold. Hides the chart when there is nothing to draw. Saved data only.
+-- @param chart a chart from BuildChart
+-- @param info the item's saved prices from PriceLedger.Lookup, or nil
+local function ShowChart(chart, info)
+    local data = info and HouseLedgerPrice.ChartDays(info.days, info.seen)
+    if data == nil or data.top <= 0 then
+        chart:Hide()
+        return
+    end
+    for index, slot in ipairs(data.slots) do
+        local bar, band = chart.bars[index], chart.bands[index]
+        if slot.low then
+            local low = math.max(1, math.floor(slot.low / data.top * chart.barArea + 0.5))
+            local high = math.floor(slot.high / data.top * chart.barArea + 0.5)
+            bar:SetHeight(low)
+            local color = index == #data.slots and CHART_LATEST_COLOR or CHART_BAR_COLOR
+            bar:SetColorTexture(color[1], color[2], color[3], color[4])
+            bar:Show()
+            if high > low then
+                band:SetPoint("BOTTOMLEFT", bar, "TOPLEFT", 0, 0)
+                band:SetHeight(high - low)
+                band:Show()
+            else
+                band:Hide()
+            end
+        else
+            bar:Hide()
+            band:Hide()
+        end
+    end
+    chart.topText:SetText(CopperToText(data.top))
+    chart:Show()
 end
 
 --- Reads the new browse results, scrolls to the top and draws them.
@@ -645,6 +690,9 @@ local function ShowRowDetails(row)
         return
     end
     buyPanel.detailTitle:SetText(name .. ", " .. HouseLedgerPrice.CountText(stats))
+    if buyPanel.chartRoom then
+        ShowChart(buyPanel.chart, HouseLedgerPrice.Lookup(HouseLedgerDB, row.result.itemKey.itemID, PlayerHouseKey()))
+    end
     local lines = HouseLedgerPrice.WindowLines(stats, CopperToText) or {}
     for index, line in ipairs(buyPanel.detailLines) do
         local source = lines[index]
@@ -697,6 +745,7 @@ local function ClearSellValues()
         sellPanel.values[line[1]]:SetText("-")
     end
     sellPanel.hint:SetText("")
+    sellPanel.chart:Hide()
 end
 
 --- Shows the live listings for the Sell item next to its saved stats.
@@ -716,6 +765,7 @@ local function ShowSellResults(summary, complete)
             end
         end
         values.based:SetText(HouseLedgerPrice.CountText(stats))
+        ShowChart(sellPanel.chart, HouseLedgerPrice.Lookup(HouseLedgerDB, pendingSell.itemID, PlayerHouseKey()))
     else
         values.based:SetText("No saved prices yet")
     end
@@ -1348,6 +1398,50 @@ local function LayoutColumns(width)
     for _, row in ipairs(rows) do
         AnchorCells(CellsOf(row), showTypical)
     end
+    -- The chart beside the details needs the same room as the Avg 7d column.
+    buyPanel.chartRoom = showTypical
+    if not showTypical then
+        buyPanel.chart:Hide()
+    end
+    for _, line in ipairs(buyPanel.detailLines or {}) do
+        line.right:SetPoint("RIGHT", frame, "RIGHT", showTypical and -(CHART_WIDTH + 24) or -16, 0)
+    end
+end
+
+--- Makes a 14-day chart, hidden until ShowChart fills it: a dark box, the top price in its corner,
+-- and two textures per day (the low's bar and the faint range band).
+-- @param parent the panel it belongs to
+-- @param width the chart's width
+-- @param height the chart's height
+-- @return the chart frame, with bars, bands, barArea and topText
+local function BuildChart(parent, width, height)
+    local chart = CreateFrame("Frame", nil, parent)
+    chart:SetSize(width, height)
+    local background = chart:CreateTexture(nil, "BACKGROUND")
+    background:SetAllPoints(chart)
+    background:SetColorTexture(0, 0, 0, 0.3)
+    chart.topText = Cell(chart, "GameFontHighlightSmall", "LEFT")
+    chart.topText:SetPoint("TOPLEFT", chart, "TOPLEFT", 3, -2)
+    local caption = Cell(chart, "GameFontDisableSmall", "RIGHT")
+    caption:SetPoint("TOPRIGHT", chart, "TOPRIGHT", -3, -2)
+    caption:SetText("Daily low, 14 days")
+    -- Room under the top line for the bars.
+    chart.barArea = height - 18
+    chart.bars, chart.bands = {}, {}
+    local slotWidth = width / HouseLedgerPrice.DAYS_KEPT
+    for index = 1, HouseLedgerPrice.DAYS_KEPT do
+        local bar = chart:CreateTexture(nil, "ARTWORK")
+        bar:SetPoint("BOTTOMLEFT", chart, "BOTTOMLEFT", math.floor((index - 1) * slotWidth) + 1, 2)
+        bar:SetWidth(math.max(2, math.floor(slotWidth) - 2))
+        bar:Hide()
+        local band = chart:CreateTexture(nil, "ARTWORK")
+        band:SetWidth(math.max(2, math.floor(slotWidth) - 2))
+        band:SetColorTexture(CHART_RANGE_COLOR[1], CHART_RANGE_COLOR[2], CHART_RANGE_COLOR[3], CHART_RANGE_COLOR[4])
+        band:Hide()
+        chart.bars[index], chart.bands[index] = bar, band
+    end
+    chart:Hide()
+    return chart
 end
 
 --- Makes the Sell tab: the item slot, the value lines, a status line and Reset.
@@ -1389,6 +1483,9 @@ local function BuildSellPanel()
         value:SetPoint("RIGHT", sellPanel, "RIGHT", -16, 0)
         sellPanel.values[line[1]] = value
     end
+    sellPanel.chart = BuildChart(sellPanel, SELL_CHART_WIDTH, SELL_CHART_HEIGHT)
+    sellPanel.chart:SetPoint("TOPLEFT", sellPanel, "TOPLEFT", 24,
+        -LIST_TOP - 72 - #SELL_LINES * SELL_LINE_HEIGHT - 34)
     sellPanel.hint = Cell(sellPanel, "GameFontHighlight", "LEFT")
     sellPanel.hint:SetPoint("TOPLEFT", sellPanel, "TOPLEFT", 24, -LIST_TOP - 72 - #SELL_LINES * SELL_LINE_HEIGHT - 10)
     sellPanel.hint:SetPoint("RIGHT", sellPanel, "RIGHT", -16, 0)
@@ -1661,6 +1758,9 @@ local function BuildFrame()
     for index = 1, VISIBLE_ROWS do
         rows[index] = BuildRow(list, index)
     end
+    -- The 14-day chart sits right of the details lines, above the status lines.
+    buyPanel.chart = BuildChart(buyPanel, CHART_WIDTH, CHART_HEIGHT)
+    buyPanel.chart:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -16, STATUS_HEIGHT + 4)
     LayoutColumns(FRAME_WIDTH_MIN)
 
     statusText = buyPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")

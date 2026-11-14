@@ -583,6 +583,23 @@ do
     Check("damaged settings are replaced", type(P.EnsureDB({ settings = 5 }).settings) == "table")
 end
 
+-- Chart: 14 days of daily lows and highs
+do
+    local db = P.EmptyDB()
+    ScanOn(db, -10, 80)
+    ScanOn(db, -3, 120)
+    ScanOn(db, -3, 100, 60)
+    local row = ScanOn(db, 0, 90)
+    local chart = P.ChartDays(row.days, row.seen)
+    Check("the chart has 14 days, oldest first", chart and #chart.slots == 14
+        and chart.slots[14].dayKey == P.DayKey(At(0)) and chart.slots[1].dayKey == P.DayKey(At(-13)))
+    Check("a day with scans has its low and high", chart.slots[11].low == 100 and chart.slots[11].high == 120
+        and chart.slots[4].low == 80 and chart.slots[14].low == 90)
+    Check("a day without a scan is empty", chart.slots[12].low == nil and chart.slots[1].low == nil)
+    Check("the chart's top is the highest price", chart.top == 120)
+    Check("no days, no chart", P.ChartDays({}, At(0)) == nil and P.ChartDays(nil, nil) == nil)
+end
+
 if failed > 0 then
     io.write(string.format("%d failed\n", failed))
     os.exit(1)

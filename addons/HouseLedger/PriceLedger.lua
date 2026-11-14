@@ -574,6 +574,32 @@ function PriceLedger.LowestListing(listings)
     return summary
 end
 
+--- The 14-day chart's data: one slot per calendar day, oldest first, ending on the day of the
+-- latest scan. Reads the row's saved day summaries only.
+-- @param days a row's day list ({ dayKey, low, high, ... } per day)
+-- @param seen when the row's latest scan was
+-- @return nil without days, or { slots, top }: slots[i] is { dayKey, low, high }, with low and
+--   high nil on a day with no scan; top is the highest price in the slots
+function PriceLedger.ChartDays(days, seen)
+    if type(days) ~= "table" or #days == 0 or type(seen) ~= "number" then
+        return nil
+    end
+    local byKey = {}
+    for _, day in ipairs(days) do
+        byKey[day[1]] = day
+    end
+    local chart = { slots = {}, top = 0 }
+    for back = PriceLedger.DAYS_KEPT - 1, 0, -1 do
+        local key = PriceLedger.DayKey(seen - back * SECONDS_PER_DAY)
+        local day = byKey[key]
+        chart.slots[#chart.slots + 1] = { dayKey = key, low = day and day[2], high = day and day[3] }
+        if day then
+            chart.top = math.max(chart.top, day[3])
+        end
+    end
+    return chart
+end
+
 --- Sorts market entries by how far the price moved, then by name and item id.
 -- @param list entries from PriceLedger.Market, sorted in place
 -- @param biggestRiseFirst true for the highest trendPct first, false for the lowest
@@ -713,6 +739,7 @@ function PriceLedger.Lookup(db, itemID, homeKey)
             seen = row.seen,
             scannedAt = house.scannedAt,
             stats = PriceLedger.Stats(row),
+            days = row.days,
             side = nil,
         }
     end
@@ -727,6 +754,7 @@ function PriceLedger.Lookup(db, itemID, homeKey)
                 seen = row.seen,
                 scannedAt = house.scannedAt,
                 stats = PriceLedger.Stats(row),
+            days = row.days,
                 side = string.match(lastKey, "^([^|]+)"),
             }
         end
