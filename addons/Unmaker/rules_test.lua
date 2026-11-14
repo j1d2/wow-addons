@@ -191,8 +191,9 @@ do
     Check("an unknown setting is refused", not R.SetSetting(db, "castFaster", true) and db.settings.castFaster == nil)
     Check("a setting only takes true or false", not R.SetSetting(db, "keepEpics", "no")
         and db.settings.keepEpics == true)
-    Check("settings are listed in a fixed order for the Settings tab", #R.SETTINGS == 5
-        and R.SETTINGS[1].key == "keepEpics")
+    Check("settings are listed in a fixed order for the Settings tab", #R.SETTINGS == 6
+        and R.SETTINGS[1].key == "keepEpics" and R.SETTINGS[6].key == "bagButton")
+    Check("the bag button shows by default", R.EnsureDB(nil).settings.bagButton == true)
 end
 
 if failed > 0 then

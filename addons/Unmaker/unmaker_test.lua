@@ -562,9 +562,36 @@ do
             bagButton = f
         end
     end
-    Check("the bag window has an Unmaker button", bagButton ~= nil)
+    Check("the bag window has an Unmaker button", bagButton ~= nil and bagButton.shown)
     bagButton:GetScript("OnClick")(bagButton)
     Check("which closes and opens the window", not _G.UnmakerFrame.shown)
+
+    local box
+    for _, f in ipairs(world.frames) do
+        if f.kind == "CheckButton" and f.key == "bagButton" then
+            box = f
+        end
+    end
+    box:SetChecked(false)
+    box:GetScript("OnClick")(box)
+    Check("Settings can hide the bag button", _G.UnmakerDB.settings.bagButton == false and not bagButton.shown)
+    box:SetChecked(true)
+    box:GetScript("OnClick")(box)
+    Check("and show it again", bagButton.shown)
+    _G.SlashCmdList.UNMAKER("")
+    Check("/unmaker still opens the window", _G.UnmakerFrame.shown)
+end
+
+do
+    -- Saved with the bag button off: it starts hidden.
+    Start({ bags = StandardBags(), db = { settings = { bagButton = false } } })
+    local hidden = true
+    for _, f in ipairs(world.frames) do
+        if f.parent == _G.ContainerFrameCombinedBags and f.text == "Unmaker" then
+            hidden = hidden and not f.shown
+        end
+    end
+    Check("a saved choice to hide the bag button holds after a reload", hidden)
 end
 
 do
