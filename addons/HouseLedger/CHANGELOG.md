@@ -4,6 +4,8 @@ All notable changes to HouseLedger. The format follows [Keep a Changelog](https:
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-14
+
 ### Added
 
 - Click a column heading on Buy or Market to sort by it; click it again to reverse. An arrow marks the sorted column.
