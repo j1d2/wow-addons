@@ -87,6 +87,8 @@ function FrameMethods:SetupMenu(generator) self.menuGenerator = generator end
 function FrameMethods:SetChecked(checked) self.checked = checked == true end
 function FrameMethods:SetHeight(height) self.height = height end
 function FrameMethods:SetItemByID(itemID) self.itemByID = itemID end
+function FrameMethods:LockHighlight() self.highlightLocked = true end
+function FrameMethods:UnlockHighlight() self.highlightLocked = false end
 function FrameMethods:SetColorTexture(r, g, b, a) self.colorTexture = { r, g, b, a } end
 function FrameMethods:GetChecked() return self.checked end
 function FrameMethods:SetValue(value) self.value = value end
@@ -258,6 +260,7 @@ local function Setup(opts)
     _G.C_Item = {
         -- The item cache: world.itemInfo[itemID] = { name, quality, level }, or nil until loaded.
         GetItemInfo = function(itemID)
+            world.itemInfoCalls = (world.itemInfoCalls or 0) + 1
             local info = (world.itemInfo or {})[itemID]
             if info == nil then
                 return nil
@@ -380,7 +383,7 @@ local function Setup(opts)
         GetItemSearchResultInfo = function(_, index) return world.itemResults[index] end,
         HasFullItemSearchResults = function() return not world.partialResults end,
         GetBrowseResults = function() return world.browseResults or {} end,
-        HasFullBrowseResults = function() return true end,
+        HasFullBrowseResults = function() return not world.partialBrowse end,
         MakeItemKey = function(itemID, itemLevel, itemSuffix, petSpecies)
             return { itemID = itemID, itemLevel = itemLevel or 0, itemSuffix = itemSuffix or 0,
                 battlePetSpeciesID = petSpecies or 0 }
@@ -972,9 +975,13 @@ do
     Setup()
     Load()
     local lines = {}
-    for _, owner in ipairs({ MainFrame(), MainFrame().buyPanel, MainFrame().sellPanel }) do
+    -- The large list message and the orange note beside the filters are meant to wrap.
+    local panel = MainFrame().buyPanel
+    for _, owner in ipairs({ MainFrame(), panel, MainFrame().sellPanel }) do
         for _, line in ipairs(owner.fontStrings) do
-            lines[#lines + 1] = line
+            if line ~= panel.listMessage and line ~= panel.notice then
+                lines[#lines + 1] = line
+            end
         end
     end
     local allSingle = #lines >= 3
@@ -1813,10 +1820,15 @@ do
         panel.qualityDropdown.shown and panel.minLevelBox.shown and panel.maxLevelBox.shown
         and not panel.filterNameBox.shown)
     Check("quality starts at any", Picked(panel.qualityDropdown) == "Any quality")
+    Check("an empty Buy list says how to start, in large text in the middle of the list",
+        panel.listMessage.shown and panel.listMessage.text == "Type a name or pick a quality, then click Search.")
     SearchBox():SetText("")
     Click("Search")
     Check("no name and no filter sends nothing", #world.browseQueries == 0
-        and StatusLine() == "Type at least 2 letters, or pick a quality or item level.")
+        and StatusLine() == "Type at least 2 letters, or pick a quality.")
+    Check("and says so where the player looks: the list and the note by the filters",
+        panel.listMessage.text == "Type at least 2 letters, or pick a quality."
+        and panel.notice.shown and panel.notice.text == "Type at least 2 letters, or pick a quality.")
     Pick(panel.qualityDropdown, "Rare & up")
     Check("picking a quality sends nothing", #world.browseQueries == 0 and Picked(panel.qualityDropdown) == "Rare & up")
     Click("Search")
@@ -1835,6 +1847,7 @@ do
     local rows = ResultRows()
     Check("results below the quality are left out", rows[1].nameText.text == "Item 1" and rows[3].nameText.text == "Item 3"
         and not rows[4].shown and StatusLine() == "Showing 1-3 of 3 (filtered from 4).")
+    Check("with rows showing, the big message and the note go away", not panel.listMessage.shown and not panel.notice.shown)
     Type(panel.minLevelBox, "10")
     Check("a minimum item level filters the results by their own item level, sending nothing",
         rows[1].nameText.text == "Item 2" and rows[2].nameText.text == "Item 3" and not rows[3].shown
@@ -1845,9 +1858,43 @@ do
     Type(panel.maxLevelBox, "")
     Check("loosening the filters shows what the search already brought", rows[3].nameText.text == "Item 4"
         and #world.browseQueries == 1)
+    Check("and says a lower quality needs a new search, by the filters and on Search itself",
+        panel.notice.shown and panel.notice.text == "Click Search again to include lower qualities."
+        and ButtonNamed("Search").highlightLocked == true
+        and StatusLine():find("Click Search again to include lower qualities.", 1, true) ~= nil)
+    Pick(panel.qualityDropdown, "Epic & up")
+    Check("a tighter quality just filters the page", StatusLine():find("Search again", 1, true) == nil
+        and not panel.notice.shown and ButtonNamed("Search").highlightLocked == false)
+    Pick(panel.qualityDropdown, "Any quality")
     Click("Search")
-    Check("a search with only a level filter asks for every quality", #world.browseQueries == 2
+    Check("an empty name with only an item level sends nothing: the house never sees item level",
+        #world.browseQueries == 1 and StatusLine() == "Type at least 2 letters, or pick a quality."
+        and panel.notice.text == "Type at least 2 letters, or pick a quality.")
+    SearchBox():SetText("linen")
+    Click("Search")
+    Check("a name with a level filter asks for every quality", #world.browseQueries == 2
         and table.concat(world.browseQueries[2].filters, ",") == "6,7,8,9,10")
+    Fire("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
+    Check("after the new search the lower-quality note goes away", StatusLine():find("Search again", 1, true) == nil)
+
+    world.partialBrowse = true
+    Type(panel.minLevelBox, "")
+    Check("a partial page says these are only the first results, by the filters",
+        panel.notice.text == "These are the first 4 results. Add a name or filter to see others."
+        and StatusLine() == "Showing 1-4 of 4. These are the first 4 results. Add a name or filter to see others.")
+    Type(panel.minLevelBox, "99")
+    Check("when the filters hide a whole partial page, the list says so in large text",
+        panel.listMessage.shown and panel.listMessage.text == "Nothing on this page matches the filters."
+        and StatusLine() == "Nothing on this page matches the filters (4 hidden). These are the first 4 results."
+            .. " Add a name or filter to see others.")
+
+    Pick(panel.qualityDropdown, "Rare & up")
+    Type(panel.maxLevelBox, "50")
+    Click("Clear")
+    Check("Clear empties the name and resets the quality and item level filters",
+        SearchBox():GetText() == "" and Picked(panel.qualityDropdown) == "Any quality"
+        and panel.minLevelBox:GetText() == "" and panel.maxLevelBox:GetText() == ""
+        and panel.listMessage.text == "Type a name or pick a quality, then click Search." and not panel.notice.shown)
 end
 
 do
@@ -2170,6 +2217,103 @@ do
         and not panel.headerTexts.price.text:find("Arrow", 1, true))
     Click("Buy")
     Check("Buy's heading says Price again", panel.headerTexts.price.text == "Price")
+end
+
+-- ---------------------------------------------------------------------
+-- Combat: if the game counts our scan widgets or the bag windows as protected
+-- ---------------------------------------------------------------------
+
+do
+    Setup({ listings = ManyListings(1200) })
+    Load()
+    OpenHouse()
+    Click("Scan")
+    Fire("REPLICATE_ITEM_LIST_UPDATE")
+    -- Combat starts mid-read, and the game says the Scan button and the bar are protected.
+    world.inCombat = true
+    ButtonNamed("Scan").protected = true
+    MainFrame().scanBar.protected = true
+    RunTimers()
+    local house = HouseLedgerDB.houses["Alliance|TestRealm"]
+    local priced = 0
+    for _ in pairs(house and house.items or {}) do
+        priced = priced + 1
+    end
+    Check("a scan that reads into combat still finishes and saves", priced == 300)
+    Advance(3)
+    Check("and no protected widget was touched in combat", (world.blocked or 0) == 0)
+    world.inCombat = false
+    Fire("PLAYER_REGEN_ENABLED")
+    Advance(1)
+    Check("after combat the Scan button counts down again", ButtonNamed("Scan").text == "Scan (15m)"
+        and not ButtonNamed("Scan").enabled and not MainFrame().scanBar.shown)
+end
+
+do
+    -- A /reload in combat: Price Check works, but its bag buttons wait for the fight to end.
+    Setup()
+    _G.ContainerFrameCombinedBags.protected = true
+    _G.ContainerFrame1.protected = true
+    world.inCombat = true
+    Load()
+    local window = _G.HouseLedgerPriceCheck
+    Check("in combat Price Check is built, but no bag button yet", window ~= nil and #window.bagButtons == 0)
+    _G.SlashCmdList.HOUSELEDGERPC("")
+    Check("/pc works in combat", window.shown)
+    world.inCombat = false
+    Fire("PLAYER_REGEN_ENABLED")
+    Check("after combat the bag buttons are made", #window.bagButtons == 2 and window.bagButtons[1].shown)
+
+    world.inCombat = true
+    HouseLedgerDB.settings.priceCheckButton = false
+    window.updateBagButtons()
+    Check("in combat a setting change waits", window.bagButtons[1].shown and (world.blocked or 0) == 0)
+    world.inCombat = false
+    Fire("PLAYER_REGEN_ENABLED")
+    Check("and applies when combat ends", not window.bagButtons[1].shown)
+end
+
+-- ---------------------------------------------------------------------
+-- Market asks the game's item data only for what saved data lacks
+-- ---------------------------------------------------------------------
+
+do
+    Setup()
+    world.now = 1762900000
+    local P = HouseLedgerPrice
+    local db = P.EmptyDB()
+    for day = 1, 5 do
+        local best = {}
+        for itemID = 1, 40 do
+            P.Consider(best, itemID, 1, day < 5 and 100 or 60, "Item " .. itemID, 2)
+        end
+        P.Commit(db, "Alliance|TestRealm", best, world.now - (5 - day) * 24 * 60 * 60)
+    end
+    _G.HouseLedgerDB = db
+    world.itemInfo = {}
+    for itemID = 1, 40 do
+        world.itemInfo[itemID] = { name = "Item " .. itemID, quality = 2, level = itemID }
+    end
+    Load()
+    OpenHouse()
+    Click("Market")
+    local panel = MainFrame().buyPanel
+    Pick(panel.marketDropdown, "Biggest drops")
+    world.itemInfoCalls = 0
+    Type(panel.filterNameBox, "item 1")
+    Pick(panel.qualityDropdown, "Uncommon & up")
+    Check("name and quality filters use the saved name and quality, not the game's item data",
+        (world.itemInfoCalls or 0) <= 15)
+    Type(panel.minLevelBox, "30")
+    local first = world.itemInfoCalls
+    Type(panel.minLevelBox, "35")
+    Check("item levels are asked once, then remembered", world.itemInfoCalls - first <= 15)
+    Type(panel.minLevelBox, "")
+    Pick(panel.qualityDropdown, "Any quality")
+    Type(panel.filterNameBox, "")
+    local timers = #world.timers
+    Fire("GET_ITEM_INFO_RECEIVED", 7, true)
+    Check("with no level filter or level sort, an item arriving doesn't rebuild the list", #world.timers == timers)
 end
 
 if failed > 0 then

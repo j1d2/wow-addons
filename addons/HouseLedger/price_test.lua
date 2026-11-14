@@ -658,6 +658,31 @@ do
     Check("sort: text sorts too", IDs(P.SortList({ { id = 1, v = "b" }, { id = 2, v = "a" } }, Value, true)) == "2,1")
 end
 
+-- Damaged day summaries are repaired or dropped on every load
+do
+    local good = { 20261101, 10, 12, 2, 22, 244 }
+    local db = P.EnsureDB({ version = 3, houses = { ["Alliance|Test"] = { scannedAt = 5, items = {
+        [1] = { unit = 10, seen = 5, days = { "junk", { 20261102, "x", 12, 1, 12, 144 }, good,
+            { 20261103, 8, 9, 2 } } },
+        [2] = { unit = 10, seen = 5, days = "broken" },
+        [3] = { unit = 10, seen = 5 },
+    } } } })
+    local items = db.houses["Alliance|Test"].items
+    local days = items[1].days
+    Check("a day that isn't a table of numbers is dropped", #days == 2 and days[1] == good)
+    Check("a day missing its sums gets them, as version 2 days did", days[2][5] == 17 and days[2][6] == 145)
+    local fixed = P.EnsureDB({ version = 3, houses = { h = { items = { [1] = { unit = 1, seen = 1,
+        days = { { 20261101, 8, 9, 2, "x", 145 } } } } } } }).houses.h.items[1].days[1]
+    Check("a day with a damaged sum gets it worked out again", fixed[5] == 17 and fixed[6] == 145)
+    Check("a broken day list becomes empty", type(items[2].days) == "table" and #items[2].days == 0
+        and type(items[3].days) == "table")
+    local market = P.Market(db.houses["Alliance|Test"])
+    Check("Market still works with repaired rows", type(market.deals) == "table")
+    Check("a v2 day with a bad low is dropped instead of stopping the load",
+        #P.EnsureDB({ version = 2, houses = { h = { items = { [1] = { unit = 1, seen = 1,
+            days = { { 20261101, "x", 1, 1 } } } } } } }).houses.h.items[1].days == 0)
+end
+
 if failed > 0 then
     io.write(string.format("%d failed\n", failed))
     os.exit(1)

@@ -12,13 +12,15 @@ All notable changes to HouseLedger. The format follows [Keep a Changelog](https:
 - The Sell tab says what the prices mean in plain words, like "Prices are high today. A good time to sell.", and shows a **Typical (7-day avg)** line. It never sets a price for you.
 - A 14-day price chart: one bar per day's lowest price (the latest day in gold) with a faint band up to that day's highest. It shows beside a clicked row's details on Buy and Market when the window is wide enough, and under the lines on the Sell tab.
 - A **Settings** tab: turn the prices on item tooltips off, or always show the 1, 3, 7 and 14-day lines without holding Shift.
-- Filters on the Buy and Market tabs: a quality dropdown and an item level range, plus a name filter on Market. On Buy the quality goes with your Search click, and you can search with no name once a quality or item level is set. Changing a filter re-filters what's already shown and sends nothing.
+- Filters on the Buy and Market tabs: a quality dropdown and an item level range, plus a name filter on Market. On Buy the quality goes with your Search click, and you can search with no name once a quality is set. Changing a filter re-filters what's already shown and sends nothing; a lower quality than you searched for needs a new search, and the status line says so.
 - A **Market** tab: the deals, biggest drops and biggest rises from your last scan, picked from a dropdown. It reads only saved prices, so it never sends a search.
 - Scans also save each item's name and quality, for the Market tab.
 - A gold progress bar while a scan reads the auction house's listings.
 
 ### Changed
 
+- Messages you need to act on are easy to see: in large text in the middle of an empty list, and in orange beside the filters ("Click Search again to include lower qualities.", "These are the first 500 results. Add a name or filter to see others."). Search lights up when a new search would show more.
+- **Clear** also resets the quality and item level filters.
 - The **Scan** button greys out and counts down the 15-minute wait, like "Scan (12m)", instead of looking ready.
 - The status line is shorter and leaves out the realm: "6154 prices (Horde). Next scan in 13 min."
 - In the saved price lines, a window with no more scans than the one before says "same as 7 days" instead of repeating the same numbers.

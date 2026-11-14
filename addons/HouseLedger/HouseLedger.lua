@@ -126,6 +126,11 @@ local SELL_LINES = {
 }
 local SELL_LINE_HEIGHT = 20
 local BUY_HELP = "Type an item name. One click sends one search."
+-- Shown large in the middle of the empty Buy list.
+local BUY_START = "Type a name or pick a quality, then click Search."
+-- The search's page can't show everything: said by the filters and in the status line.
+local LOWER_QUALITY_NOTE = "Click Search again to include lower qualities."
+local FIRST_RESULTS_NOTE = "These are the first %d results. Add a name or filter to see others."
 local DETAIL_HINT = "Click a row for its saved prices over 1, 3, 7 and 14 days."
 -- The Sell lines filled in order from PriceLedger.WindowLines.
 local WINDOW_KEYS = { "w1", "w3", "w7", "w14", "spread" }
@@ -162,6 +167,12 @@ local marketText = ""
 -- searches, Market's resets when the view changes.
 local buySort = {}
 local marketSort = {}
+-- The lowest quality the last search asked the house for (0 is every quality). A looser quality
+-- filter can't show what that search left out, so the status line says to search again.
+local searchedQuality = 0
+-- Base item levels from the game's item data, kept for the session once known, so Market's
+-- rebuilds don't ask again.
+local itemLevels = {}
 -- True while one refilter waits for the next frame, so a burst of item-info events filters once.
 local refilterPending = false
 -- The Market tab: which view, its rows (shaped like browse results), and the
@@ -211,6 +222,35 @@ end
 local function SetStatus(text)
     if statusText then
         statusText:SetText(text)
+    end
+end
+
+--- Shows a message in large text in the middle of the Buy list, where an empty list draws the
+-- eye; nil hides it.
+-- @param text the message, or nil
+local function SetListMessage(text)
+    if buyPanel and buyPanel.listMessage then
+        buyPanel.listMessage:SetText(text or "")
+        if text then buyPanel.listMessage:Show() else buyPanel.listMessage:Hide() end
+    end
+end
+
+--- Shows a note in orange beside the filters, for something the player needs to act on; nil
+-- hides it.
+-- @param text the note, or nil
+local function SetNotice(text)
+    if buyPanel and buyPanel.notice then
+        buyPanel.notice:SetText(text or "")
+        if text then buyPanel.notice:Show() else buyPanel.notice:Hide() end
+    end
+end
+
+--- Lights up the Search button while a new search would show more, or turns that off.
+-- @param on true to light it
+local function HighlightSearch(on)
+    local button = buyPanel and buyPanel.searchButton
+    if button then
+        if on then button:LockHighlight() else button:UnlockHighlight() end
     end
 end
 
@@ -310,7 +350,8 @@ end
 -- otherwise greyed out with the wait, like "Scan (12m)". Only the button's own text and state
 -- change; nothing is sent.
 local function RefreshScanButton()
-    if not scanButton or scanState ~= "idle" then
+    -- In combat the game may count our window's widgets as protected; then it waits for the end.
+    if not scanButton or scanState ~= "idle" or Locked(scanButton) then
         return
     end
     local wait = HouseLedgerPrice.SecondsUntil(HouseLedgerDB.replicateAt, time())
@@ -329,7 +370,7 @@ end
 -- @param read listings read so far, or nil to hide the bar
 -- @param total how many listings the house sent
 local function ShowScanProgress(read, total)
-    if not scanBar then
+    if not scanBar or Locked(scanBar) then
         return
     end
     if read == nil or total == nil or total <= 0 then
@@ -413,6 +454,30 @@ local function SavedStats(itemID)
     return saved and saved.stats
 end
 
+--- The game's item data for an item: name, quality and base item level. The game loads an item
+-- it doesn't have yet and sends GET_ITEM_INFO_RECEIVED.
+-- @param itemID the item's id
+-- @return name, quality, level; each nil until known
+local function GameItemInfo(itemID)
+    local getInfo = C_Item and C_Item.GetItemInfo or GetItemInfo
+    if type(getInfo) ~= "function" then
+        return nil
+    end
+    local name, _, quality, level = getInfo(itemID)
+    return name, quality, level
+end
+
+--- An item's base item level, from the session cache or the game's item data.
+-- @param itemID the item's id
+-- @return the level, or nil until known
+local function BaseLevel(itemID)
+    if itemLevels[itemID] == nil then
+        local _, _, level = GameItemInfo(itemID)
+        itemLevels[itemID] = level
+    end
+    return itemLevels[itemID]
+end
+
 --- A row's item level: a search result's own (from its item key); a Market row's base level from
 -- the game's item data, kept once known.
 -- @param result a search result or a Market row
@@ -420,14 +485,7 @@ end
 local function RowLevel(result)
     local level
     if result.market then
-        level = result.level
-        if level == nil then
-            local getInfo = C_Item and C_Item.GetItemInfo or GetItemInfo
-            if type(getInfo) == "function" then
-                level = select(4, getInfo(result.itemKey.itemID))
-                result.level = level
-            end
-        end
+        level = BaseLevel(result.itemKey.itemID)
     else
         level = result.itemKey and result.itemKey.itemLevel
     end
@@ -520,18 +578,17 @@ end
 -- name and quality first, then the game's item data. The game loads an item it doesn't have yet;
 -- GET_ITEM_INFO_RECEIVED filters again once it arrives.
 -- @param entry a PriceLedger.Market entry
--- @return { name, quality, level }, any of them nil when not known
-local function SavedItemLook(entry)
-    local name, quality, level
-    local getInfo = C_Item and C_Item.GetItemInfo or GetItemInfo
-    if type(getInfo) == "function" then
-        local _
-        name, _, quality, level = getInfo(entry.itemID)
+-- @param needs { name, quality, level }: true for each the filter uses
+-- @return { name, quality, level }, any of them nil when not known or not needed
+local function SavedItemLook(entry, needs)
+    local name = entry.name
+    local quality = HouseLedgerPrice.IsQuality(entry.quality) and entry.quality or nil
+    -- The game's item data only for what the saved row lacks and a filter needs.
+    if (needs.name and name == nil) or (needs.quality and quality == nil) then
+        local gameName, gameQuality = GameItemInfo(entry.itemID)
+        name, quality = name or gameName, quality or gameQuality
     end
-    if HouseLedgerPrice.IsQuality(entry.quality) then
-        quality = entry.quality
-    end
-    return { name = entry.name or name, quality = quality, level = level }
+    return { name = name, quality = quality, level = needs.level and BaseLevel(entry.itemID) or nil }
 end
 
 --- A row's value in one column, for sorting. Reads saved data and the game's item data only.
@@ -603,8 +660,10 @@ local function RefreshMarket()
     local limits = { text = marketText, minQuality = filter.minQuality, minLevel = filter.minLevel,
         maxLevel = filter.maxLevel }
     local check = limits.text ~= "" or HouseLedgerPrice.FilterActive(limits)
+    local needs = { name = limits.text ~= "", quality = limits.minQuality ~= nil,
+        level = limits.minLevel ~= nil or limits.maxLevel ~= nil }
     for _, entry in ipairs(view) do
-        if not check or HouseLedgerPrice.PassesFilter(SavedItemLook(entry), limits) then
+        if not check or HouseLedgerPrice.PassesFilter(SavedItemLook(entry, needs), limits) then
             marketList[#marketList + 1] = {
                 itemKey = SavedItemKey(entry.itemID), minPrice = entry.unit, totalQuantity = entry.qty,
                 savedName = entry.name, savedQuality = entry.quality, market = true,
@@ -654,14 +713,36 @@ local function RenderRows()
         buyPanel.marketLabel:SetText(MarketLabel())
     end
     local from = list.from or #list
+    -- What the search's page can't show: qualities it didn't ask for, or more on the house. The
+    -- first one also shows in orange beside the filters, and lights up Search when a new search
+    -- would bring more.
+    local notes = {}
+    local lowerQuality = not market and (filter.minQuality or 0) < searchedQuality
+    if lowerQuality then
+        notes[#notes + 1] = LOWER_QUALITY_NOTE
+    end
+    if not market and type(C_AuctionHouse.HasFullBrowseResults) == "function"
+        and not C_AuctionHouse.HasFullBrowseResults() then
+        notes[#notes + 1] = string.format(FIRST_RESULTS_NOTE, #results)
+    end
+    SetNotice(notes[1])
+    if not market then
+        HighlightSearch(lowerQuality)
+    end
+    local noteText = #notes > 0 and (" " .. table.concat(notes, " ")) or ""
     if #list == 0 then
         if from > 0 then
-            SetStatus(string.format("Nothing matches the filters (%d hidden).", from))
+            SetListMessage(market and "Nothing matches the filters." or "Nothing on this page matches the filters.")
+            SetStatus(string.format(market and "Nothing matches the filters (%d hidden)."
+                or "Nothing on this page matches the filters (%d hidden).", from) .. noteText)
         else
-            SetStatus(market and MarketEmptyText() or "No results.")
+            local empty = market and MarketEmptyText() or "No results."
+            SetListMessage(empty)
+            SetStatus(empty)
         end
         return
     end
+    SetListMessage(nil)
     local last = math.min(#list, offset + VISIBLE_ROWS)
     local filtered = from > #list and string.format(" (filtered from %d)", from) or ""
     if market then
@@ -669,11 +750,7 @@ local function RenderRows()
             MARKET_VIEWS[marketView].noun, filtered))
         return
     end
-    local text = string.format("Showing %d-%d of %d%s.", scrollOffset + 1, last, #list, filtered)
-    if type(C_AuctionHouse.HasFullBrowseResults) == "function" and not C_AuctionHouse.HasFullBrowseResults() then
-        text = text .. " The house has more; narrow the search."
-    end
-    SetStatus(text)
+    SetStatus(string.format("Showing %d-%d of %d%s.", scrollOffset + 1, last, #list, filtered) .. noteText)
 end
 
 --- Empties the details block under the Buy list.
@@ -1089,6 +1166,8 @@ local function SetMarketMode(market)
             row.result = nil
             row:Hide()
         end
+        SetNotice(nil)
+        SetListMessage(BUY_START)
         SetStatus(BUY_HELP)
     end
 end
@@ -1166,11 +1245,23 @@ local function ClearSearch()
     results = {}
     shownResults = {}
     scrollOffset = 0
+    -- Clear starts over: the quality and item level filters go back to none too.
+    filter.minQuality, filter.minLevel, filter.maxLevel = nil, nil, nil
+    buyPanel.minLevelBox:SetText("")
+    buyPanel.maxLevelBox:SetText("")
+    local quality = buyPanel.qualityDropdown
+    if type(quality.GenerateMenu) == "function" then
+        quality:GenerateMenu() -- shows "Any quality" on the button again
+    end
+    searchedQuality = 0
     for _, row in ipairs(rows) do
         row.result = nil
         row:Hide()
     end
     ClearDetails()
+    SetNotice(nil)
+    HighlightSearch(false)
+    SetListMessage(BUY_START)
     SetStatus(BUY_HELP)
 end
 
@@ -1188,19 +1279,31 @@ end
 -- Sends nothing for a too-short text, a closed house, or a busy throttle.
 local function SendSearch()
     local text = strtrim(searchBox:GetText() or "")
-    -- A quality or item level filter makes an empty name a real search, as in Blizzard's window.
-    if strlenutf8(text) < MIN_SEARCH_LENGTH and not (text == "" and HouseLedgerPrice.FilterActive(filter)) then
-        SetStatus("Type at least 2 letters, or pick a quality or item level.")
+    -- A quality filter makes an empty name a real search, as in Blizzard's window. Item level
+    -- alone doesn't: it only filters the page that comes back, so the house would send its first
+    -- page of everything.
+    --- Says why nothing was sent: in the status line, beside the filters, and in the list if empty.
+    -- @param why the reason
+    local function Refuse(why)
+        SetStatus(why)
+        SetNotice(why)
+        if #shownResults == 0 then
+            SetListMessage(why)
+        end
+    end
+    if strlenutf8(text) < MIN_SEARCH_LENGTH and not (text == "" and filter.minQuality) then
+        Refuse("Type at least 2 letters, or pick a quality.")
         return
     end
     if not AuctionHouseFrame or not AuctionHouseFrame:IsShown() then
-        SetStatus("Open the auction house first.")
+        Refuse("Open the auction house first.")
         return
     end
     if not C_AuctionHouse.IsThrottledMessageSystemReady() then
-        SetStatus("The auction house is still busy. Wait, then click Search again.")
+        Refuse("The auction house is still busy. Wait, then click Search again.")
         return
     end
+    SetNotice(nil)
 
     -- One click, one query. No follow-up timer.
     -- The quality filter goes with the search; item level filters the results it brings back.
@@ -1213,6 +1316,7 @@ local function SendSearch()
         sorts = PRICE_SORT,
         filters = qualities,
     })
+    searchedQuality = filter.minQuality or 0
     SetStatus(text ~= "" and ("Searching for " .. text .. "...") or "Searching...")
 end
 
@@ -1277,11 +1381,12 @@ local function ReadListings(token, index, total, best)
         return
     end
 
-    SetScanStatus(string.format("Reading listings %d of %d...", nextIndex, total))
-    ShowScanProgress(nextIndex, total)
+    -- The next batch is scheduled first, so nothing that shows the progress can stop the read.
     C_Timer.After(0, function()
         ReadListings(token, nextIndex, total, best)
     end)
+    SetScanStatus(string.format("Reading listings %d of %d...", nextIndex, total))
+    ShowScanProgress(nextIndex, total)
 end
 
 --- The full-scan answer came in: starts reading the listings for this house.
@@ -1780,11 +1885,43 @@ local function TogglePriceCheck(name)
     end
 end
 
---- Shows or hides the Price Check buttons above the bags, as Settings says.
+-- Bag button work that waits for combat to end: making them, or showing or hiding them.
+local bagButtonsPending = false
+
+--- Shows or hides the Price Check buttons above the bags, as Settings says. The bag windows can
+-- count as protected, so in combat this waits for OnCombatEnded.
 local function UpdateBagButtons()
+    if InCombat() then
+        bagButtonsPending = true
+        return
+    end
     for _, button in ipairs(priceCheck.bagButtons) do
         if HouseLedgerDB.settings.priceCheckButton then button:Show() else button:Hide() end
     end
+end
+
+--- Makes the Price Check buttons above the game's bag windows, once, out of combat; left of
+-- Unmaker's so both fit. They are kept here, never written onto Blizzard's bag frames.
+local function MakeBagButtons()
+    if InCombat() then
+        bagButtonsPending = true
+        return
+    end
+    if #priceCheck.bagButtons == 0 then
+        for _, bagFrame in ipairs({ _G.ContainerFrameCombinedBags, _G.ContainerFrame1 }) do
+            if type(bagFrame) == "table" then
+                local button = CreateFrame("Button", nil, bagFrame, "UIPanelButtonTemplate")
+                button:SetSize(90, 20)
+                button:SetText("Price Check")
+                button:SetPoint("BOTTOMRIGHT", bagFrame, "TOPRIGHT", -84, 2)
+                button:SetScript("OnClick", function()
+                    TogglePriceCheck()
+                end)
+                priceCheck.bagButtons[#priceCheck.bagButtons + 1] = button
+            end
+        end
+    end
+    UpdateBagButtons()
 end
 
 --- Makes the Price Check window: a search box over saved item names, a list with the last price
@@ -1884,22 +2021,9 @@ local function BuildPriceCheck()
     priceCheck.status:SetPoint("BOTTOMLEFT", priceCheck, "BOTTOMLEFT", 14, 8)
     priceCheck.status:SetPoint("RIGHT", priceCheck, "RIGHT", -14, 0)
 
-    -- A button above the game's bag windows, as Unmaker has; left of Unmaker's so both fit.
-    -- The buttons are kept here, never written onto Blizzard's bag frames.
     priceCheck.bagButtons = {}
-    for _, bagFrame in ipairs({ _G.ContainerFrameCombinedBags, _G.ContainerFrame1 }) do
-        if type(bagFrame) == "table" then
-            local button = CreateFrame("Button", nil, bagFrame, "UIPanelButtonTemplate")
-            button:SetSize(90, 20)
-            button:SetText("Price Check")
-            button:SetPoint("BOTTOMRIGHT", bagFrame, "TOPRIGHT", -84, 2)
-            button:SetScript("OnClick", function()
-                TogglePriceCheck()
-            end)
-            priceCheck.bagButtons[#priceCheck.bagButtons + 1] = button
-        end
-    end
-    UpdateBagButtons()
+    priceCheck.updateBagButtons = UpdateBagButtons
+    MakeBagButtons()
 end
 
 --- Makes the Settings tab: one checkbox per PriceLedger.SETTINGS entry, saved in
@@ -1986,6 +2110,15 @@ local function BuildFilterRow()
     local maxBox = FilterBox(34, true)
     maxBox:SetPoint("LEFT", dash, "RIGHT", 8, 0)
     buyPanel.minLevelBox, buyPanel.maxLevelBox = minBox, maxBox
+
+    -- An orange note right of the filters, for something to act on (two short lines at most).
+    local notice = Cell(buyPanel, "GameFontNormalSmall", "LEFT")
+    notice:SetPoint("LEFT", maxBox, "RIGHT", 12, 0)
+    notice:SetPoint("RIGHT", frame, "RIGHT", -14, 0)
+    notice:SetWordWrap(true)
+    notice:SetTextColor(1, 0.5, 0.1)
+    notice:Hide()
+    buyPanel.notice = notice
 end
 
 --- Makes the HouseLedger window, hidden until the auction house opens.
@@ -2047,6 +2180,7 @@ local function BuildFrame()
     button:SetPoint("RIGHT", scanButton, "LEFT", -8, 0)
     button:SetText("Search")
     button:SetScript("OnClick", SendSearch)
+    buyPanel.searchButton = button
 
     local clear = CreateFrame("Button", nil, buyPanel, "UIPanelButtonTemplate")
     clear:SetSize(70, 22)
@@ -2107,6 +2241,14 @@ local function BuildFrame()
     buyPanel.priceHeading = header.priceText
     buyPanel.headerTexts, buyPanel.sortButtons = header.texts, header.sortButtons
     BuildFilterRow()
+
+    -- A large message in the middle of the list while it is empty.
+    local listMessage = Cell(buyPanel, "GameFontNormalLarge", "CENTER")
+    listMessage:SetPoint("LEFT", list, "LEFT", 30, 0)
+    listMessage:SetPoint("RIGHT", list, "RIGHT", -30, 0)
+    listMessage:SetWordWrap(true)
+    listMessage:SetText(BUY_START)
+    buyPanel.listMessage = listMessage
     for index = 1, VISIBLE_ROWS do
         rows[index] = BuildRow(list, index)
     end
@@ -2374,6 +2516,15 @@ end
 
 --- Combat ended: catch up on the window changes the game blocked.
 local function OnCombatEnded()
+    if bagButtonsPending and priceCheck then
+        bagButtonsPending = false
+        MakeBagButtons()
+    end
+    if frame and scanState == "idle" then
+        -- Catch up on what combat held back, if the game counted these as protected.
+        RefreshScanButton()
+        ShowScanProgress(nil)
+    end
     if buildAfterCombat then
         buildAfterCombat = false
         BuildFrame()
@@ -2497,6 +2648,15 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
             return
         end
         local market = currentTab == MARKET_TAB and buyPanel.marketMode
+        if market and event == "GET_ITEM_INFO_RECEIVED" then
+            itemLevels[arg1] = nil -- ask again now that the game has it
+            -- Only a filter or an ilvl sort needs the whole list again; otherwise redraw the rows
+            -- in place, so the visible ilvl column fills in.
+            if marketText == "" and not HouseLedgerPrice.FilterActive(filter) and marketSort.key ~= "ilvl" then
+                RenderRows()
+                return
+            end
+        end
         if not market and (#results == 0 or event ~= "ITEM_KEY_ITEM_INFO_RECEIVED") then
             return
         end

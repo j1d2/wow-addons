@@ -178,12 +178,37 @@ end
 -- @param days a row's day list; changed in place
 local function AddSumsFromV2(days)
     for _, day in ipairs(days) do
-        if type(day) == "table" and day[5] == nil then
+        if type(day) == "table" and day[5] == nil
+            and type(day[2]) == "number" and type(day[3]) == "number" and type(day[4]) == "number" then
             local low, high, scans = day[2], day[3], day[4]
             day[5] = (low + high) / 2 * scans
             day[6] = (low * low + high * high) / 2 * scans
         end
     end
+end
+
+--- Repairs a row's day list in place, on every load: a day that isn't a table with a numeric
+-- day key, low, high and scan count is dropped, and a day missing its sums gets them the way
+-- version 2 days did. A day list that isn't a table becomes empty. So one damaged day can't
+-- break Stats for the tooltip or the whole Market list.
+-- @param row an item row, changed in place
+local function RepairDays(row)
+    if type(row.days) ~= "table" then
+        row.days = {}
+        return
+    end
+    local kept = {}
+    for _, day in ipairs(row.days) do
+        if type(day) == "table" and type(day[1]) == "number" and type(day[2]) == "number"
+            and type(day[3]) == "number" and type(day[4]) == "number" and day[4] > 0 then
+            if type(day[5]) ~= "number" or type(day[6]) ~= "number" then
+                day[5], day[6] = nil, nil
+            end
+            kept[#kept + 1] = day
+        end
+    end
+    AddSumsFromV2(kept)
+    row.days = kept
 end
 
 --- Turns a version 1 row's list of price changes into day summaries.
@@ -249,6 +274,7 @@ function PriceLedger.EnsureDB(db)
         if type(house) == "table" and type(house.items) == "table" then
             for _, row in pairs(house.items) do
                 if type(row) == "table" then
+                    RepairDays(row)
                     if row.name ~= nil and type(row.name) ~= "string" then
                         row.name = nil
                     end
