@@ -87,6 +87,8 @@ local BUY_TAB = 1
 local SELL_TAB = 2
 -- Market is ours alone: a plain tab that presses nothing on Blizzard's window.
 local MARKET_TAB = 3
+-- Settings is ours alone too.
+local SETTINGS_TAB = 4
 -- The Market tab's views, in switcher order. All read saved data only.
 local MARKET_VIEWS = {
     { key = "deals", title = "Deals", noun = "deals",
@@ -125,6 +127,7 @@ local scanBar -- the read's progress, shown only while reading
 local scanButton
 local buyPanel
 local sellPanel
+local settingsPanel
 local header
 -- The item on the Sell tab (dropped here, or put in Blizzard's Sell
 -- window), until the next one. Never saved.
@@ -970,11 +973,17 @@ local function SelectTab(id)
     if Locked(buyPanel) or Locked(sellPanel) then
         return
     end
-    if id == SELL_TAB then
+    if id == SETTINGS_TAB then
         buyPanel:Hide()
+        sellPanel:Hide()
+        settingsPanel:Show()
+    elseif id == SELL_TAB then
+        buyPanel:Hide()
+        settingsPanel:Hide()
         sellPanel:Show()
     else
         sellPanel:Hide()
+        settingsPanel:Hide()
         buyPanel:Show()
         if (id == MARKET_TAB) ~= (buyPanel.marketMode == true) then
             SetMarketMode(id == MARKET_TAB)
@@ -1174,8 +1183,12 @@ local function AddPriceLine(tooltip, data)
     if info == nil then
         return
     end
-    -- Shift is read when the tooltip is built: hold it, then hover.
-    local showDetails = type(IsShiftKeyDown) == "function" and IsShiftKeyDown() == true
+    if not HouseLedgerDB.settings.tooltipPrices then
+        return
+    end
+    -- Shift is read when the tooltip is built: hold it, then hover. A setting can always show them.
+    local showDetails = HouseLedgerDB.settings.tooltipDetails
+        or (type(IsShiftKeyDown) == "function" and IsShiftKeyDown() == true)
     local lines = HouseLedgerPrice.TooltipLines(info, CopperToText, showDetails)
     if lines == nil then
         return
@@ -1415,27 +1428,60 @@ local function BuildTab(id, label)
     return tab
 end
 
---- Makes the Buy, Sell and Market tabs and shows the Buy tab.
--- Market is a plain tab: it isn't linked to Blizzard's window and presses nothing there.
+--- Makes the Buy, Sell, Market and Settings tabs and shows the Buy tab.
+-- Market and Settings are plain tabs: not linked to Blizzard's window, they press nothing there.
 local function BuildTabs()
     local buyTab = BuildTab(BUY_TAB, "Buy")
     buyTab:SetPoint("TOPLEFT", frame, "BOTTOMLEFT", 12, 2)
     local sellTab = BuildTab(SELL_TAB, "Sell")
-    local marketTab = CreateFrame("Button", "HouseLedgerFrameTab" .. MARKET_TAB, frame, "PanelTabButtonTemplate")
-    marketTab:SetID(MARKET_TAB)
-    marketTab:SetText("Market")
-    marketTab:SetScript("OnClick", function()
-        SelectTab(MARKET_TAB)
-    end)
-    if type(PanelTemplates_TabResize) == "function" then
-        PanelTemplates_TabResize(buyTab, 0)
-        PanelTemplates_TabResize(sellTab, 0)
-        PanelTemplates_TabResize(marketTab, 0)
+    --- One of our own tabs: plain, not linked to Blizzard's window.
+    -- @param id the tab's id
+    -- @param label the tab's text
+    -- @return the tab button
+    local function PlainTab(id, label)
+        local tab = CreateFrame("Button", "HouseLedgerFrameTab" .. id, frame, "PanelTabButtonTemplate")
+        tab:SetID(id)
+        tab:SetText(label)
+        tab:SetScript("OnClick", function()
+            SelectTab(id)
+        end)
+        return tab
     end
-    frame.Tabs = { buyTab, sellTab, marketTab }
+    local marketTab = PlainTab(MARKET_TAB, "Market")
+    local settingsTab = PlainTab(SETTINGS_TAB, "Settings")
+    frame.Tabs = { buyTab, sellTab, marketTab, settingsTab }
+    if type(PanelTemplates_TabResize) == "function" then
+        for _, tab in ipairs(frame.Tabs) do
+            PanelTemplates_TabResize(tab, 0)
+        end
+    end
     -- Also anchors each tab to the right of the one before.
-    PanelTemplates_SetNumTabs(frame, MARKET_TAB)
+    PanelTemplates_SetNumTabs(frame, #frame.Tabs)
     SelectTab(BUY_TAB)
+end
+
+--- Makes the Settings tab: one checkbox per PriceLedger.SETTINGS entry, saved in
+-- HouseLedgerDB.settings as soon as it is clicked. Nothing is sent.
+local function BuildSettingsPanel()
+    settingsPanel = CreateFrame("Frame", nil, frame)
+    settingsPanel:SetAllPoints(frame)
+    settingsPanel:Hide()
+    frame.settingsPanel = settingsPanel
+    settingsPanel.boxes = {}
+    for index, setting in ipairs(HouseLedgerPrice.SETTINGS) do
+        local box = CreateFrame("CheckButton", nil, settingsPanel, "UICheckButtonTemplate")
+        box:SetSize(26, 26)
+        box:SetPoint("TOPLEFT", settingsPanel, "TOPLEFT", 20, -LIST_TOP - 12 - (index - 1) * 30)
+        box:SetChecked(HouseLedgerDB.settings[setting.key] == true)
+        box:SetScript("OnClick", function(self)
+            HouseLedgerDB.settings[setting.key] = self:GetChecked() == true
+        end)
+        local label = Cell(settingsPanel, "GameFontHighlight", "LEFT")
+        label:SetPoint("LEFT", box, "RIGHT", 4, 0)
+        label:SetPoint("RIGHT", settingsPanel, "RIGHT", -16, 0)
+        label:SetText(setting.label)
+        settingsPanel.boxes[setting.key] = box
+    end
 end
 
 --- Makes the filter row: Market's name filter, the quality dropdown and the item level range.
@@ -1643,6 +1689,7 @@ local function BuildFrame()
     ClearDetails()
 
     BuildSellPanel()
+    BuildSettingsPanel()
     BuildTabs()
 
     scanText = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")

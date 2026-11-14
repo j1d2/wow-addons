@@ -64,7 +64,7 @@ An addon runs inside the game client's Lua sandbox, which Blizzard controls. The
 
 - **No network and no messages:** it sends no chat or addon messages and no data to other players. It talks only to Blizzard's auction house API.
 - **No code from text:** no `loadstring` or `RunScript`, and the policy check blocks them.
-- **Saved data:** `HouseLedgerDB` is a local file the player owns. `PriceLedger.EnsureDB` and the lookup code check types before use, so a damaged file can't crash the tooltip.
+- **Saved data:** `HouseLedgerDB` is a local file the player owns: prices with item names and qualities from scans, and the Settings tab's choices. `PriceLedger.EnsureDB` and the lookup code check types before use, so a damaged file can't crash the tooltip.
 - **User input:** search text goes only to Blizzard's `SendBrowseQuery` (from a click or Enter) and back into the addon's own status line.
 - **Privacy:** seller names are never saved. The HouseLedger harness (`houseledger_test.lua`) feeds seller names in and checks that none reach saved data.
 

@@ -84,6 +84,8 @@ function FrameMethods:SetTexture(texture) self.texture = texture end
 function FrameMethods:SetMinMaxValues(min, max) self.min, self.max = min, max end
 -- A dropdown keeps the menu generator it was given, as Blizzard's DropdownButton does.
 function FrameMethods:SetupMenu(generator) self.menuGenerator = generator end
+function FrameMethods:SetChecked(checked) self.checked = checked == true end
+function FrameMethods:GetChecked() return self.checked end
 function FrameMethods:SetValue(value) self.value = value end
 
 --- Makes a fake frame, font string or texture with empty state.
@@ -1254,7 +1256,7 @@ do
     Load()
     OpenHouse()
     local frame = MainFrame()
-    Check("window has Buy, Sell and Market tabs", TabNamed("Buy") ~= nil and TabNamed("Sell") ~= nil and frame.numTabs == 3)
+    Check("window has Buy, Sell, Market and Settings tabs", TabNamed("Buy") ~= nil and TabNamed("Sell") ~= nil and frame.numTabs == 4)
     Check("Buy tab is open first", frame.selectedTab == 1 and frame.buyPanel.shown and not frame.sellPanel.shown)
     Click("Sell")
     Check("Sell tab click opens the Sell panel", frame.selectedTab == 2 and frame.sellPanel.shown and not frame.buyPanel.shown)
@@ -1712,7 +1714,7 @@ do
     local queries, scans = #world.browseQueries, world.replicateCalls
 
     local market = TabNamed("Market")
-    Check("the window has a Market tab", market ~= nil and frame.numTabs == 3)
+    Check("the window has a Market tab", market ~= nil and frame.numTabs == 4)
     Check("Market is a plain tab that presses nothing on Blizzard's window",
         market and not market.template:find("SecureActionButtonTemplate", 1, true)
         and market.attributes.clickbutton == nil)
@@ -1880,6 +1882,50 @@ do
     Click("Buy")
     Check("Buy hides Market's name filter", not panel.filterNameBox.shown)
     Check("filters send nothing on Market", #world.browseQueries == 0 and world.replicateCalls == 0)
+end
+
+-- ---------------------------------------------------------------------
+-- Settings tab
+-- ---------------------------------------------------------------------
+
+do
+    Setup({ listings = { Listing(4306, 5, 250) } })
+    Load()
+    OpenHouse()
+    Click("Scan")
+    Fire("REPLICATE_ITEM_LIST_UPDATE")
+    RunTimers()
+    local frame = MainFrame()
+    local tab = TabNamed("Settings")
+    Check("the window has a Settings tab, a plain one", tab ~= nil and frame.numTabs == 4
+        and not tab.template:find("SecureActionButtonTemplate", 1, true))
+    Click("Settings")
+    local panel = frame.settingsPanel
+    Check("Settings shows its own panel", frame.selectedTab == 4 and panel.shown and not frame.buyPanel.shown
+        and not frame.sellPanel.shown)
+    local boxes = panel.boxes
+    Check("each box shows its saved setting", boxes.tooltipPrices.checked == true and boxes.tooltipDetails.checked == false)
+
+    local lines = {}
+    local tooltip = {
+        AddLine = function(_, text) lines[#lines + 1] = text end,
+        AddDoubleLine = function(_, left, right) lines[#lines + 1] = left .. " = " .. right end,
+    }
+    local function Hover()
+        lines = {}
+        world.tooltipHooks[1].fn(tooltip, { id = 4306 })
+        return lines
+    end
+    boxes.tooltipDetails:SetChecked(true)
+    boxes.tooltipDetails:GetScript("OnClick")(boxes.tooltipDetails)
+    Check("with the details setting on, tooltips show the day lines without Shift",
+        HouseLedgerDB.settings.tooltipDetails == true and #Hover() == 3 and lines[2] == "1 day, 1 scan = <money 50>")
+    boxes.tooltipPrices:SetChecked(false)
+    boxes.tooltipPrices:GetScript("OnClick")(boxes.tooltipPrices)
+    Check("with tooltip prices off, tooltips get nothing", HouseLedgerDB.settings.tooltipPrices == false and #Hover() == 0)
+    Check("settings send nothing", #world.browseQueries == 0 and world.replicateCalls == 1)
+    Click("Buy")
+    Check("Buy hides the Settings panel", frame.buyPanel.shown and not panel.shown)
 end
 
 if failed > 0 then

@@ -16,6 +16,14 @@ local PriceLedger = {}
 _G.HouseLedgerPrice = PriceLedger
 
 PriceLedger.DB_VERSION = 3
+
+-- The Settings tab, in display order: saved key, label and default. Saved per account in
+-- HouseLedgerDB.settings; an optional table, so no version change.
+PriceLedger.SETTINGS = {
+    { key = "tooltipPrices", label = "Show prices on item tooltips", default = true },
+    { key = "tooltipDetails", label = "Always show the 1, 3, 7 and 14-day lines on tooltips (no need to hold Shift)",
+        default = false },
+}
 PriceLedger.SCAN_INTERVAL = 15 * 60
 
 -- Days of summaries kept per item, today included. Matches the widest window.
@@ -226,6 +234,14 @@ function PriceLedger.EnsureDB(db)
                     end
                 end
             end
+        end
+    end
+    if type(db.settings) ~= "table" then
+        db.settings = {}
+    end
+    for _, setting in ipairs(PriceLedger.SETTINGS) do
+        if type(db.settings[setting.key]) ~= "boolean" then
+            db.settings[setting.key] = setting.default
         end
     end
     -- Item names and qualities are optional, saved by scans from late 2026 on.
