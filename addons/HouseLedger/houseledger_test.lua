@@ -86,6 +86,7 @@ function FrameMethods:SetMinMaxValues(min, max) self.min, self.max = min, max en
 function FrameMethods:SetupMenu(generator) self.menuGenerator = generator end
 function FrameMethods:SetChecked(checked) self.checked = checked == true end
 function FrameMethods:SetHeight(height) self.height = height end
+function FrameMethods:SetItemByID(itemID) self.itemByID = itemID end
 function FrameMethods:SetColorTexture(r, g, b, a) self.colorTexture = { r, g, b, a } end
 function FrameMethods:GetChecked() return self.checked end
 function FrameMethods:SetValue(value) self.value = value end
@@ -247,6 +248,10 @@ local function Setup(opts)
 
     world.tooltip = { items = {} }
     _G.GameTooltip = NewObject("Frame", "GameTooltip")
+    _G.SlashCmdList = {}
+    _G.UISpecialFrames = {}
+    _G.ContainerFrameCombinedBags = NewObject("Frame", "ContainerFrameCombinedBags")
+    _G.ContainerFrame1 = NewObject("Frame", "ContainerFrame1")
     _G.GameTooltip.SetItemKey = function(_, itemID)
         world.tooltip.items[#world.tooltip.items + 1] = itemID
     end
@@ -430,14 +435,10 @@ local function ButtonNamed(label)
     end
 end
 
---- The Buy tab's search box: the first fake EditBox.
+--- The Buy tab's search box.
 -- @return the edit box, or nil
 local function SearchBox()
-    for _, object in ipairs(world.frames) do
-        if object.kind == "EditBox" then
-            return object
-        end
-    end
+    return _G.HouseLedgerFrame.buyPanel.searchControls[1]
 end
 
 --- The scan line at the bottom of the window.
@@ -882,7 +883,7 @@ end
 local function ResultRows()
     local rows = {}
     for _, object in ipairs(world.frames) do
-        if object.kind == "Button" and object.nameText then
+        if object.kind == "Button" and object.nameText and object.typicalText then
             rows[#rows + 1] = object
         end
     end
@@ -2005,6 +2006,75 @@ do
     Check("a dropped item with saved prices shows its chart", chart.shown and BarHeights(chart)[14])
     Click("Reset")
     Check("Reset hides it", not chart.shown)
+end
+
+-- ---------------------------------------------------------------------
+-- Price Check: saved prices anywhere, no auction house needed
+-- ---------------------------------------------------------------------
+
+do
+    Setup()
+    world.now = 1762900000
+    local P = HouseLedgerPrice
+    local db = P.EmptyDB()
+    for day = 1, 3 do
+        local best = {}
+        P.Consider(best, 2589, 1, 10 + day, "Linen Cloth", 1)
+        P.Consider(best, 2996, 1, 100, "Bolt of Linen Cloth", 1)
+        P.Consider(best, 2592, 1, 30, "Wool Cloth", 1)
+        P.Commit(db, "Alliance|TestRealm", best, world.now - (3 - day) * 24 * 60 * 60)
+    end
+    _G.HouseLedgerDB = db
+    Load()
+    -- The auction house is never opened here.
+    local window = _G.HouseLedgerPriceCheck
+    Check("the Price Check window starts hidden", window ~= nil and not window.shown)
+    Check("Escape closes it, like the game's own windows", _G.UISpecialFrames[1] == "HouseLedgerPriceCheck")
+    _G.SlashCmdList.HOUSELEDGERPC("")
+    Check("/pc opens it away from the auction house", window.shown
+        and window.status.text == "Type 2 letters of an item's name.")
+    Type(window.searchBox, "lin")
+    local rows = window.rows
+    Check("typing finds saved items by name, names that start with it first",
+        rows[1].nameText.text == "Linen Cloth" and rows[2].nameText.text == "Bolt of Linen Cloth" and not rows[3].shown)
+    Check("a row shows the last price and the trend", rows[1].priceText.text == "<money 13>")
+    Check("the status counts the matches", window.status.text == "2 items match.")
+    rows[2]:GetScript("OnClick")(rows[2])
+    Check("a row click shows its saved prices and chart", window.detailTitle.text == "Bolt of Linen Cloth, 3 scans over 3 days"
+        and window.detailLines[1].left.text == "1 day, 1 scan" and window.chart.shown)
+    rows[1]:GetScript("OnEnter")(rows[1])
+    Check("hovering shows the game's item tooltip", _G.GameTooltip.itemByID == 2589)
+    Check("Price Check sends nothing to the auction house", #world.browseQueries == 0 and world.replicateCalls == 0
+        and #world.itemQueries == 0)
+    _G.SlashCmdList.HOUSELEDGERPC("")
+    Check("/pc again closes it", not window.shown)
+    _G.SlashCmdList.HOUSELEDGERPC("wool")
+    Check("/pc with a name opens it already searched", window.shown and window.searchBox.text == "wool"
+        and rows[1].nameText.text == "Wool Cloth")
+    Type(window.searchBox, "zzz")
+    Check("no match says names fill in from scans", window.status.text
+        == "No saved item matches. Names fill in from your scans.")
+
+    local button = window.bagButtons[1]
+    Check("a Price Check button sits above the bags", button ~= nil and button.shown and button.text == "Price Check"
+        and button.parent == _G.ContainerFrameCombinedBags and window.bagButtons[2].parent == _G.ContainerFrame1)
+    button:GetScript("OnClick")(button)
+    Check("which closes and opens the window", not window.shown)
+end
+
+do
+    Setup()
+    Load()
+    OpenHouse()
+    Click("Settings")
+    local boxes = MainFrame().settingsPanel.boxes
+    boxes.priceCheckButton:SetChecked(false)
+    boxes.priceCheckButton:GetScript("OnClick")(boxes.priceCheckButton)
+    local buttons = _G.HouseLedgerPriceCheck.bagButtons
+    Check("the bag button can be turned off in Settings", not buttons[1].shown and not buttons[2].shown)
+    _G.SlashCmdList.HOUSELEDGERPC("")
+    Check("/pc still opens Price Check", _G.HouseLedgerPriceCheck.shown
+        and _G.HouseLedgerPriceCheck.status.text == "Type 2 letters of an item's name.")
 end
 
 if failed > 0 then
