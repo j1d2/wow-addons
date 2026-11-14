@@ -19,7 +19,7 @@ local DISENCHANT_SPELL = 13262
 local BAGS = { 0, 1, 2, 3, 4 } -- the backpack and four bags; the reagent bag holds no gear
 local ROW_COUNT = 10
 local ROW_HEIGHT = 24
-local WIDTH = 480
+local WIDTH = 520
 local LIST_TOP = 64 -- the Items tab starts this far below the window's top edge
 -- On the Items tab: the filter row, then the column headings, then the list.
 local FILTER_HEIGHT = 26
@@ -33,6 +33,8 @@ local HEIGHT = LIST_START + LIST_HEIGHT + TEXT_HEIGHT + BUTTON_AREA
 -- Items tab columns: their headings, and the way each first sorts when clicked (true is A to Z).
 local COLUMN_LABELS = { name = "Item", ilvl = "ilvl", vendor = "Vendor" }
 local SORT_FIRST_ASCENDING = { name = true, ilvl = false, vendor = false }
+-- History headings that sort A to Z (the rest sort highest or newest first).
+local HISTORY_ASCENDING = { name = true, who = true }
 -- After a cast, wait at most this many seconds for the loot and bag news before unlocking
 -- the buttons, so a missed event can't leave them stuck.
 local UNLOCK_AFTER = 10
@@ -83,6 +85,9 @@ local historyRowFrames = {}
 local historyEmpty
 local historyOffset = 0
 local historySort = "time"
+local historyReverse = false -- a second click on the same heading reverses its sort
+local historyWho -- the character the History tab shows (its key), or nil for all characters
+local historyHeadings = {}
 local historyList = {}
 local selectedButton, nextButton
 local rowFrames = {}
@@ -240,14 +245,17 @@ local function Render()
     UpdateButtons()
 end
 
---- Format a time for the History tab, like "11/12 03:58".
+--- Format a time for the History tab in year-month-day order: "11-12 03:58" in the column,
+-- "2026-11-12 03:58" with the year in the row's tooltip.
 -- @param seconds a time() value
+-- @param withYear true to include the year
 -- @return the text
-local function FormatWhen(seconds)
+local function FormatWhen(seconds, withYear)
+    local format = withYear and "%Y-%m-%d %H:%M" or "%m-%d %H:%M"
     if type(date) == "function" then
-        return date("%m/%d %H:%M", seconds)
+        return date(format, seconds)
     end
-    return os.date("%m/%d %H:%M", seconds)
+    return os.date(format, seconds)
 end
 
 --- Fill the Stats tab: the facts, then the lifetime materials, most first.
@@ -298,7 +306,7 @@ local function RenderHistory()
     if not built then
         return
     end
-    historyList = S.SortHistory(db.history, historySort)
+    historyList = S.SortHistory(S.FilterHistory(db.history, historyWho, playerRealm), historySort, historyReverse)
     historyOffset = math.max(0, math.min(historyOffset, #historyList - ROW_COUNT))
     for index, rowFrame in ipairs(historyRowFrames) do
         local entry = historyList[historyOffset + index]
@@ -306,6 +314,7 @@ local function RenderHistory()
         if entry then
             rowFrame.itemText:SetText(entry.link or entry.name)
             rowFrame.levelText:SetText(entry.level and tostring(entry.level) or "")
+            rowFrame.whoText:SetText(S.WhoText(entry, playerRealm))
             rowFrame.lootText:SetText(S.LootText(entry))
             rowFrame.whenText:SetText(FormatWhen(entry.time))
             rowFrame:Show()
@@ -313,7 +322,21 @@ local function RenderHistory()
             rowFrame:Hide()
         end
     end
+    historyEmpty:SetText(#db.history == 0 and "Nothing unmade yet. Disenchant something on the Items tab."
+        or "Nothing unmade by this character in the last 500 disenchants.")
     historyEmpty:SetShown(#historyList == 0)
+    -- The arrow marks the sorted heading and its direction.
+    for key, heading in pairs(historyHeadings) do
+        local label = heading.labelText
+        if key == historySort then
+            local ascending = HISTORY_ASCENDING[key] == true
+            if historyReverse then
+                ascending = not ascending
+            end
+            label = label .. " |A:" .. (ascending and "NPE_ArrowUp" or "NPE_ArrowDown") .. ":10:10|a"
+        end
+        heading.label:SetText(label)
+    end
 end
 
 --- Read the bags again and redraw. The selection survives if its item is still in its slot.
@@ -610,10 +633,11 @@ end
 
 -- History columns: x offset and width of each, inside the History panel.
 local HISTORY_COLUMNS = {
-    { key = "name", label = "Item", x = 0, width = 160 },
-    { key = "level", label = "ilvl", x = 165, width = 35 },
-    { key = nil, label = "Got", x = 205, width = 130 },
-    { key = "time", label = "When", x = 340, width = 70 },
+    { key = "name", label = "Item", x = 0, width = 150 },
+    { key = "level", label = "ilvl", x = 155, width = 35 },
+    { key = "who", label = "Who", x = 195, width = 80 },
+    { key = nil, label = "Got", x = 280, width = 120 },
+    { key = "time", label = "When", x = 405, width = 80 },
 }
 
 --- Build the History tab: clickable headings that sort, then ten rows, newest first by default.
@@ -626,17 +650,45 @@ local function BuildHistory()
         historyOffset = math.max(0, math.min(historyOffset - delta, #historyList - ROW_COUNT))
         RenderHistory()
     end)
+    -- Whose disenchants to show: the same kind of dropdown as the Stats tab, rebuilt when opened.
+    local whoDropdown = CreateFrame("DropdownButton", nil, historyPanel, "WowStyle1DropdownTemplate")
+    whoDropdown:SetWidth(150)
+    whoDropdown:SetPoint("TOPLEFT", historyPanel, "TOPLEFT", 0, 0)
+    whoDropdown:SetupMenu(function(_, root)
+        local choices = { false } -- false stands for all characters
+        for _, key in ipairs(S.Characters(db)) do
+            choices[#choices + 1] = key
+        end
+        for _, choice in ipairs(choices) do
+            root:CreateRadio(choice and S.CharacterLabel(choice, playerRealm) or "All characters", function(picked)
+                return (historyWho or false) == picked
+            end, function(picked)
+                historyWho = picked or nil
+                historyOffset = 0
+                RenderHistory()
+            end, choice)
+        end
+    end)
+    historyPanel.whoDropdown = whoDropdown
+
     for _, column in ipairs(HISTORY_COLUMNS) do
         local heading = CreateFrame("Button", nil, historyPanel)
         heading:SetSize(column.width, 18)
-        heading:SetPoint("TOPLEFT", historyPanel, "TOPLEFT", column.x, 0)
+        heading:SetPoint("TOPLEFT", historyPanel, "TOPLEFT", column.x, -FILTER_HEIGHT)
         heading.label = heading:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         heading.label:SetPoint("LEFT", heading, "LEFT", 0, 0)
         heading.label:SetText(column.label)
+        heading.labelText = column.label
         heading.sortKey = column.key
         if column.key then
+            historyHeadings[column.key] = heading
             heading:SetScript("OnClick", function()
-                historySort = column.key
+                -- The same heading again reverses the sort; another heading starts its own way.
+                if historySort == column.key then
+                    historyReverse = not historyReverse
+                else
+                    historySort, historyReverse = column.key, false
+                end
                 historyOffset = 0
                 RenderHistory()
             end)
@@ -646,8 +698,9 @@ local function BuildHistory()
         local rowFrame = CreateFrame("Button", nil, historyPanel)
         rowFrame.historyRow = true
         rowFrame:SetSize(WIDTH - 40, ROW_HEIGHT)
-        rowFrame:SetPoint("TOPLEFT", historyPanel, "TOPLEFT", 0, -(20 + (index - 1) * ROW_HEIGHT))
-        for _, field in ipairs({ { "itemText", 1 }, { "levelText", 2 }, { "lootText", 3 }, { "whenText", 4 } }) do
+        rowFrame:SetPoint("TOPLEFT", historyPanel, "TOPLEFT", 0, -(FILTER_HEIGHT + 20 + (index - 1) * ROW_HEIGHT))
+        for _, field in ipairs({ { "itemText", 1 }, { "levelText", 2 }, { "whoText", 3 }, { "lootText", 4 },
+            { "whenText", 5 } }) do
             local column = HISTORY_COLUMNS[field[2]]
             local text = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
             text:SetPoint("LEFT", rowFrame, "LEFT", column.x, 0)
@@ -663,7 +716,7 @@ local function BuildHistory()
                 if entry.link then
                     GameTooltip:SetHyperlink(entry.link)
                 end
-                GameTooltip:AddLine("Unmade by " .. (entry.character or "?") .. ", " .. FormatWhen(entry.time))
+                GameTooltip:AddLine("Unmade by " .. S.WhoText(entry, playerRealm) .. ", " .. FormatWhen(entry.time, true))
                 GameTooltip:Show()
             end
         end)
@@ -673,7 +726,7 @@ local function BuildHistory()
         historyRowFrames[index] = rowFrame
     end
     historyEmpty = historyPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    historyEmpty:SetPoint("TOPLEFT", historyPanel, "TOPLEFT", 0, -24)
+    historyEmpty:SetPoint("TOPLEFT", historyPanel, "TOPLEFT", 0, -(FILTER_HEIGHT + 24))
     historyEmpty:SetText("Nothing unmade yet. Disenchant something on the Items tab.")
     historyPanel:Hide()
 end
@@ -803,7 +856,7 @@ local function BuildFilterAndHeader()
 
     -- Blizzard's own dropdown, as HouseLedger's filters use on Forever.
     local quality = CreateFrame("DropdownButton", nil, filterRow, "WowStyle1DropdownTemplate")
-    quality:SetWidth(150)
+    quality:SetWidth(170) -- room for "Uncommon & down" without cutting it off
     quality:SetPoint("LEFT", filterRow, "LEFT", 2, 0)
     quality:SetupMenu(function(_, root)
         for _, choice in ipairs(R.QUALITY_CHOICES) do

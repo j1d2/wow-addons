@@ -9,10 +9,12 @@ All notable changes to Unmaker. The format follows [Keep a Changelog](https://ke
 - Items tab filters: a quality dropdown ("Rare & down", "Uncommon & down") and an item level range. The count line says how many items the filters hide.
 - A **Vendor** column with what a vendor pays for each item, and sortable column headings: click Item, ilvl or Vendor to sort, again to reverse. **Disenchant next** takes the first checked item in the list as you see it.
 - A 14-day chart on the Stats tab: how many items you unmade each day, today in gold. It follows the character dropdown.
+- History shows **Who** unmade each item, and a character dropdown shows just one character's disenchants. Click a heading again to reverse its sort.
 
 ### Changed
 
 - The Stats tab picks a character from a dropdown instead of the < and > arrows, so any character is one click away.
+- The window is a little wider, so History dates and item names fit. History dates read month-day then time ("11-14 11:13"); a row's tooltip adds the year.
 
 ## [0.3.0] - 2026-11-13
 
