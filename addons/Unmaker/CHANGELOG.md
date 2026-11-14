@@ -4,6 +4,8 @@ All notable changes to Unmaker. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-14
+
 ### Added
 
 - Items tab filters: a quality dropdown ("Rare & down", "Uncommon & down") and an item level range. The count line says how many items the filters hide.
