@@ -132,18 +132,27 @@ Disenchanting without the hunt through your bags. One window lists everything yo
 1. The **Unmaker** button above your bags opens and closes the window.
 
 <p align="center">
-  <img src="docs/screenshots/unmaker-stats.png" alt="Unmaker's Stats tab: counts, fun facts and lifetime materials" width="420">
+  <img src="docs/screenshots/unmaker-stats.png" alt="Unmaker's Stats tab: counts, the character switcher, fun facts and lifetime materials" width="420">
   <img src="docs/screenshots/unmaker-history.png" alt="Unmaker's History tab: sortable headings and the loot from each disenchant" width="420">
 </p>
 
 **Stats tab** (left):
 1. **Counts:** lifetime, today and this session.
-2. **Fun facts:** your most-unmade item, best item, busiest day and first disenchant.
-3. **Materials:** everything your disenchants have given you.
+2. **Characters:** the arrows switch between all your characters together and each one.
+3. **Fun facts:** your most-unmade item, best item, busiest day and first disenchant.
+4. **Materials:** everything your disenchants have given you.
 
 **History tab** (right):
 1. Click a heading to sort.
 2. **Got:** the materials each disenchant gave.
+
+<p align="center">
+  <img src="docs/screenshots/unmaker-settings.png" alt="Unmaker's Settings tab: keep epics, keep soulbound gear, hide equipment-set items, open when you loot, open with your bags" width="420">
+</p>
+
+**Settings tab:**
+1. **What starts unchecked or hidden:** epics, soulbound gear and items in your equipment sets.
+2. **When the window opens by itself:** when you loot gear to disenchant, or with your bags. Only on characters that know Disenchant.
 
 <p align="center"><sub>Game art in the screenshots © Blizzard Entertainment, Inc.</sub></p>
 
