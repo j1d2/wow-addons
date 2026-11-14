@@ -138,6 +138,8 @@ local scanButton
 local buyPanel
 local sellPanel
 local settingsPanel
+-- The Price Check window (/pc): saved prices anywhere, built at load.
+local priceCheck
 local header
 -- The item on the Sell tab (dropped here, or put in Blizzard's Sell
 -- window), until the next one. Never saved.
@@ -1557,6 +1559,217 @@ local function BuildTabs()
     SelectTab(BUY_TAB)
 end
 
+-- Price Check layout: rows under the search box, then the details and the chart.
+local PC_WIDTH = 400
+local PC_HEIGHT = 500
+local PC_ROWS = 12
+local PC_LIST_TOP = 64
+local PC_DETAIL_TOP = PC_LIST_TOP + PC_ROWS * ROW_HEIGHT + 8
+
+--- Fills Price Check's list from what the search box holds, from saved data only.
+local function RefreshPriceCheck()
+    local text = strtrim(priceCheck.searchBox:GetText() or "")
+    priceCheck.found = HouseLedgerPrice.FindByName(MarketHouse(), text)
+    priceCheck.offset = 0
+    for index, row in ipairs(priceCheck.rows) do
+        local entry = priceCheck.found[index]
+        row.entry = entry
+        if entry then
+            local info = HouseLedgerPrice.Lookup(HouseLedgerDB, entry.itemID, PlayerHouseKey())
+            row.nameText:SetText(entry.name)
+            local r, g, b = 1, 1, 1
+            if HouseLedgerPrice.IsQuality(entry.quality) and C_Item and type(C_Item.GetItemQualityColor) == "function" then
+                r, g, b = C_Item.GetItemQualityColor(entry.quality)
+            end
+            row.nameText:SetTextColor(r, g, b)
+            local icon = C_Item and type(C_Item.GetItemIconByID) == "function" and C_Item.GetItemIconByID(entry.itemID)
+            row.icon:SetTexture(icon or QUESTION_MARK_ICON)
+            row.priceText:SetText(info and CopperToText(info.unit) or "-")
+            local stats = info and info.stats
+            local mark = HouseLedgerPrice.TrendText(stats, "buyer")
+            if mark == "" then
+                mark = HouseLedgerPrice.SteadyText(stats)
+            end
+            if stats and stats.deal then
+                mark = mark .. " " .. HouseLedgerPrice.DEAL_ICON
+            end
+            row.trendText:SetText(mark)
+            row:Show()
+        else
+            row:Hide()
+        end
+    end
+    local count = #priceCheck.found
+    if strlenutf8(text) < MIN_SEARCH_LENGTH then
+        priceCheck.status:SetText("Type 2 letters of an item's name.")
+    elseif MarketHouse() == nil then
+        priceCheck.status:SetText("No prices saved yet. Scan once at the auction house.")
+    elseif count == 0 then
+        priceCheck.status:SetText("No saved item matches. Names fill in from your scans.")
+    elseif count > PC_ROWS then
+        priceCheck.status:SetText(string.format("%d items match. Type more to narrow them.", count))
+    else
+        priceCheck.status:SetText(count == 1 and "1 item matches." or string.format("%d items match.", count))
+    end
+end
+
+--- A Price Check row click: its saved day lines and chart under the list. Saved data only.
+-- @param row the clicked row
+local function ShowPriceCheckDetails(row)
+    local entry = row.entry
+    if entry == nil then
+        return
+    end
+    local info = HouseLedgerPrice.Lookup(HouseLedgerDB, entry.itemID, PlayerHouseKey())
+    local stats = info and info.stats
+    priceCheck.detailTitle:SetText(stats and (entry.name .. ", " .. HouseLedgerPrice.CountText(stats)) or entry.name)
+    local lines = stats and HouseLedgerPrice.WindowLines(stats, CopperToText) or {}
+    for index, line in ipairs(priceCheck.detailLines) do
+        line.left:SetText(lines[index] and lines[index].left or "")
+        line.right:SetText(lines[index] and lines[index].right or "")
+    end
+    ShowChart(priceCheck.chart, info)
+end
+
+--- Opens or closes Price Check. With a name, opens it and searches for that name.
+-- @param name optional item name to search for
+local function TogglePriceCheck(name)
+    if name and name ~= "" then
+        priceCheck.searchBox:SetText(name)
+        RefreshPriceCheck()
+        priceCheck:Show()
+        return
+    end
+    if priceCheck:IsShown() then
+        priceCheck:Hide()
+    else
+        RefreshPriceCheck()
+        priceCheck:Show()
+    end
+end
+
+--- Shows or hides the Price Check buttons above the bags, as Settings says.
+local function UpdateBagButtons()
+    for _, button in ipairs(priceCheck.bagButtons) do
+        if HouseLedgerDB.settings.priceCheckButton then button:Show() else button:Hide() end
+    end
+end
+
+--- Makes the Price Check window: a search box over saved item names, a list with the last price
+-- and trend, and the clicked item's day lines and 14-day chart. It works anywhere, with no
+-- auction house open, and never sends anything. Escape closes it.
+local function BuildPriceCheck()
+    priceCheck = CreateFrame("Frame", "HouseLedgerPriceCheck", UIParent, "ButtonFrameTemplate")
+    priceCheck:SetSize(PC_WIDTH, PC_HEIGHT)
+    priceCheck:SetPoint("CENTER")
+    priceCheck:SetClampedToScreen(true)
+    priceCheck:SetToplevel(true)
+    if type(priceCheck.SetTitle) == "function" then
+        priceCheck:SetTitle("Price Check")
+    end
+    if type(priceCheck.SetPortraitToAsset) == "function" then
+        priceCheck:SetPortraitToAsset(PORTRAIT_ICON)
+    end
+    priceCheck:SetMovable(true)
+    priceCheck:EnableMouse(true)
+    priceCheck:RegisterForDrag("LeftButton")
+    priceCheck:SetScript("OnDragStart", function(self) self:StartMoving() end)
+    priceCheck:SetScript("OnDragStop", function(self) self:StopMovingOrSizing() end)
+    priceCheck:Hide()
+    if type(UISpecialFrames) == "table" then
+        table.insert(UISpecialFrames, "HouseLedgerPriceCheck")
+    end
+
+    local box = CreateFrame("EditBox", nil, priceCheck, "InputBoxTemplate")
+    box:SetHeight(20)
+    box:SetPoint("LEFT", priceCheck, "TOPLEFT", 72, -41)
+    box:SetPoint("RIGHT", priceCheck, "TOPRIGHT", -16, -41)
+    box:SetAutoFocus(false)
+    box:SetScript("OnTextChanged", function(_, userInput)
+        if userInput then
+            RefreshPriceCheck()
+        end
+    end)
+    box:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
+    box:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+    priceCheck.searchBox = box
+
+    priceCheck.rows = {}
+    for index = 1, PC_ROWS do
+        local row = CreateFrame("Button", nil, priceCheck)
+        row:SetHeight(ROW_HEIGHT)
+        row:SetPoint("TOPLEFT", priceCheck, "TOPLEFT", 12, -PC_LIST_TOP - (index - 1) * ROW_HEIGHT)
+        row:SetPoint("RIGHT", priceCheck, "RIGHT", -12, 0)
+        row:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
+        row.icon = row:CreateTexture(nil, "ARTWORK")
+        row.icon:SetSize(ICON_SIZE, ICON_SIZE)
+        row.icon:SetPoint("LEFT", row, "LEFT", 4, 0)
+        row.trendText = Cell(row, "GameFontHighlightSmall", "RIGHT")
+        row.trendText:SetPoint("RIGHT", row, "RIGHT", -4, 0)
+        row.trendText:SetWidth(70)
+        row.priceText = Cell(row, "GameFontHighlightSmall", "RIGHT")
+        row.priceText:SetPoint("RIGHT", row.trendText, "LEFT", -6, 0)
+        row.priceText:SetWidth(90)
+        row.nameText = Cell(row, "GameFontHighlightSmall", "LEFT")
+        row.nameText:SetPoint("LEFT", row.icon, "RIGHT", 6, 0)
+        row.nameText:SetPoint("RIGHT", row.priceText, "LEFT", -6, 0)
+        row:SetScript("OnClick", ShowPriceCheckDetails)
+        row:SetScript("OnEnter", function(self)
+            if self.entry and GameTooltip then
+                GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+                GameTooltip:SetItemByID(self.entry.itemID)
+                GameTooltip:Show()
+            end
+        end)
+        row:SetScript("OnLeave", function()
+            if GameTooltip then
+                GameTooltip:Hide()
+            end
+        end)
+        row:Hide()
+        priceCheck.rows[index] = row
+    end
+
+    priceCheck.detailTitle = Cell(priceCheck, "GameFontNormal", "LEFT")
+    priceCheck.detailTitle:SetPoint("TOPLEFT", priceCheck, "TOPLEFT", 16, -PC_DETAIL_TOP)
+    priceCheck.detailTitle:SetPoint("RIGHT", priceCheck, "RIGHT", -16, 0)
+    priceCheck.detailLines = {}
+    for index = 1, DETAIL_LINES do
+        local y = -PC_DETAIL_TOP - index * DETAIL_LINE_HEIGHT
+        local left = Cell(priceCheck, "GameFontHighlightSmall", "LEFT")
+        left:SetPoint("TOPLEFT", priceCheck, "TOPLEFT", 24, y)
+        left:SetWidth(150)
+        local right = Cell(priceCheck, "GameFontHighlightSmall", "LEFT")
+        right:SetPoint("TOPLEFT", priceCheck, "TOPLEFT", 180, y)
+        right:SetPoint("RIGHT", priceCheck, "RIGHT", -16, 0)
+        priceCheck.detailLines[index] = { left = left, right = right }
+    end
+    priceCheck.chart = BuildChart(priceCheck, PC_WIDTH - 40, 64)
+    priceCheck.chart:SetPoint("TOPLEFT", priceCheck, "TOPLEFT", 20,
+        -PC_DETAIL_TOP - (DETAIL_LINES + 1) * DETAIL_LINE_HEIGHT - 4)
+
+    priceCheck.status = Cell(priceCheck, "GameFontHighlightSmall", "LEFT")
+    priceCheck.status:SetPoint("BOTTOMLEFT", priceCheck, "BOTTOMLEFT", 14, 8)
+    priceCheck.status:SetPoint("RIGHT", priceCheck, "RIGHT", -14, 0)
+
+    -- A button above the game's bag windows, as Unmaker has; left of Unmaker's so both fit.
+    -- The buttons are kept here, never written onto Blizzard's bag frames.
+    priceCheck.bagButtons = {}
+    for _, bagFrame in ipairs({ _G.ContainerFrameCombinedBags, _G.ContainerFrame1 }) do
+        if type(bagFrame) == "table" then
+            local button = CreateFrame("Button", nil, bagFrame, "UIPanelButtonTemplate")
+            button:SetSize(90, 20)
+            button:SetText("Price Check")
+            button:SetPoint("BOTTOMRIGHT", bagFrame, "TOPRIGHT", -84, 2)
+            button:SetScript("OnClick", function()
+                TogglePriceCheck()
+            end)
+            priceCheck.bagButtons[#priceCheck.bagButtons + 1] = button
+        end
+    end
+    UpdateBagButtons()
+end
+
 --- Makes the Settings tab: one checkbox per PriceLedger.SETTINGS entry, saved in
 -- HouseLedgerDB.settings as soon as it is clicked. Nothing is sent.
 local function BuildSettingsPanel()
@@ -1572,6 +1785,9 @@ local function BuildSettingsPanel()
         box:SetChecked(HouseLedgerDB.settings[setting.key] == true)
         box:SetScript("OnClick", function(self)
             HouseLedgerDB.settings[setting.key] = self:GetChecked() == true
+            if setting.key == "priceCheckButton" and priceCheck then
+                UpdateBagButtons()
+            end
         end)
         local label = Cell(settingsPanel, "GameFontHighlight", "LEFT")
         label:SetPoint("LEFT", box, "RIGHT", 4, 0)
@@ -2063,6 +2279,8 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
         end
         HouseLedgerDB = HouseLedgerPrice.EnsureDB(HouseLedgerDB)
         HookTooltips()
+        -- Price Check works anywhere, so it is built even on a client without the auction house.
+        BuildPriceCheck()
         if C_AuctionHouse == nil then
             return
         end
@@ -2171,3 +2389,12 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
         OnItemResults(arg1)
     end
 end)
+
+-- /pc and /pricecheck open Price Check; a name after it searches for that name.
+SLASH_HOUSELEDGERPC1 = "/pricecheck"
+SLASH_HOUSELEDGERPC2 = "/pc"
+SlashCmdList.HOUSELEDGERPC = function(message)
+    if priceCheck then
+        TogglePriceCheck(strtrim(message or ""))
+    end
+end

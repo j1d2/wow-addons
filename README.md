@@ -51,6 +51,7 @@ Auction house prices, remembered. One Scan a day builds a 14-day price history o
 - **Sell tab:** drop an item in to see the lowest price now and its history. Then post it in Blizzard's window.
 - **Market tab:** the deals, biggest drops and biggest rises from your last scan, with no searching.
 - **Settings tab:** turn tooltip prices off, or always show the day lines without Shift.
+- **Price Check:** type `/pc` anywhere, or click **Price Check** above your bags, to look up a saved price by name.
 - **Never** buys, posts or scans by itself.
 
 <p align="center">

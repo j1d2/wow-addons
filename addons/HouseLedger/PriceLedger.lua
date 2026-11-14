@@ -22,6 +22,7 @@ PriceLedger.DB_VERSION = 3
 PriceLedger.SETTINGS = {
     { key = "tooltipPrices", label = "Show prices on item tooltips", default = true },
     { key = "tooltipDetails", label = "Show the day lines on tooltips without holding Shift", default = false },
+    { key = "priceCheckButton", label = "Show a Price Check button above the bags", default = true },
 }
 PriceLedger.SCAN_INTERVAL = 15 * 60
 
@@ -598,6 +599,47 @@ function PriceLedger.ChartDays(days, seen)
         end
     end
     return chart
+end
+
+--- Price Check: the saved items whose name holds the text, ignoring case. Names that start with
+-- the text come first, then the rest, each A to Z. Reads saved data only; an item scanned before
+-- names were saved has none yet and can't be found by name.
+-- @param house a house table, or nil
+-- @param text what the player typed; under 2 letters finds nothing
+-- @param limit optional; at most this many (default 100)
+-- @return list of { itemID, name, quality }
+function PriceLedger.FindByName(house, text, limit)
+    local found = {}
+    if type(house) ~= "table" or type(house.items) ~= "table" or type(text) ~= "string" then
+        return found
+    end
+    local needle = text:lower():match("^%s*(.-)%s*$")
+    if #needle < 2 then
+        return found
+    end
+    for itemID, row in pairs(house.items) do
+        if type(row) == "table" and type(row.name) == "string" then
+            local name = row.name:lower()
+            local at = name:find(needle, 1, true)
+            if at then
+                found[#found + 1] = { itemID = itemID, name = row.name, quality = row.quality, starts = at == 1 }
+            end
+        end
+    end
+    table.sort(found, function(a, b)
+        if a.starts ~= b.starts then
+            return a.starts
+        end
+        if a.name ~= b.name then
+            return a.name < b.name
+        end
+        return a.itemID < b.itemID
+    end)
+    limit = limit or 100
+    while #found > limit do
+        table.remove(found)
+    end
+    return found
 end
 
 --- Sorts market entries by how far the price moved, then by name and item id.

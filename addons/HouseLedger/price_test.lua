@@ -573,8 +573,8 @@ do
     for index, setting in ipairs(P.SETTINGS) do
         keys[index] = setting.key .. "=" .. tostring(setting.default)
     end
-    Check("settings: tooltip prices on, details without Shift off",
-        table.concat(keys, ",") == "tooltipPrices=true,tooltipDetails=false")
+    Check("settings: tooltip prices on, details without Shift off, the bag button on",
+        table.concat(keys, ",") == "tooltipPrices=true,tooltipDetails=false,priceCheckButton=true")
     local db = P.EnsureDB(nil)
     Check("new saved data gets every default", db.settings.tooltipPrices == true and db.settings.tooltipDetails == false)
     db = P.EnsureDB({ version = 3, houses = {}, settings = { tooltipPrices = false, tooltipDetails = "yes" } })
@@ -611,6 +611,32 @@ do
     Check("advice: normal", P.SellAdvice({ trend = "flat" }, true) == "Prices are about normal today.")
     Check("advice: far under is the deal note", P.SellAdvice({ trend = "down", deal = true }, true)
         == P.DEAL_ICON .. " The lowest is far under its 7-day average. Waiting may sell for more.")
+end
+
+-- Price Check: find saved items by name
+do
+    local house = { items = {
+        [1] = { unit = 10, seen = 1, days = {}, name = "Linen Cloth", quality = 1 },
+        [2] = { unit = 20, seen = 1, days = {}, name = "Bolt of Linen Cloth", quality = 1 },
+        [3] = { unit = 30, seen = 1, days = {}, name = "Wool Cloth", quality = 1 },
+        [4] = { unit = 40, seen = 1, days = {} },
+        [5] = { unit = 50, seen = 1, days = {}, name = "Linen Bag", quality = 1 },
+    } }
+    local function Names(list)
+        local names = {}
+        for index, entry in ipairs(list) do
+            names[index] = entry.name
+        end
+        return table.concat(names, ",")
+    end
+    Check("find: names that start with the text first, then the rest, A to Z",
+        Names(P.FindByName(house, "LINEN")) == "Linen Bag,Linen Cloth,Bolt of Linen Cloth")
+    Check("find: an entry carries the item id and quality", P.FindByName(house, "wool")[1].itemID == 3
+        and P.FindByName(house, "wool")[1].quality == 1)
+    Check("find: under 2 letters finds nothing", #P.FindByName(house, "l") == 0 and #P.FindByName(house, nil) == 0)
+    Check("find: items without a saved name can't be found by name", #P.FindByName(house, "item") == 0)
+    Check("find: a limit keeps the first ones", Names(P.FindByName(house, "cloth", 2)) == "Bolt of Linen Cloth,Linen Cloth")
+    Check("find: no house, nothing", #P.FindByName(nil, "linen") == 0)
 end
 
 if failed > 0 then

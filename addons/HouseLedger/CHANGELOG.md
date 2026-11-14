@@ -6,6 +6,7 @@ All notable changes to HouseLedger. The format follows [Keep a Changelog](https:
 
 ### Added
 
+- **Price Check**: look up your saved prices anywhere, no auction house needed. Type `/pc` (or `/pricecheck`), or click **Price Check** above your bags, then type part of an item's name. Click a result for its day lines and 14-day chart. `/pc linen` opens it already searched. The bag button can be turned off in Settings.
 - The Sell tab says what the prices mean in plain words, like "Prices are high today. A good time to sell.", and shows a **Typical (7-day avg)** line. It never sets a price for you.
 - A 14-day price chart: one bar per day's lowest price (the latest day in gold) with a faint band up to that day's highest. It shows beside a clicked row's details on Buy and Market when the window is wide enough, and under the lines on the Sell tab.
 - A **Settings** tab: turn the prices on item tooltips off, or always show the 1, 3, 7 and 14-day lines without holding Shift.
