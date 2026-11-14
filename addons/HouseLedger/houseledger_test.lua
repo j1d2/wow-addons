@@ -258,6 +258,7 @@ local function Setup(opts)
     _G.C_Item = {
         -- The item cache: world.itemInfo[itemID] = { name, quality, level }, or nil until loaded.
         GetItemInfo = function(itemID)
+            world.itemInfoCalls = (world.itemInfoCalls or 0) + 1
             local info = (world.itemInfo or {})[itemID]
             if info == nil then
                 return nil
@@ -2240,6 +2241,49 @@ do
     world.inCombat = false
     Fire("PLAYER_REGEN_ENABLED")
     Check("and applies when combat ends", not window.bagButtons[1].shown)
+end
+
+-- ---------------------------------------------------------------------
+-- Market asks the game's item data only for what saved data lacks
+-- ---------------------------------------------------------------------
+
+do
+    Setup()
+    world.now = 1762900000
+    local P = HouseLedgerPrice
+    local db = P.EmptyDB()
+    for day = 1, 5 do
+        local best = {}
+        for itemID = 1, 40 do
+            P.Consider(best, itemID, 1, day < 5 and 100 or 60, "Item " .. itemID, 2)
+        end
+        P.Commit(db, "Alliance|TestRealm", best, world.now - (5 - day) * 24 * 60 * 60)
+    end
+    _G.HouseLedgerDB = db
+    world.itemInfo = {}
+    for itemID = 1, 40 do
+        world.itemInfo[itemID] = { name = "Item " .. itemID, quality = 2, level = itemID }
+    end
+    Load()
+    OpenHouse()
+    Click("Market")
+    local panel = MainFrame().buyPanel
+    Pick(panel.marketDropdown, "Biggest drops")
+    world.itemInfoCalls = 0
+    Type(panel.filterNameBox, "item 1")
+    Pick(panel.qualityDropdown, "Uncommon & up")
+    Check("name and quality filters use the saved name and quality, not the game's item data",
+        (world.itemInfoCalls or 0) <= 15)
+    Type(panel.minLevelBox, "30")
+    local first = world.itemInfoCalls
+    Type(panel.minLevelBox, "35")
+    Check("item levels are asked once, then remembered", world.itemInfoCalls - first <= 15)
+    Type(panel.minLevelBox, "")
+    Pick(panel.qualityDropdown, "Any quality")
+    Type(panel.filterNameBox, "")
+    local timers = #world.timers
+    Fire("GET_ITEM_INFO_RECEIVED", 7, true)
+    Check("with no level filter or level sort, an item arriving doesn't rebuild the list", #world.timers == timers)
 end
 
 if failed > 0 then

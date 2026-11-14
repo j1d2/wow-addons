@@ -165,6 +165,9 @@ local marketSort = {}
 -- The lowest quality the last search asked the house for (0 is every quality). A looser quality
 -- filter can't show what that search left out, so the status line says to search again.
 local searchedQuality = 0
+-- Base item levels from the game's item data, kept for the session once known, so Market's
+-- rebuilds don't ask again.
+local itemLevels = {}
 -- True while one refilter waits for the next frame, so a burst of item-info events filters once.
 local refilterPending = false
 -- The Market tab: which view, its rows (shaped like browse results), and the
@@ -417,6 +420,30 @@ local function SavedStats(itemID)
     return saved and saved.stats
 end
 
+--- The game's item data for an item: name, quality and base item level. The game loads an item
+-- it doesn't have yet and sends GET_ITEM_INFO_RECEIVED.
+-- @param itemID the item's id
+-- @return name, quality, level; each nil until known
+local function GameItemInfo(itemID)
+    local getInfo = C_Item and C_Item.GetItemInfo or GetItemInfo
+    if type(getInfo) ~= "function" then
+        return nil
+    end
+    local name, _, quality, level = getInfo(itemID)
+    return name, quality, level
+end
+
+--- An item's base item level, from the session cache or the game's item data.
+-- @param itemID the item's id
+-- @return the level, or nil until known
+local function BaseLevel(itemID)
+    if itemLevels[itemID] == nil then
+        local _, _, level = GameItemInfo(itemID)
+        itemLevels[itemID] = level
+    end
+    return itemLevels[itemID]
+end
+
 --- A row's item level: a search result's own (from its item key); a Market row's base level from
 -- the game's item data, kept once known.
 -- @param result a search result or a Market row
@@ -424,14 +451,7 @@ end
 local function RowLevel(result)
     local level
     if result.market then
-        level = result.level
-        if level == nil then
-            local getInfo = C_Item and C_Item.GetItemInfo or GetItemInfo
-            if type(getInfo) == "function" then
-                level = select(4, getInfo(result.itemKey.itemID))
-                result.level = level
-            end
-        end
+        level = BaseLevel(result.itemKey.itemID)
     else
         level = result.itemKey and result.itemKey.itemLevel
     end
@@ -524,18 +544,17 @@ end
 -- name and quality first, then the game's item data. The game loads an item it doesn't have yet;
 -- GET_ITEM_INFO_RECEIVED filters again once it arrives.
 -- @param entry a PriceLedger.Market entry
--- @return { name, quality, level }, any of them nil when not known
-local function SavedItemLook(entry)
-    local name, quality, level
-    local getInfo = C_Item and C_Item.GetItemInfo or GetItemInfo
-    if type(getInfo) == "function" then
-        local _
-        name, _, quality, level = getInfo(entry.itemID)
+-- @param needs { name, quality, level }: true for each the filter uses
+-- @return { name, quality, level }, any of them nil when not known or not needed
+local function SavedItemLook(entry, needs)
+    local name = entry.name
+    local quality = HouseLedgerPrice.IsQuality(entry.quality) and entry.quality or nil
+    -- The game's item data only for what the saved row lacks and a filter needs.
+    if (needs.name and name == nil) or (needs.quality and quality == nil) then
+        local gameName, gameQuality = GameItemInfo(entry.itemID)
+        name, quality = name or gameName, quality or gameQuality
     end
-    if HouseLedgerPrice.IsQuality(entry.quality) then
-        quality = entry.quality
-    end
-    return { name = entry.name or name, quality = quality, level = level }
+    return { name = name, quality = quality, level = needs.level and BaseLevel(entry.itemID) or nil }
 end
 
 --- A row's value in one column, for sorting. Reads saved data and the game's item data only.
@@ -607,8 +626,10 @@ local function RefreshMarket()
     local limits = { text = marketText, minQuality = filter.minQuality, minLevel = filter.minLevel,
         maxLevel = filter.maxLevel }
     local check = limits.text ~= "" or HouseLedgerPrice.FilterActive(limits)
+    local needs = { name = limits.text ~= "", quality = limits.minQuality ~= nil,
+        level = limits.minLevel ~= nil or limits.maxLevel ~= nil }
     for _, entry in ipairs(view) do
-        if not check or HouseLedgerPrice.PassesFilter(SavedItemLook(entry), limits) then
+        if not check or HouseLedgerPrice.PassesFilter(SavedItemLook(entry, needs), limits) then
             marketList[#marketList + 1] = {
                 itemKey = SavedItemKey(entry.itemID), minPrice = entry.unit, totalQuantity = entry.qty,
                 savedName = entry.name, savedQuality = entry.quality, market = true,
@@ -2540,6 +2561,15 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
             return
         end
         local market = currentTab == MARKET_TAB and buyPanel.marketMode
+        if market and event == "GET_ITEM_INFO_RECEIVED" then
+            itemLevels[arg1] = nil -- ask again now that the game has it
+            -- Only a filter or an ilvl sort needs the whole list again; otherwise redraw the rows
+            -- in place, so the visible ilvl column fills in.
+            if marketText == "" and not HouseLedgerPrice.FilterActive(filter) and marketSort.key ~= "ilvl" then
+                RenderRows()
+                return
+            end
+        end
         if not market and (#results == 0 or event ~= "ITEM_KEY_ITEM_INFO_RECEIVED") then
             return
         end
