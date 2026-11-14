@@ -162,6 +162,7 @@ local function Load(setup)
     _G.GetTime = function() return world.now end
     _G.time = function() return 1762900000 + world.now end
     _G.UnitName = function() return "Tester" end
+    _G.GetRealmName = function() return "Testrealm" end
     _G.GetNumLootItems = function() return #world.loot end
     _G.GetLootSlotInfo = function(slot)
         local mat = world.loot[slot]
@@ -742,6 +743,10 @@ do
         or (text:find("Strange Dust", 1, true) ~= nil and text:find("3", 1, true) ~= nil))
     Check("the Items list hides on the Stats tab", _G.UnmakerNextButton.parent.shown == false)
 
+    local db = _G.UnmakerDB
+    Check("each disenchant is saved with the character's realm", db.history[1].realm == "Testrealm")
+    Check("and counted for that character too", db.characters["Tester-Testrealm"].total == 2)
+
     _G.UnmakerFrameTab3:GetScript("OnClick")(_G.UnmakerFrameTab3)
     Check("tab 3 is History", world.tab == 3)
     local historyRows = {}
@@ -773,6 +778,42 @@ do
         _G["BINDING_NAME_CLICK UnmakerNextButton:LeftButton"] ~= nil and _G.BINDING_HEADER_UNMAKER == "Unmaker")
     Fire("ADDON_LOADED", "SomeOtherAddon")
     Check("another addon loading changes nothing", _G.UnmakerFrame == nil)
+end
+do
+    -- Saved by an older version: history from another character, and no per-character totals.
+    local old = { stats = { total = 1, bestSession = 1 }, history = {
+        { itemID = 7, name = "Old Cloak", quality = 2, level = 9, character = "Alt", time = 1762800000,
+            mats = { { name = "Strange Dust", quantity = 4 } } },
+    } }
+    Start({ bags = StandardBags(), db = old })
+    _G.SlashCmdList.UNMAKER("")
+    Click(_G.UnmakerNextButton)
+    FinishCast(0, 2, { { name = "Lesser Magic Essence", quantity = 1, quality = 2 } })
+    _G.UnmakerFrameTab2:GetScript("OnClick")(_G.UnmakerFrameTab2)
+    local statsPanel
+    for _, f in ipairs(world.frames) do
+        if f.parent == _G.UnmakerFrame and f.isStats then
+            statsPanel = f
+        end
+    end
+    local function Step(button)
+        button:GetScript("OnClick")(button)
+        return statsPanel.viewText.text, PanelText(statsPanel)
+    end
+    Check("the Stats tab starts on all characters", statsPanel.viewText.text == "All characters"
+        and PanelText(statsPanel):find("Lifetime\n2", 1, true) ~= nil)
+    local label, text = Step(statsPanel.nextButton)
+    Check("the next arrow shows the first character A to Z, rebuilt from old history", label == "Alt"
+        and text:find("Lifetime\n1", 1, true) ~= nil and text:find("4 Strange Dust", 1, true) ~= nil
+        and text:find("This session\n-", 1, true) ~= nil)
+    label, text = Step(statsPanel.nextButton)
+    Check("then this character, with its own session", label == "Tester"
+        and text:find("Lifetime\n1", 1, true) ~= nil and text:find("This session\n1", 1, true) ~= nil
+        and text:find("Lesser Magic Essence", 1, true) ~= nil and text:find("Strange Dust", 1, true) == nil)
+    label = Step(statsPanel.nextButton)
+    Check("and back around to all characters", label == "All characters")
+    label = Step(statsPanel.prevButton)
+    Check("the back arrow goes the other way", label == "Tester")
 end
 
 if failed > 0 then

@@ -73,7 +73,7 @@ An addon runs inside the game client's Lua sandbox, which Blizzard controls. The
 - **Casting:** only Blizzard's secure button casts, on the player's click, and only on the exact bag item the row shows. The policy check blocks addon code from casting or using bag items.
 - **Slash command:** `/unmaker` only opens or closes the window.
 - **No messages:** it sends no chat or addon messages.
-- **Saved data:** `UnmakerDB` holds the settings, the item IDs the player keeps, lifetime counts, and the last 500 disenchants with the character that did each. `UnmakerCharDB` holds only each character's window position. Both stay in the player's own `WTF` folder; nothing is sent anywhere. `UnmakerRules.EnsureDB`, `UnmakerRules.EnsureCharDB` and `UnmakerStats.EnsureStats` repair a damaged file.
+- **Saved data:** `UnmakerDB` holds the settings, the item IDs the player keeps, lifetime counts for the account and for each of the player's characters (by name and realm), and the last 500 disenchants with the character that did each. `UnmakerCharDB` holds only each character's window position. Both stay in the player's own `WTF` folder; nothing is sent anywhere. `UnmakerRules.EnsureDB`, `UnmakerRules.EnsureCharDB` and `UnmakerStats.EnsureStats` repair a damaged file.
 - **Recording:** a disenchant counts only when its cast starts within a second of Unmaker's own click, so a later Disenchant from the spellbook is never credited to an old row.
 
 Verdict: low risk. Recheck this section when an addon adds chat or addon messages, slash commands that run actions, or reads data from other players. The policy check makes the first of those visible: each such call needs a `-- reviewed:` note.

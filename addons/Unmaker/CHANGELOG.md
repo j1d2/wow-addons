@@ -4,6 +4,10 @@ All notable changes to Unmaker. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Added
+
+- Stats for each character. Use the arrows at the top of the Stats tab to switch between all characters together and each character, from any character. Stats from before this version are counted per character from the History list (your last 500 disenchants); older ones count only in "All characters".
+
 ### Changed
 
 - The window remembers where you dragged it, after a reload or logging out. Each character keeps its own spot. It used to open in the middle of the screen each time.
