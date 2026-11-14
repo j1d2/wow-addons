@@ -11,6 +11,7 @@ local R = {}
 _G.UnmakerRules = R
 
 R.DB_VERSION = 1
+R.CHAR_DB_VERSION = 1
 
 -- Item qualities that disenchant: Uncommon (2), Rare (3) and Epic (4).
 local MIN_QUALITY, MAX_QUALITY = 2, 4
@@ -35,6 +36,33 @@ R.SETTINGS = {
 local SETTING_DEFAULTS = {}
 for _, setting in ipairs(R.SETTINGS) do
     SETTING_DEFAULTS[setting.key] = setting.default
+end
+
+-- The anchor points the game accepts for SetPoint.
+local ANCHORS = {
+    TOPLEFT = true, TOP = true, TOPRIGHT = true, LEFT = true, CENTER = true, RIGHT = true,
+    BOTTOMLEFT = true, BOTTOM = true, BOTTOMRIGHT = true,
+}
+
+--- Whether a value is a usable screen offset: a number that is neither NaN nor infinite.
+-- @param value the value to test
+-- @return true when it is
+local function IsOffset(value)
+    return type(value) == "number" and value == value and value > -math.huge and value < math.huge
+end
+
+--- The window's saved position from the anchor the game reports after a drag, relative to
+-- UIParent (the screen).
+-- @param point the window's anchor point, like "TOPLEFT"
+-- @param relativePoint the screen's anchor point it is placed against
+-- @param x offset to the right, in UI units
+-- @param y offset upward, in UI units
+-- @return { point, relativePoint, x, y }, or nil when any part is missing or damaged
+function R.Position(point, relativePoint, x, y)
+    if ANCHORS[point] and ANCHORS[relativePoint] and IsOffset(x) and IsOffset(y) then
+        return { point = point, relativePoint = relativePoint, x = x, y = y }
+    end
+    return nil
 end
 
 --- Make saved data usable: fill in anything missing and replace damaged values.
@@ -62,6 +90,21 @@ function R.EnsureDB(db)
         end
     end
     return db
+end
+
+--- Make one character's saved data usable. It holds only the window's position, so each
+-- character keeps its own spot.
+-- @param charDB the UnmakerCharDB table from the game, or nil on first load
+-- @return the same table, repaired, or a new one
+function R.EnsureCharDB(charDB)
+    if type(charDB) ~= "table" then
+        charDB = {}
+    end
+    charDB.version = R.CHAR_DB_VERSION
+    local position = charDB.position
+    charDB.position = type(position) == "table"
+        and R.Position(position.point, position.relativePoint, position.x, position.y) or nil
+    return charDB
 end
 
 --- A fresh session: choices that last until logout or /reload.

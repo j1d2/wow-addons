@@ -36,6 +36,7 @@ local CLICK_WINDOW = 1
 local MAT_LINES = 5 -- lifetime materials shown on the Stats tab
 
 local db
+local charDB -- this character's own saved data: the window's position
 local session = R.NewSession()
 session.unmade = 0
 local rows = {}
@@ -604,12 +605,31 @@ local function AddBagButton(bagFrame)
     button:SetScript("OnClick", Toggle)
 end
 
+--- After the window is dropped: save where it is for this character, so it opens there after
+-- a reload. Unmaker keeps the spot itself, so the frame is marked not user placed and
+-- the game's own layout file doesn't move it too.
+-- @param window the Unmaker frame
+local function SavePosition(window)
+    if type(window.SetUserPlaced) == "function" then
+        window:SetUserPlaced(false)
+    end
+    local point, relativeTo, relativePoint, x, y = window:GetPoint(1)
+    if relativeTo == nil or relativeTo == UIParent then
+        charDB.position = R.Position(point, relativePoint, x, y) or charDB.position
+    end
+end
+
 --- Build the window: the frame, the Items and Settings tabs, the list, the two cast buttons,
 -- and the bag window buttons.
 local function BuildFrame()
     frame = CreateFrame("Frame", "UnmakerFrame", UIParent, "ButtonFrameTemplate")
     frame:SetSize(WIDTH, HEIGHT)
-    frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    local position = charDB.position
+    if position then
+        frame:SetPoint(position.point, UIParent, position.relativePoint, position.x, position.y)
+    else
+        frame:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+    end
     frame:SetClampedToScreen(true)
     frame:SetFrameStrata("HIGH")
     if type(frame.SetTitle) == "function" then
@@ -629,6 +649,7 @@ local function BuildFrame()
     frame:SetScript("OnDragStop", function(self)
         if not Locked(self) then
             self:StopMovingOrSizing()
+            SavePosition(self)
         end
     end)
     frame:Hide()
@@ -738,6 +759,8 @@ function handlers.ADDON_LOADED(name)
     end
     db = S.EnsureStats(R.EnsureDB(UnmakerDB))
     UnmakerDB = db
+    charDB = R.EnsureCharDB(UnmakerCharDB)
+    UnmakerCharDB = charDB
     if not InCombat() then
         BuildFrame()
     end

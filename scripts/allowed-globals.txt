@@ -6,4 +6,5 @@ HouseLedgerDB
 
 # Unmaker: SavedVariables table from Unmaker.toc
 UnmakerDB
+UnmakerCharDB
 SLASH_UNMAKER1

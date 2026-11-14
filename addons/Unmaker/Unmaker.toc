@@ -5,6 +5,7 @@
 ## Version: 0.1.1
 ## X-License: Apache-2.0
 ## SavedVariables: UnmakerDB
+## SavedVariablesPerCharacter: UnmakerCharDB
 ## AllowLoadGameType: forever
 ## ExcludeLoadGameType: standard, classic
 
