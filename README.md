@@ -55,6 +55,15 @@ Auction house prices, remembered. One Scan a day builds a 14-day price history o
 - **Never** buys, posts or scans by itself.
 
 <p align="center">
+  <img src="docs/screenshots/houseledger-tooltip.png" alt="An item tooltip with HouseLedger's line: the last scanned price and its trend" width="285">
+  <img src="docs/screenshots/houseledger-tooltip-shift.png" alt="The same kind of tooltip with Shift held: average and range over 1, 3 and 7 days, and the spread of earlier scans" width="330">
+</p>
+
+**Tooltips:**
+1. **Hover any item** with a saved price: HouseLedger's line shows the last scanned price and its trend (green is cheaper than usual, red pricier, ⭐ a deal).
+2. **Hold Shift** for the average and range over 1, 3, 7 and 14 days. The Settings tab can show these without Shift.
+
+<p align="center">
   <img src="docs/screenshots/houseledger-buy.png" alt="HouseLedger Buy tab: name search, quality and item level filters, sortable columns with an ilvl column, and a clicked row's saved prices with its 14-day chart" width="420">
   <img src="docs/screenshots/houseledger-market.png" alt="HouseLedger Market tab: the Biggest drops view from the last scan, with name, quality and item level filters and a clicked row's 14-day chart" width="420">
 </p>
