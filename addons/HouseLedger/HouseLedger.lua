@@ -313,7 +313,8 @@ end
 -- otherwise greyed out with the wait, like "Scan (12m)". Only the button's own text and state
 -- change; nothing is sent.
 local function RefreshScanButton()
-    if not scanButton or scanState ~= "idle" then
+    -- In combat the game may count our window's widgets as protected; then it waits for the end.
+    if not scanButton or scanState ~= "idle" or Locked(scanButton) then
         return
     end
     local wait = HouseLedgerPrice.SecondsUntil(HouseLedgerDB.replicateAt, time())
@@ -332,7 +333,7 @@ end
 -- @param read listings read so far, or nil to hide the bar
 -- @param total how many listings the house sent
 local function ShowScanProgress(read, total)
-    if not scanBar then
+    if not scanBar or Locked(scanBar) then
         return
     end
     if read == nil or total == nil or total <= 0 then
@@ -1290,11 +1291,12 @@ local function ReadListings(token, index, total, best)
         return
     end
 
-    SetScanStatus(string.format("Reading listings %d of %d...", nextIndex, total))
-    ShowScanProgress(nextIndex, total)
+    -- The next batch is scheduled first, so nothing that shows the progress can stop the read.
     C_Timer.After(0, function()
         ReadListings(token, nextIndex, total, best)
     end)
+    SetScanStatus(string.format("Reading listings %d of %d...", nextIndex, total))
+    ShowScanProgress(nextIndex, total)
 end
 
 --- The full-scan answer came in: starts reading the listings for this house.
@@ -1793,11 +1795,43 @@ local function TogglePriceCheck(name)
     end
 end
 
---- Shows or hides the Price Check buttons above the bags, as Settings says.
+-- Bag button work that waits for combat to end: making them, or showing or hiding them.
+local bagButtonsPending = false
+
+--- Shows or hides the Price Check buttons above the bags, as Settings says. The bag windows can
+-- count as protected, so in combat this waits for OnCombatEnded.
 local function UpdateBagButtons()
+    if InCombat() then
+        bagButtonsPending = true
+        return
+    end
     for _, button in ipairs(priceCheck.bagButtons) do
         if HouseLedgerDB.settings.priceCheckButton then button:Show() else button:Hide() end
     end
+end
+
+--- Makes the Price Check buttons above the game's bag windows, once, out of combat; left of
+-- Unmaker's so both fit. They are kept here, never written onto Blizzard's bag frames.
+local function MakeBagButtons()
+    if InCombat() then
+        bagButtonsPending = true
+        return
+    end
+    if #priceCheck.bagButtons == 0 then
+        for _, bagFrame in ipairs({ _G.ContainerFrameCombinedBags, _G.ContainerFrame1 }) do
+            if type(bagFrame) == "table" then
+                local button = CreateFrame("Button", nil, bagFrame, "UIPanelButtonTemplate")
+                button:SetSize(90, 20)
+                button:SetText("Price Check")
+                button:SetPoint("BOTTOMRIGHT", bagFrame, "TOPRIGHT", -84, 2)
+                button:SetScript("OnClick", function()
+                    TogglePriceCheck()
+                end)
+                priceCheck.bagButtons[#priceCheck.bagButtons + 1] = button
+            end
+        end
+    end
+    UpdateBagButtons()
 end
 
 --- Makes the Price Check window: a search box over saved item names, a list with the last price
@@ -1897,22 +1931,9 @@ local function BuildPriceCheck()
     priceCheck.status:SetPoint("BOTTOMLEFT", priceCheck, "BOTTOMLEFT", 14, 8)
     priceCheck.status:SetPoint("RIGHT", priceCheck, "RIGHT", -14, 0)
 
-    -- A button above the game's bag windows, as Unmaker has; left of Unmaker's so both fit.
-    -- The buttons are kept here, never written onto Blizzard's bag frames.
     priceCheck.bagButtons = {}
-    for _, bagFrame in ipairs({ _G.ContainerFrameCombinedBags, _G.ContainerFrame1 }) do
-        if type(bagFrame) == "table" then
-            local button = CreateFrame("Button", nil, bagFrame, "UIPanelButtonTemplate")
-            button:SetSize(90, 20)
-            button:SetText("Price Check")
-            button:SetPoint("BOTTOMRIGHT", bagFrame, "TOPRIGHT", -84, 2)
-            button:SetScript("OnClick", function()
-                TogglePriceCheck()
-            end)
-            priceCheck.bagButtons[#priceCheck.bagButtons + 1] = button
-        end
-    end
-    UpdateBagButtons()
+    priceCheck.updateBagButtons = UpdateBagButtons
+    MakeBagButtons()
 end
 
 --- Makes the Settings tab: one checkbox per PriceLedger.SETTINGS entry, saved in
@@ -2387,6 +2408,15 @@ end
 
 --- Combat ended: catch up on the window changes the game blocked.
 local function OnCombatEnded()
+    if bagButtonsPending and priceCheck then
+        bagButtonsPending = false
+        MakeBagButtons()
+    end
+    if frame and scanState == "idle" then
+        -- Catch up on what combat held back, if the game counted these as protected.
+        RefreshScanButton()
+        ShowScanProgress(nil)
+    end
     if buildAfterCombat then
         buildAfterCombat = false
         BuildFrame()

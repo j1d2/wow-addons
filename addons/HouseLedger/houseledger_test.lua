@@ -2188,6 +2188,60 @@ do
     Check("Buy's heading says Price again", panel.headerTexts.price.text == "Price")
 end
 
+-- ---------------------------------------------------------------------
+-- Combat: if the game counts our scan widgets or the bag windows as protected
+-- ---------------------------------------------------------------------
+
+do
+    Setup({ listings = ManyListings(1200) })
+    Load()
+    OpenHouse()
+    Click("Scan")
+    Fire("REPLICATE_ITEM_LIST_UPDATE")
+    -- Combat starts mid-read, and the game says the Scan button and the bar are protected.
+    world.inCombat = true
+    ButtonNamed("Scan").protected = true
+    MainFrame().scanBar.protected = true
+    RunTimers()
+    local house = HouseLedgerDB.houses["Alliance|TestRealm"]
+    local priced = 0
+    for _ in pairs(house and house.items or {}) do
+        priced = priced + 1
+    end
+    Check("a scan that reads into combat still finishes and saves", priced == 300)
+    Advance(3)
+    Check("and no protected widget was touched in combat", (world.blocked or 0) == 0)
+    world.inCombat = false
+    Fire("PLAYER_REGEN_ENABLED")
+    Advance(1)
+    Check("after combat the Scan button counts down again", ButtonNamed("Scan").text == "Scan (15m)"
+        and not ButtonNamed("Scan").enabled and not MainFrame().scanBar.shown)
+end
+
+do
+    -- A /reload in combat: Price Check works, but its bag buttons wait for the fight to end.
+    Setup()
+    _G.ContainerFrameCombinedBags.protected = true
+    _G.ContainerFrame1.protected = true
+    world.inCombat = true
+    Load()
+    local window = _G.HouseLedgerPriceCheck
+    Check("in combat Price Check is built, but no bag button yet", window ~= nil and #window.bagButtons == 0)
+    _G.SlashCmdList.HOUSELEDGERPC("")
+    Check("/pc works in combat", window.shown)
+    world.inCombat = false
+    Fire("PLAYER_REGEN_ENABLED")
+    Check("after combat the bag buttons are made", #window.bagButtons == 2 and window.bagButtons[1].shown)
+
+    world.inCombat = true
+    HouseLedgerDB.settings.priceCheckButton = false
+    window.updateBagButtons()
+    Check("in combat a setting change waits", window.bagButtons[1].shown and (world.blocked or 0) == 0)
+    world.inCombat = false
+    Fire("PLAYER_REGEN_ENABLED")
+    Check("and applies when combat ends", not window.bagButtons[1].shown)
+end
+
 if failed > 0 then
     io.write(string.format("%d failed\n", failed))
     os.exit(1)
