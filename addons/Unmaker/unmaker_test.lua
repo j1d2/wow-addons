@@ -105,6 +105,9 @@ for _, method in ipairs({ "SetSize", "SetAllPoints", "SetColorTexture", "SetJust
     "SetAutoFocus", "SetNumeric", "SetMaxLetters", "ClearFocus" }) do
     FrameMethods[method] = function() end
 end
+-- The Stats chart's bars are checked by their height and color.
+function FrameMethods:SetHeight(height) self.height = height end
+function FrameMethods:SetColorTexture(r, g, b, a) self.colorTexture = { r, g, b, a } end
 
 --- A mouse click as the game runs it: PreClick, then for a secure button the action its
 -- attributes describe, then OnClick and PostClick.
@@ -1001,6 +1004,34 @@ do
     world.bags[2] = { [1] = Gear(31, "New Ring", 3, { equipLoc = "INVTYPE_FINGER" }) }
     Fire("BAG_UPDATE_DELAYED")
     Check("Open when I loot opens for new gear even if the filters hide it", _G.UnmakerFrame.shown)
+end
+
+-- Stats tab chart ---------------------------------------------------------------------------
+
+do
+    Start({ bags = StandardBags() })
+    _G.SlashCmdList.UNMAKER("")
+    _G.UnmakerFrameTab2:GetScript("OnClick")(_G.UnmakerFrameTab2)
+    local statsPanel
+    for _, f in ipairs(world.frames) do
+        if f.parent == _G.UnmakerFrame and f.isStats then
+            statsPanel = f
+        end
+    end
+    Check("with nothing unmade in 14 days, no chart", not statsPanel.chart.shown)
+    _G.UnmakerFrameTab1:GetScript("OnClick")(_G.UnmakerFrameTab1)
+    Click(_G.UnmakerNextButton)
+    FinishCast(0, 2)
+    Click(_G.UnmakerNextButton)
+    FinishCast(0, 1)
+    _G.UnmakerFrameTab2:GetScript("OnClick")(_G.UnmakerFrameTab2)
+    local chart = statsPanel.chart
+    Check("after disenchanting, the Stats tab shows a 14-day chart", chart.shown and #chart.bars == 14)
+    Check("today's bar is full height and gold; earlier days have none", chart.bars[14].shown
+        and chart.bars[14].height == chart.barArea and chart.bars[14].colorTexture[1] == 1 and not chart.bars[1].shown)
+    Check("the chart says its busiest day's count", chart.topText.text == "2")
+    Pick(statsPanel.viewDropdown, "Tester")
+    Check("it follows the character dropdown", chart.shown and chart.bars[14].shown)
 end
 
 if failed > 0 then

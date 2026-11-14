@@ -246,6 +246,29 @@ do
         S.SortHistory({ { name = "X", level = 1, time = 5 }, { name = "Y", level = 1, time = 5 } }, "level")[1].name == "Y")
 end
 
+-- Stats chart: disenchants per day over 14 days
+do
+    local db = S.EnsureStats({}, "Testrealm")
+    local tester = { unmade = 0, key = "Tester-Testrealm" }
+    local alt = { unmade = 0, key = "Alt-Testrealm" }
+    local item = Unmade(1, "Linen Boots", 2, 13)
+    item.realm = "Testrealm"
+    S.Record(db, tester, item, DAY1)
+    S.Record(db, tester, item, DAY2)
+    S.Record(db, tester, item, DAY2)
+    local altItem = Unmade(2, "Ring", 3, 20)
+    altItem.character, altItem.realm = "Alt", "Testrealm"
+    S.Record(db, alt, altItem, DAY2)
+    local chart = S.ChartDays(db, DAY2)
+    Check("the chart has 14 days, oldest first, ending today", #chart.counts == 14
+        and chart.counts[14] == 3 and chart.counts[13] == 1 and chart.counts[1] == 0)
+    Check("its top is the busiest day", chart.top == 3)
+    local mine = S.ChartDays(db, DAY2, "Alt-Testrealm")
+    Check("one character's chart counts only theirs", mine.counts[14] == 1 and mine.counts[13] == 0 and mine.top == 1)
+    Check("nothing in 14 days, no chart", S.ChartDays(db, DAY2 + 20 * 86400) == nil
+        and S.ChartDays(S.EnsureStats({}, "Testrealm"), DAY2) == nil)
+end
+
 if failed > 0 then
     io.write(string.format("%d failed\n", failed))
     os.exit(1)

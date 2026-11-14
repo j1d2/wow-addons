@@ -296,6 +296,26 @@ function S.LootText(entry)
     return table.concat(parts, ", ")
 end
 
+--- The Stats tab's chart: disenchants per calendar day over the last 14 days, ending today.
+-- @param db the saved data
+-- @param now the current time
+-- @param key a character's key, or nil for all characters
+-- @return nil when there were none in those 14 days, or { counts, top }: counts[1] is 13 days
+--   ago and counts[14] today; top is the highest count
+function S.ChartDays(db, now, key)
+    local days = Totals(db, key).days
+    local chart = { counts = {}, top = 0 }
+    for back = 13, 0, -1 do
+        local count = days[DayKey(now - back * 86400)] or 0
+        chart.counts[#chart.counts + 1] = count
+        chart.top = math.max(chart.top, count)
+    end
+    if chart.top == 0 then
+        return nil
+    end
+    return chart
+end
+
 --- Lifetime materials, most first.
 -- @param db the saved data
 -- @param key a character's key, or nil for all characters

@@ -41,6 +41,11 @@ local PORTRAIT_ICON = "Interface\\Icons\\INV_Enchant_Disenchant"
 -- Disenchant from the spellbook is never credited to an old row.
 local CLICK_WINDOW = 1
 local MAT_LINES = 5 -- lifetime materials shown on the Stats tab
+-- The Stats chart: right of the short fact lines, under the character dropdown, ending above
+-- "Most unmade". Earlier days blue, today gold.
+local CHART_WIDTH, CHART_HEIGHT, CHART_TOP = 200, 78, 28
+local CHART_BAR_COLOR = { 0.35, 0.6, 1, 0.9 }
+local CHART_TODAY_COLOR = { 1, 0.82, 0, 1 }
 
 local db
 local playerRealm -- this character's realm, from GetRealmName() once loaded
@@ -266,6 +271,26 @@ local function RenderStats()
             line:SetText(index == 1 and "None yet." or "")
         end
     end
+    -- The 14-day chart for whoever the dropdown shows; hidden with nothing unmade in 14 days.
+    local chart = statsPanel.chart
+    local data = S.ChartDays(db, time(), statsView)
+    if data == nil then
+        chart:Hide()
+        return
+    end
+    for index, count in ipairs(data.counts) do
+        local bar = chart.bars[index]
+        if count > 0 then
+            bar:SetHeight(math.max(1, math.floor(count / data.top * chart.barArea + 0.5)))
+            local color = index == #data.counts and CHART_TODAY_COLOR or CHART_BAR_COLOR
+            bar:SetColorTexture(color[1], color[2], color[3], color[4])
+            bar:Show()
+        else
+            bar:Hide()
+        end
+    end
+    chart.topText:SetText(tostring(data.top))
+    chart:Show()
 end
 
 --- Fill the History tab from the saved history, sorted by the chosen heading.
@@ -533,6 +558,31 @@ local function BuildStats()
         end
     end)
     statsPanel.viewDropdown = dropdown
+
+    -- The 14-day chart: a dark box with one bar per day, the busiest day's count in its corner.
+    local chart = CreateFrame("Frame", nil, statsPanel)
+    chart:SetSize(CHART_WIDTH, CHART_HEIGHT)
+    chart:SetPoint("TOPRIGHT", statsPanel, "TOPRIGHT", 0, -CHART_TOP)
+    local background = chart:CreateTexture(nil, "BACKGROUND")
+    background:SetAllPoints(chart)
+    background:SetColorTexture(0, 0, 0, 0.3)
+    chart.topText = chart:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    chart.topText:SetPoint("TOPLEFT", chart, "TOPLEFT", 3, -2)
+    local caption = chart:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    caption:SetPoint("TOPRIGHT", chart, "TOPRIGHT", -3, -2)
+    caption:SetText("Unmade per day, 14 days")
+    chart.barArea = CHART_HEIGHT - 18
+    chart.bars = {}
+    local slot = CHART_WIDTH / 14
+    for index = 1, 14 do
+        local bar = chart:CreateTexture(nil, "ARTWORK")
+        bar:SetPoint("BOTTOMLEFT", chart, "BOTTOMLEFT", math.floor((index - 1) * slot) + 1, 2)
+        bar:SetWidth(math.max(2, math.floor(slot) - 2))
+        bar:Hide()
+        chart.bars[index] = bar
+    end
+    chart:Hide()
+    statsPanel.chart = chart
 
     local facts = S.Facts(db, session, time())
     for index = 1, #facts do
