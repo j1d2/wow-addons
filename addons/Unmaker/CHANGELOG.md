@@ -4,6 +4,8 @@ All notable changes to Unmaker. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-13
+
 ### Fixed
 
 - "Open when I loot" and "Open with my bags" no longer open the window on a character without Enchanting. Settings are shared by every character, so they used to open it on alts too. `/unmaker` and the bag button still open it there.
