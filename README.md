@@ -181,7 +181,7 @@ Disenchanting without the hunt through your bags. One window lists everything yo
 4. **Materials:** everything your disenchants have given you.
 
 **History tab** (right):
-1. Click a heading to sort.
+1. Click a heading to sort, and again to reverse. The dropdown above shows one character's disenchants.
 2. **Got:** the materials each disenchant gave.
 
 <p align="center">
@@ -211,7 +211,7 @@ Disenchanting without the hunt through your bags. One window lists everything yo
 - **Settings tab:** keep epics, keep soulbound gear, hide equipment-set items, open when you loot gear to disenchant, open with your bags, and show or hide the Unmaker button above your bags.
 - With a fast-loot addon the button may stay locked a little longer. It unlocks by itself after 10 seconds.
 - **Stats tab:** items unmade this session, today, lifetime and in your best session; counts by quality; your most-unmade item, best item and busiest day; and lifetime materials. Pick all your characters together or one of them from the dropdown at the top. A 14-day chart shows how many you unmade each day.
-- **History tab:** the last 500 disenchants, newest first. Click **Item**, **ilvl** or **When** to sort. Hover a row to see the item and which character unmade it.
+- **History tab:** the last 500 disenchants, newest first, and who unmade each. Pick a character from the dropdown to see only theirs. Click **Item**, **ilvl**, **Who** or **When** to sort, and again to reverse.
 - Every character can see every character's stats and the shared history. They only count disenchants done with Unmaker's buttons.
 
 ### What it does not do
