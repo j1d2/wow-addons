@@ -123,6 +123,95 @@ do
     Check("with nothing recorded, facts show dashes, not errors", #empty > 0)
 end
 
+-- Per character
+do
+    Check("a character's key is its name and realm", S.CharacterKey("Skunk", "Testrealm") == "Skunk-Testrealm")
+    Check("no key without a name and a realm", S.CharacterKey(nil, "Testrealm") == nil
+        and S.CharacterKey("Skunk", nil) == nil)
+    Check("a character on this realm is shown by name",
+        S.CharacterLabel("Skunk-Testrealm", "Testrealm") == "Skunk")
+    Check("one on another realm with its realm",
+        S.CharacterLabel("Skunk-Otherrealm", "Testrealm") == "Skunk-Otherrealm")
+
+    local db = S.EnsureStats({}, "Testrealm")
+    Check("new saved data has no characters yet", type(db.characters) == "table" and next(db.characters) == nil)
+    local tester = { unmade = 0, key = "Tester-Testrealm" }
+    local alt = { unmade = 0, key = "Alt-Testrealm" }
+    local item = Unmade(1, "Linen Boots", 2, 13)
+    item.realm = "Testrealm"
+    local first = S.Record(db, tester, item, DAY1)
+    S.AddLoot(db, first, { Mat("Strange Dust", 2) })
+    S.Record(db, tester, item, DAY2)
+    local altItem = Unmade(2, "Ring of Fun", 3, 20)
+    altItem.character, altItem.realm = "Alt", "Testrealm"
+    local altEntry = S.Record(db, alt, altItem, DAY2)
+    S.AddLoot(db, altEntry, { Mat("Small Glimmering Shard", 1, 3) })
+    Check("the history entry keeps the realm", first.realm == "Testrealm")
+    Check("each character gets its own totals", db.characters["Tester-Testrealm"].total == 2
+        and db.characters["Alt-Testrealm"].total == 1 and db.stats.total == 3)
+    Check("and its own materials", S.Materials(db, "Tester-Testrealm")[1].name == "Strange Dust"
+        and #S.Materials(db, "Tester-Testrealm") == 1 and #S.Materials(db) == 2)
+    Check("and its own days", S.CountOnDay(db, DAY2, "Tester-Testrealm") == 1 and S.CountOnDay(db, DAY2) == 2)
+    Check("and its own best item", db.characters["Alt-Testrealm"].best.name == "Ring of Fun"
+        and db.characters["Tester-Testrealm"].best.name == "Linen Boots")
+    local keys = S.Characters(db)
+    Check("characters are listed A to Z", #keys == 2 and keys[1] == "Alt-Testrealm" and keys[2] == "Tester-Testrealm")
+
+    local byLabel = {}
+    for _, fact in ipairs(S.Facts(db, tester, DAY2, "Alt-Testrealm")) do
+        byLabel[fact.label] = fact.value
+    end
+    Check("another character's facts show its own counts", byLabel["Lifetime"] == "1" and byLabel["Rare"] == "1")
+    Check("and no session count, since this session is someone else's", byLabel["This session"] == "-")
+    byLabel = {}
+    for _, fact in ipairs(S.Facts(db, tester, DAY2, "Tester-Testrealm")) do
+        byLabel[fact.label] = fact.value
+    end
+    Check("this character's facts show this session", byLabel["Lifetime"] == "2" and byLabel["This session"] == "2")
+    byLabel = {}
+    for _, fact in ipairs(S.Facts(db, tester, DAY2)) do
+        byLabel[fact.label] = fact.value
+    end
+    Check("all characters together show the account totals", byLabel["Lifetime"] == "3"
+        and byLabel["This session"] == "2")
+    Check("an unknown character shows empty facts, not an error",
+        #S.Facts(db, tester, DAY2, "Nobody-Testrealm") > 0)
+end
+
+-- Rebuilding per-character totals from history, for data saved before characters were counted
+do
+    local db = {
+        stats = { total = 4, bestSession = 4 },
+        history = {
+            { itemID = 1, name = "Linen Boots", quality = 2, level = 13, character = "Tester", time = DAY1,
+                mats = { { name = "Strange Dust", quantity = 2 } } },
+            { itemID = 1, name = "Linen Boots", quality = 2, level = 13, character = "Tester", time = DAY2,
+                mats = { { name = "Strange Dust", quantity = 1 } } },
+            { itemID = 2, name = "Ring of Fun", quality = 3, level = 20, character = "Skunk", time = DAY2, mats = {} },
+            { itemID = 3, name = "Lost Gloves", quality = 2, level = 10, time = DAY2, mats = {} },
+        },
+    }
+    S.EnsureStats(db, "Testrealm")
+    local tester = db.characters["Tester-Testrealm"]
+    Check("old history is counted per character, on this realm", tester ~= nil and tester.total == 2
+        and db.characters["Skunk-Testrealm"].total == 1)
+    Check("with its materials, days, first time and best item", tester.mats["Strange Dust"].count == 3
+        and tester.days[S.DayKey(DAY1)] == 1 and tester.first == DAY1 and tester.best.name == "Linen Boots")
+    Check("an entry with no character is left out", db.characters["?-Testrealm"] == nil and #S.Characters(db) == 2)
+    Check("the account totals are not changed", db.stats.total == 4)
+    S.EnsureStats(db, "Testrealm")
+    Check("the rebuild runs only once", db.characters["Tester-Testrealm"].total == 2)
+    local byLabel = {}
+    for _, fact in ipairs(S.Facts(db, { unmade = 0, key = "Other-Testrealm" }, DAY2, "Tester-Testrealm")) do
+        byLabel[fact.label] = fact.value
+    end
+    Check("a rebuilt character's best session is unknown, so it shows a dash", byLabel["Best session"] == "-")
+
+    db = S.EnsureStats({ characters = { ["A-B"] = "junk", [5] = {}, ["C-D"] = { total = "x" } } }, "B")
+    Check("damaged character totals are repaired or dropped", db.characters["A-B"] == nil
+        and db.characters[5] == nil and db.characters["C-D"].total == 0)
+end
+
 -- Materials list
 do
     local db = S.EnsureStats({})

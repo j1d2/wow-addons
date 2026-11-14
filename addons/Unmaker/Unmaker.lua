@@ -36,6 +36,8 @@ local CLICK_WINDOW = 1
 local MAT_LINES = 5 -- lifetime materials shown on the Stats tab
 
 local db
+local playerRealm -- this character's realm, from GetRealmName() once loaded
+local statsView -- the character the Stats tab shows (its key), or nil for all characters
 local charDB -- this character's own saved data: the window's position
 local session = R.NewSession()
 session.unmade = 0
@@ -212,14 +214,15 @@ local function RenderStats()
     if not built then
         return
     end
-    for index, fact in ipairs(S.Facts(db, session, time())) do
+    statsPanel.viewText:SetText(statsView and S.CharacterLabel(statsView, playerRealm) or "All characters")
+    for index, fact in ipairs(S.Facts(db, session, time(), statsView)) do
         local line = factLines[index]
         if line then
             line.label:SetText(fact.label)
             line.value:SetText(fact.value)
         end
     end
-    local mats = S.Materials(db)
+    local mats = S.Materials(db, statsView)
     for index, line in ipairs(matLines) do
         local mat = mats[index]
         if mat then
@@ -451,12 +454,48 @@ local function BuildCastButton(name, label, pick)
     return button
 end
 
---- Build the Stats tab: one label and value per fact, then the lifetime materials.
+--- Show the previous or next choice on the Stats tab: all characters, then each character A to Z.
+-- @param step 1 for the next choice, -1 for the previous one; it wraps around
+local function StepStatsView(step)
+    local choices = { false } -- false stands for all characters
+    for _, key in ipairs(S.Characters(db)) do
+        choices[#choices + 1] = key
+    end
+    local current = 1
+    for index, choice in ipairs(choices) do
+        if choice == (statsView or false) then
+            current = index
+        end
+    end
+    statsView = choices[(current - 1 + step) % #choices + 1] or nil
+    RenderStats()
+end
+
+--- Build the Stats tab: a switcher for whose stats to show, one label and value per fact, then
+-- the lifetime materials.
 local function BuildStats()
     statsPanel = CreateFrame("Frame", nil, frame)
     statsPanel.isStats = true
     statsPanel:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -70)
     statsPanel:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -16, BUTTON_AREA)
+
+    -- The switcher sits top right, beside the short numbers of the first fact lines.
+    statsPanel.nextButton = CreateFrame("Button", nil, statsPanel, "UIPanelButtonTemplate")
+    statsPanel.nextButton:SetSize(24, 22)
+    statsPanel.nextButton:SetPoint("TOPRIGHT", statsPanel, "TOPRIGHT", 0, 2)
+    statsPanel.nextButton:SetText(">")
+    statsPanel.nextButton:SetScript("OnClick", function() StepStatsView(1) end)
+    statsPanel.viewText = statsPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    statsPanel.viewText:SetSize(130, 22)
+    statsPanel.viewText:SetPoint("RIGHT", statsPanel.nextButton, "LEFT", -4, 0)
+    statsPanel.viewText:SetJustifyH("CENTER")
+    statsPanel.viewText:SetWordWrap(false)
+    statsPanel.prevButton = CreateFrame("Button", nil, statsPanel, "UIPanelButtonTemplate")
+    statsPanel.prevButton:SetSize(24, 22)
+    statsPanel.prevButton:SetPoint("RIGHT", statsPanel.viewText, "LEFT", -4, 0)
+    statsPanel.prevButton:SetText("<")
+    statsPanel.prevButton:SetScript("OnClick", function() StepStatsView(-1) end)
+
     local facts = S.Facts(db, session, time())
     for index = 1, #facts do
         local line = {}
@@ -757,7 +796,9 @@ function handlers.ADDON_LOADED(name)
     if name ~= "Unmaker" then
         return
     end
-    db = S.EnsureStats(R.EnsureDB(UnmakerDB))
+    playerRealm = GetRealmName()
+    session.key = S.CharacterKey(UnitName("player"), playerRealm)
+    db = S.EnsureStats(R.EnsureDB(UnmakerDB), playerRealm)
     UnmakerDB = db
     charDB = R.EnsureCharDB(UnmakerCharDB)
     UnmakerCharDB = charDB
@@ -824,6 +865,7 @@ function handlers.UNIT_SPELLCAST_SUCCEEDED(unit, _, spellID)
             currentEntry = S.Record(db, session, {
                 itemID = pending.itemID, name = pending.name, link = pending.link,
                 quality = pending.quality, level = pending.level, character = UnitName("player"),
+                realm = playerRealm,
             }, time())
             if earlyLoot then
                 S.AddLoot(db, currentEntry, earlyLoot)
