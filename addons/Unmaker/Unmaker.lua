@@ -71,6 +71,8 @@ local historyList = {}
 local selectedButton, nextButton
 local rowFrames = {}
 local settingBoxes = {}
+-- The Unmaker buttons above the game's bag windows, kept here, not on Blizzard's frames.
+local bagButtons = {}
 
 --- Whether the game is in combat lockdown.
 -- @return true in combat, false otherwise or without InCombatLockdown
@@ -590,6 +592,14 @@ local function BuildHistory()
     historyPanel:Hide()
 end
 
+--- Shows or hides the Unmaker buttons above the bags, as the "bagButton" setting says.
+-- /unmaker opens the window either way.
+local function UpdateBagButtons()
+    for _, button in ipairs(bagButtons) do
+        if db.settings.bagButton then button:Show() else button:Hide() end
+    end
+end
+
 --- Build the Settings tab: one checkbox per setting.
 local function BuildSettings()
     settingsPanel = CreateFrame("Frame", nil, frame)
@@ -606,6 +616,9 @@ local function BuildSettings()
         box:SetChecked(db.settings[setting.key])
         box:SetScript("OnClick", function(self)
             R.SetSetting(db, self.key, self:GetChecked() == true)
+            if self.key == "bagButton" then
+                UpdateBagButtons()
+            end
             Refresh()
         end)
         settingBoxes[#settingBoxes + 1] = box
@@ -642,7 +655,9 @@ local function AddBagButton(bagFrame)
     button:SetText("Unmaker")
     button:SetPoint("BOTTOMRIGHT", bagFrame, "TOPRIGHT", 0, 2)
     button:SetScript("OnClick", Toggle)
+    bagButtons[#bagButtons + 1] = button
 end
+
 
 --- After the window is dropped: save where it is for this character, so it opens there after
 -- a reload. Unmaker keeps the spot itself, so the frame is marked not user placed and
@@ -741,6 +756,7 @@ local function BuildFrame()
 
     AddBagButton(_G.ContainerFrameCombinedBags)
     AddBagButton(_G.ContainerFrame1)
+    UpdateBagButtons()
     built = true
 end
 
