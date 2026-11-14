@@ -6,7 +6,7 @@ All notable changes to Unmaker. The format follows [Keep a Changelog](https://ke
 
 ### Changed
 
-- The window remembers where you dragged it, after a reload and on every character. It used to open in the middle of the screen each time.
+- The window remembers where you dragged it, after a reload or logging out. Each character keeps its own spot. It used to open in the middle of the screen each time.
 
 ## [0.1.1] - 2026-11-13
 

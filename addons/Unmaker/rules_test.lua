@@ -51,12 +51,16 @@ do
         and db.kept[200] == nil)
 end
 
--- Saved window position
+-- Saved window position, kept per character
 do
-    Check("no saved position means none", R.EnsureDB(nil).position == nil)
-    local db = R.EnsureDB({ position = { point = "TOPLEFT", relativePoint = "TOPLEFT", x = 120.5, y = -80 } })
-    Check("a good saved position is kept", db.position ~= nil and db.position.point == "TOPLEFT"
-        and db.position.relativePoint == "TOPLEFT" and db.position.x == 120.5 and db.position.y == -80)
+    local charDB = R.EnsureCharDB(nil)
+    Check("missing character data gets a table with no position", type(charDB) == "table"
+        and charDB.version == R.CHAR_DB_VERSION and charDB.position == nil)
+    Check("the account data holds no position", R.EnsureDB(nil).position == nil)
+    charDB = R.EnsureCharDB({ position = { point = "TOPLEFT", relativePoint = "TOPLEFT", x = 120.5, y = -80 } })
+    Check("a good saved position is kept", charDB.position ~= nil and charDB.position.point == "TOPLEFT"
+        and charDB.position.relativePoint == "TOPLEFT" and charDB.position.x == 120.5
+        and charDB.position.y == -80)
     for why, broken in pairs({
         ["not a table"] = "TOPLEFT",
         ["unknown point"] = { point = "UPWARDS", relativePoint = "TOPLEFT", x = 1, y = 1 },
@@ -65,7 +69,7 @@ do
         ["x not a number (NaN)"] = { point = "TOPLEFT", relativePoint = "TOPLEFT", x = 0 / 0, y = 1 },
         ["y infinite"] = { point = "TOPLEFT", relativePoint = "TOPLEFT", x = 1, y = 1 / 0 },
     }) do
-        Check("a damaged saved position is dropped: " .. why, R.EnsureDB({ position = broken }).position == nil)
+        Check("a damaged saved position is dropped: " .. why, R.EnsureCharDB({ position = broken }).position == nil)
     end
     local position = R.Position("BOTTOMRIGHT", "BOTTOMRIGHT", -10, 20)
     Check("a dropped window's anchor becomes a position", position ~= nil and position.point == "BOTTOMRIGHT"

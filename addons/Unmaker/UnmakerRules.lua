@@ -11,6 +11,7 @@ local R = {}
 _G.UnmakerRules = R
 
 R.DB_VERSION = 1
+R.CHAR_DB_VERSION = 1
 
 -- Item qualities that disenchant: Uncommon (2), Rare (3) and Epic (4).
 local MIN_QUALITY, MAX_QUALITY = 2, 4
@@ -88,10 +89,22 @@ function R.EnsureDB(db)
             db.kept[itemID] = nil
         end
     end
-    local position = db.position
-    db.position = type(position) == "table"
-        and R.Position(position.point, position.relativePoint, position.x, position.y) or nil
     return db
+end
+
+--- Make one character's saved data usable. It holds only the window's position, so each
+-- character keeps its own spot.
+-- @param charDB the UnmakerCharDB table from the game, or nil on first load
+-- @return the same table, repaired, or a new one
+function R.EnsureCharDB(charDB)
+    if type(charDB) ~= "table" then
+        charDB = {}
+    end
+    charDB.version = R.CHAR_DB_VERSION
+    local position = charDB.position
+    charDB.position = type(position) == "table"
+        and R.Position(position.point, position.relativePoint, position.x, position.y) or nil
+    return charDB
 end
 
 --- A fresh session: choices that last until logout or /reload.

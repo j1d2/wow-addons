@@ -139,7 +139,7 @@ local function Gear(itemID, name, quality, fields)
 end
 
 --- Put the fake game in place and load the addon files fresh.
--- @param setup optional table: bags = { [bag] = { [slot] = record } }, knows, sets, db
+-- @param setup optional table: bags = { [bag] = { [slot] = record } }, knows, sets, db, charDB
 local function Load(setup)
     setup = setup or {}
     -- Named frames from the last scenario must not leak into this one.
@@ -151,6 +151,7 @@ local function Load(setup)
     world = { frames = {}, casts = {}, blocked = 0, inCombat = false, callbacks = {}, now = 1000, loot = {},
         bags = setup.bags or {}, knows = setup.knows ~= false, sets = setup.sets or {} }
     _G.UnmakerDB = setup.db
+    _G.UnmakerCharDB = setup.charDB
     _G.UIParent = NewFrame("Frame", "UIParent")
     _G.ContainerFrame1 = NewFrame("Frame", "ContainerFrame1")
     _G.ContainerFrameCombinedBags = NewFrame("Frame", "ContainerFrameCombinedBags")
@@ -617,23 +618,28 @@ do
     world.dropAt = { "TOPLEFT", _G.UIParent, "TOPLEFT", 120.5, -80 }
     _G.UnmakerFrame:GetScript("OnDragStart")(_G.UnmakerFrame)
     _G.UnmakerFrame:GetScript("OnDragStop")(_G.UnmakerFrame)
-    local saved = _G.UnmakerDB.position
-    Check("dropping the window saves where it is", saved ~= nil and saved.point == "TOPLEFT"
+    local saved = _G.UnmakerCharDB.position
+    Check("dropping the window saves where it is, for this character", saved ~= nil and saved.point == "TOPLEFT"
         and saved.relativePoint == "TOPLEFT" and saved.x == 120.5 and saved.y == -80)
     Check("and Unmaker keeps the spot itself, not the game's layout file", _G.UnmakerFrame.userPlaced == false)
 
-    local db = _G.UnmakerDB
-    Start({ bags = StandardBags(), db = db })
+    Check("not for the whole account", _G.UnmakerDB.position == nil)
+    local db, charDB = _G.UnmakerDB, _G.UnmakerCharDB
+    Start({ bags = StandardBags(), db = db, charDB = charDB })
     point = _G.UnmakerFrame.point
     Check("after a reload the window opens where it was left", point[1] == "TOPLEFT"
         and point[2] == _G.UIParent and point[3] == "TOPLEFT" and point[4] == 120.5 and point[5] == -80)
+    Start({ bags = StandardBags(), db = db })
+    point = _G.UnmakerFrame.point
+    Check("another character's window opens in the middle until it is moved there", point[1] == "CENTER"
+        and point[4] == 0 and point[5] == 0)
 
     Start({ bags = StandardBags() })
     _G.UnmakerFrame:GetScript("OnDragStart")(_G.UnmakerFrame)
     world.inCombat = true
     world.dropAt = { "BOTTOM", _G.UIParent, "BOTTOM", 5, 5 }
     _G.UnmakerFrame:GetScript("OnDragStop")(_G.UnmakerFrame)
-    Check("a drop that the game blocks in combat saves nothing", _G.UnmakerDB.position == nil)
+    Check("a drop that the game blocks in combat saves nothing", _G.UnmakerCharDB.position == nil)
 end
 
 --- The text of the window's line that starts with "Unmade:".
