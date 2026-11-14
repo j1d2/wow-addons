@@ -1867,7 +1867,13 @@ do
     Check("the level filter uses the item's base level; unknown items wait until loaded",
         rows[1].nameText.text == "Cheap Cloak" and not rows[2].shown)
     world.itemInfo[5] = { name = "Mystery", quality = 2, level = 30 }
-    Fire("GET_ITEM_INFO_RECEIVED", 5, true)
+    local timers = #world.timers
+    for _ = 1, 3 do
+        Fire("GET_ITEM_INFO_RECEIVED", 5, true)
+    end
+    Check("a burst of item-info events filters once, on the next frame", #world.timers == timers + 1
+        and not rows[2].shown)
+    RunTimers()
     Check("once the game loads an item, the filter counts it", rows[1].nameText.text == "Cheap Cloak"
         and rows[2].nameText.text == "Mystery")
     Type(panel.minLevelBox, "")

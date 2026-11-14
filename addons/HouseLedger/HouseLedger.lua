@@ -139,6 +139,8 @@ local scrollOffset = 0
 -- Quality and item level limits, shared by Buy and Market; Market's name filter text.
 local filter = {}
 local marketText = ""
+-- True while one refilter waits for the next frame, so a burst of item-info events filters once.
+local refilterPending = false
 -- The Market tab: which view, its rows (shaped like browse results), and the
 -- PriceLedger.Market lists, kept until the house has a newer scan.
 local marketView = 1
@@ -1989,19 +1991,27 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
 
     if event == "ITEM_KEY_ITEM_INFO_RECEIVED" or event == "GET_ITEM_INFO_RECEIVED" then
         -- An item's name, icon, quality or level arrived: filter again and redraw in place.
-        if frame == nil or not frame:IsShown() then
+        -- Items arrive one event each, often many at once, so this waits one frame and does it once.
+        if frame == nil or not frame:IsShown() or refilterPending then
             return
         end
-        if currentTab == MARKET_TAB and buyPanel.marketMode then
-            if event == "GET_ITEM_INFO_RECEIVED" and marketText == "" and not HouseLedgerPrice.FilterActive(filter) then
-                return
-            end
-            RefreshMarket()
-            RenderRows()
-        elseif #results > 0 and event == "ITEM_KEY_ITEM_INFO_RECEIVED" then
-            FilterResults()
-            RenderRows()
+        local market = currentTab == MARKET_TAB and buyPanel.marketMode
+        if market and event == "GET_ITEM_INFO_RECEIVED" and marketText == "" and not HouseLedgerPrice.FilterActive(filter) then
+            return
         end
+        if not market and (#results == 0 or event ~= "ITEM_KEY_ITEM_INFO_RECEIVED") then
+            return
+        end
+        refilterPending = true
+        C_Timer.After(0, function()
+            refilterPending = false
+            if currentTab == MARKET_TAB and buyPanel.marketMode then
+                RefreshMarket()
+            else
+                FilterResults()
+            end
+            RenderRows()
+        end)
         return
     end
 
