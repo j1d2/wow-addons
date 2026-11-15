@@ -28,17 +28,17 @@ Open the addon's CurseForge page, [HouseLedger](https://www.curseforge.com/wow/a
 
 ### By hand
 
-1. Download the addon's latest zip, such as `HouseLedger-0.4.0.zip`, from [Releases](https://github.com/j1d2/wow-addons/releases).
+1. Download the addon's latest zip, such as `HouseLedger-0.4.1.zip`, from [Releases](https://github.com/j1d2/wow-addons/releases).
 2. Unzip it to get the addon's folder, such as `HouseLedger`.
    - **Windows 11:** right-click the zip, choose **Extract All**, and open the new folder. The `HouseLedger` folder is inside it.
    - **macOS:** double-click the zip.
-   - **Linux:** `unzip HouseLedger-0.4.0.zip`
+   - **Linux:** `unzip HouseLedger-0.4.1.zip`
 3. Open the game's AddOns folder. In the Battle.net app, select World of Warcraft, click the gear next to **Play**, and choose **Show in Explorer** (Windows) or **Show in Finder** (macOS). Then open `_forever_`, `Interface`, `AddOns`. If `Interface` or `AddOns` isn't there yet, create it. The usual places:
    - **Windows 11:** `C:\Program Files (x86)\World of Warcraft\_forever_\Interface\AddOns`
    - **macOS:** `/Applications/World of Warcraft/_forever_/Interface/AddOns`
    - **Linux (Wine, Lutris and the like):** the same `World of Warcraft/_forever_/Interface/AddOns` path inside your Wine prefix's `Program Files (x86)`
    - New to WoW on Linux? [wow-battlenet-linux](https://github.com/j1d2/wow-battlenet-linux) is a guide to installing Battle.net and WoW Forever with Lutris.
-4. Quit the game, then move the addon's folder into `AddOns`. The `.toc` file must sit one level down: `AddOns/HouseLedger/HouseLedger.toc`, not `AddOns/HouseLedger-0.4.0/HouseLedger/HouseLedger.toc`.
+4. Quit the game, then move the addon's folder into `AddOns`. The `.toc` file must sit one level down: `AddOns/HouseLedger/HouseLedger.toc`, not `AddOns/HouseLedger-0.4.1/HouseLedger/HouseLedger.toc`.
 5. Start the game. On the character screen, click **AddOns** and make sure the addon is ticked.
 
 **Updating by hand:** quit the game, delete the old addon folder, and move the new one in. Saved prices are kept, because the game stores them in its own `WTF` folder, not in the addon's folder.
