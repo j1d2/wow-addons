@@ -2,7 +2,7 @@
 ## Title: Unmaker
 ## Notes: Every item you can disenchant, in one list that remembers what you keep. Clear the rest with one key.
 ## Author: j1d2
-## Version: 0.4.0
+## Version: 0.4.1
 ## X-License: Apache-2.0
 ## X-Curse-Project-ID: 1806618
 ## SavedVariables: UnmakerDB

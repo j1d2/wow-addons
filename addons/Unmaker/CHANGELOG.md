@@ -4,6 +4,8 @@ All notable changes to Unmaker. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-11-15
+
 ### Changed
 
 - A new one-line description in the game's AddOns list.
