@@ -15,12 +15,18 @@ Found a bug or have an idea? [Open an issue](https://github.com/j1d2/wow-addons/
 
 ## Addons
 
-| Addon | In one line |
-| --- | --- |
-| [HouseLedger](#houseledger) | Buy, sell and spot deals at the auction house with your own price history. |
-| [Unmaker](#unmaker) | Every item you can disenchant, in one list that remembers what you keep. Clear the rest with one key. |
+| Addon | In one line | Get it |
+| --- | --- | --- |
+| [HouseLedger](#houseledger) | Buy, sell and spot deals at the auction house with your own price history. | [CurseForge](https://www.curseforge.com/wow/addons/houseledger) |
+| [Unmaker](#unmaker) | Every item you can disenchant, in one list that remembers what you keep. Clear the rest with one key. | [CurseForge](https://www.curseforge.com/wow/addons/unmaker) |
 
 ## Install
+
+### With the CurseForge app (easiest)
+
+Open the addon's CurseForge page, [HouseLedger](https://www.curseforge.com/wow/addons/houseledger) or [Unmaker](https://www.curseforge.com/wow/addons/unmaker), and click **Install**. Or search for it by name in the CurseForge app. The app puts it in the right folder and keeps it up to date.
+
+### By hand
 
 1. Download the addon's latest zip, such as `HouseLedger-0.4.0.zip`, from [Releases](https://github.com/j1d2/wow-addons/releases).
 2. Unzip it to get the addon's folder, such as `HouseLedger`.
@@ -35,7 +41,7 @@ Found a bug or have an idea? [Open an issue](https://github.com/j1d2/wow-addons/
 4. Quit the game, then move the addon's folder into `AddOns`. The `.toc` file must sit one level down: `AddOns/HouseLedger/HouseLedger.toc`, not `AddOns/HouseLedger-0.4.0/HouseLedger/HouseLedger.toc`.
 5. Start the game. On the character screen, click **AddOns** and make sure the addon is ticked.
 
-**Updating:** quit the game, delete the old addon folder, and move the new one in. Saved prices are kept, because the game stores them in its own `WTF` folder, not in the addon's folder.
+**Updating by hand:** quit the game, delete the old addon folder, and move the new one in. Saved prices are kept, because the game stores them in its own `WTF` folder, not in the addon's folder.
 
 ---
 
