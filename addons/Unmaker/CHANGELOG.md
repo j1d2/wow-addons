@@ -4,6 +4,10 @@ All notable changes to Unmaker. The format follows [Keep a Changelog](https://ke
 
 ## [Unreleased]
 
+### Added
+
+- `/um`, a short way to type `/unmaker`.
+
 ## [0.4.1] - 2026-11-15
 
 ### Changed

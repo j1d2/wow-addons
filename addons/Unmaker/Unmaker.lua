@@ -1258,7 +1258,10 @@ eventFrame:SetScript("OnUpdate", function(_, elapsed)
     end
 end)
 
+-- /unmaker and the short /um open or close the window. No other Forever addon or
+-- Blizzard command was found using /um (checked 2026-11-15).
 SLASH_UNMAKER1 = "/unmaker"
+SLASH_UNMAKER2 = "/um"
 SlashCmdList.UNMAKER = Toggle
 
 _G.BINDING_HEADER_UNMAKER = "Unmaker"
