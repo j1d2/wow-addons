@@ -9,6 +9,7 @@
 #   6. addons     Lua syntax, global writes, .toc files, RULES.md API limits, versions
 #   7. tests      every addons/*/*_test.lua under lua5.1
 #   8. coverage   those tests run at least 90% of the lines in each addon file
+#   9. bench      speed and memory budgets on synthetic data (scripts/bench.sh --smoke)
 #
 # Usage: scripts/check.sh
 set -euo pipefail
@@ -70,5 +71,8 @@ scripts/addon_checks.sh tests
 
 step "line coverage (at least ${COVERAGE_MIN:-90}% of each addon file)"
 scripts/addon_checks.sh coverage
+
+step "speed and memory smoke run (synthetic data)"
+scripts/bench.sh --smoke
 
 printf '\nAll checks passed.\n'

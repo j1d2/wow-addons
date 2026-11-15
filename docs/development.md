@@ -68,9 +68,20 @@ scripts/install_hooks.sh   # once per clone: pre-commit, commit-msg and pre-push
 scripts/check.sh           # the full gate: what the hooks and CI run
 ```
 
-`scripts/check.sh` runs every check: hygiene, the privacy and secret scan, shellcheck, the scripts' own tests, the addon checks (syntax, globals, `.toc` files, `RULES.md` limits, versions), every addon test, and line coverage. The hooks and CI run the same script.
+`scripts/check.sh` runs every check: hygiene, the privacy and secret scan, shellcheck, the scripts' own tests, the addon checks (syntax, globals, `.toc` files, `RULES.md` limits, versions), every addon test, line coverage, and the speed and memory smoke run. The hooks and CI run the same script.
 
 **Coverage:** `scripts/addon_checks.sh coverage` runs each addon's tests under `scripts/lua_coverage.lua`, which uses Lua's own line hook (no packages). Each addon file must have at least 90% of its lines run. The report lists the lines that never ran, for example `not run: 6-7, 9`.
+
+## Speed and memory
+
+`scripts/bench.sh` times the pure Lua parts of both addons (price math, the Market lists, Price Check search, Unmaker's history) on made-up data from `bench/synth.lua`. It never reads a real saved file.
+
+```bash
+scripts/bench.sh --smoke   # small sizes with budgets; the gate runs it
+scripts/bench.sh --full    # 6,600 and 20,000 items at 14, 30 and 60 days; about 30 seconds
+```
+
+Each step prints its time and the memory it allocates. Each data set prints the memory it keeps and how many different values its saved file holds. [bench/README.md](../bench/README.md) explains the numbers, the budgets and the constant limit.
 
 ## Try an addon in game
 
