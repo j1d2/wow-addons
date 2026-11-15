@@ -153,7 +153,7 @@ Its Buy and Sell tabs switch Blizzard's tabs too, and the reverse.
 
 ### TL;DR
 
-- **Open it** with `/unmaker`, or the **Unmaker** button above your bags.
+- **Open it** with `/unmaker` (or the short `/um`), or the **Unmaker** button above your bags.
 - **Every Uncommon, Rare and Epic** weapon and armor piece in your bags is listed, with its item level and vendor price. **Uncheck** what you want to keep; Unmaker remembers. Filter by quality and item level, and click a heading to sort.
 - **Disenchant next** disenchants the next checked item. One click per item, which is Blizzard's rule. Bind it to a key in the game's Key Bindings menu.
 - **Epics and soulbound gear start unchecked.** Change that on the **Settings** tab.
@@ -202,7 +202,7 @@ Its Buy and Sell tabs switch Blizzard's tabs too, and the reverse.
 **Settings tab:**
 1. **What starts unchecked or hidden:** epics, soulbound gear and items in your equipment sets.
 2. **When the window opens by itself:** when you loot gear to disenchant, or with your bags. Only on characters that know Disenchant.
-3. **Bag button:** show or hide the Unmaker button above your bags. On by default; `/unmaker` opens the window either way.
+3. **Bag button:** show or hide the Unmaker button above your bags. On by default; `/unmaker` or `/um` opens the window either way.
 
 <p align="center"><sub>Game art in the screenshots © Blizzard Entertainment, Inc.</sub></p>
 

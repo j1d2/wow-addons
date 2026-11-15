@@ -368,6 +368,8 @@ do
     Start({ bags = StandardBags() })
     local frame = _G.UnmakerFrame
     Check("the window starts hidden", not frame.shown)
+    Check("the commands are /unmaker and the short /um",
+        _G.SLASH_UNMAKER1 == "/unmaker" and _G.SLASH_UNMAKER2 == "/um")
     _G.SlashCmdList.UNMAKER("")
     Check("/unmaker opens the window", frame.shown)
     local shown = ShownRows()
