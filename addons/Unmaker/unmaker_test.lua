@@ -49,6 +49,10 @@ end
 
 function FrameMethods:SetScript(event, fn) self.scripts[event] = fn end
 function FrameMethods:GetScript(event) return self.scripts[event] end
+function FrameMethods:HookScript(event, fn)
+    self.hooks = self.hooks or {}
+    self.hooks[event] = fn
+end
 function FrameMethods:Show() self.shown = true end
 function FrameMethods:Hide() self.shown = false end
 function FrameMethods:SetShown(shown) self.shown = shown and true or false end
@@ -700,6 +704,23 @@ do
     world.inCombat = false
     Fire("PLAYER_REGEN_ENABLED")
     Check("and closes when the fight ends", not _G.UnmakerFrame.shown)
+
+    -- Bags opened and closed again in one fight: nothing pops up when it ends.
+    world.inCombat = true
+    Bags(true, "ContainerFrame.OpenAllBags")
+    Bags(false, "ContainerFrame.CloseAllBags")
+    world.inCombat = false
+    Fire("PLAYER_REGEN_ENABLED")
+    Check("bags opened and closed in one fight leave it closed after", not _G.UnmakerFrame.shown)
+
+    -- The backpack button shows and hides the combined bag window with no bag event.
+    local combined = _G.ContainerFrameCombinedBags
+    world.bagsOpen = true
+    combined.hooks.OnShow(combined)
+    Check("the combined bag window opening by itself opens it", _G.UnmakerFrame.shown)
+    world.bagsOpen = false
+    combined.hooks.OnHide(combined)
+    Check("and its hiding closes it", not _G.UnmakerFrame.shown)
 end
 
 do

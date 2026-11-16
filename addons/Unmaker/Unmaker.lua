@@ -1059,12 +1059,13 @@ local function OnBagOpened()
 end
 
 --- When a Blizzard bag window closes: close Unmaker too once the last bag window is closed, if
--- the bags opened it. Blizzard hides each bag window before it sends this, so IsAnyBagOpen
--- already counts the one closing.
+-- the bags opened it. It runs after the bag window has hidden, so IsAnyBagOpen already counts
+-- the one closing.
 local function OnBagClosed()
     if openedWithBags and not IsAnyBagOpen() then
         openedWithBags = false
-        if db.settings.openOnBags and built and frame:IsShown() then
+        -- wanted.shown: the bags opened it in combat and the fight hasn't ended yet.
+        if db.settings.openOnBags and ((built and frame:IsShown()) or wanted.shown) then
             SetShown(false)
         end
     end
@@ -1098,6 +1099,14 @@ function handlers.ADDON_LOADED(name)
         EventRegistry:RegisterCallback("ContainerFrame.OpenBag", OnBagOpened, frame or db)
         EventRegistry:RegisterCallback("ContainerFrame.CloseAllBags", OnBagClosed, frame or db)
         EventRegistry:RegisterCallback("ContainerFrame.CloseBag", OnBagClosed, frame or db)
+    end
+    -- The combined bag window (one window for all bags) sends no OpenBag or CloseBag event, and
+    -- the backpack button shows and hides it without OpenAllBags or CloseAllBags, so follow
+    -- its own show and hide too. HookScript only listens; it changes nothing on Blizzard's frame.
+    local combined = _G.ContainerFrameCombinedBags
+    if type(combined) == "table" and type(combined.HookScript) == "function" then
+        combined:HookScript("OnShow", OnBagOpened)
+        combined:HookScript("OnHide", OnBagClosed)
     end
 end
 

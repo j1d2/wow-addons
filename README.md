@@ -196,7 +196,7 @@ Its Buy and Sell tabs switch Blizzard's tabs too, and the reverse.
 4. **Got:** the materials each disenchant gave.
 
 <p align="center">
-  <img src="docs/screenshots/unmaker-settings.png" alt="Unmaker's Settings tab: keep epics, keep soulbound gear, hide equipment-set items, open when you loot, open with your bags, show the button above the bags" width="420">
+  <img src="docs/screenshots/unmaker-settings.png" alt="Unmaker's Settings tab: keep epics, keep soulbound gear, hide equipment-set items, open when you loot, open and close with your bags, show the button above the bags" width="420">
 </p>
 
 **Settings tab:**
