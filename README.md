@@ -196,12 +196,12 @@ Its Buy and Sell tabs switch Blizzard's tabs too, and the reverse.
 4. **Got:** the materials each disenchant gave.
 
 <p align="center">
-  <img src="docs/screenshots/unmaker-settings.png" alt="Unmaker's Settings tab: keep epics, keep soulbound gear, hide equipment-set items, open when you loot, open with your bags, show the button above the bags" width="420">
+  <img src="docs/screenshots/unmaker-settings.png" alt="Unmaker's Settings tab: keep epics, keep soulbound gear, hide equipment-set items, open when you loot, open and close with your bags, show the button above the bags" width="420">
 </p>
 
 **Settings tab:**
 1. **What starts unchecked or hidden:** epics, soulbound gear and items in your equipment sets.
-2. **When the window opens by itself:** when you loot gear to disenchant, or with your bags. Only on characters that know Disenchant.
+2. **When the window opens by itself:** when you loot gear to disenchant, or with your bags (and it closes with them too). Only on characters that know Disenchant.
 3. **Bag button:** show or hide the Unmaker button above your bags. On by default; `/unmaker` or `/um` opens the window either way.
 
 <p align="center"><sub>Game art in the screenshots © Blizzard Entertainment, Inc.</sub></p>
@@ -219,7 +219,7 @@ Its Buy and Sell tabs switch Blizzard's tabs too, and the reverse.
 - Before every cast, Unmaker checks the bag slot still holds that exact item. If your bags changed, nothing happens and the list updates.
 - Items in a saved equipment set are hidden.
 - If a disenchant fails (you moved, say), the item stays on the list and the window shows the game's reason. If the game won't disenchant an item at all, uncheck it.
-- **Settings tab:** keep epics, keep soulbound gear, hide equipment-set items, open when you loot gear to disenchant, open with your bags, and show or hide the Unmaker button above your bags.
+- **Settings tab:** keep epics, keep soulbound gear, hide equipment-set items, open when you loot gear to disenchant, open and close with your bags, and show or hide the Unmaker button above your bags.
 - With a fast-loot addon the button may stay locked a little longer. It unlocks by itself after 10 seconds.
 - **Stats tab:** items unmade this session, today, lifetime and in your best session; counts by quality; your most-unmade item, best item and busiest day; and lifetime materials. Pick all your characters together or one of them from the dropdown at the top. A 14-day chart shows how many you unmade each day.
 - **History tab:** the last 500 disenchants, newest first, and who unmade each. Pick a character from the dropdown to see only theirs. Click **Item**, **ilvl**, **Who** or **When** to sort, and again to reverse.

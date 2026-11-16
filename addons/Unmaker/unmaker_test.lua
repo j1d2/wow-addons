@@ -49,6 +49,10 @@ end
 
 function FrameMethods:SetScript(event, fn) self.scripts[event] = fn end
 function FrameMethods:GetScript(event) return self.scripts[event] end
+function FrameMethods:HookScript(event, fn)
+    self.hooks = self.hooks or {}
+    self.hooks[event] = fn
+end
 function FrameMethods:Show() self.shown = true end
 function FrameMethods:Hide() self.shown = false end
 function FrameMethods:SetShown(shown) self.shown = shown and true or false end
@@ -272,6 +276,8 @@ local function Load(setup)
     _G.PanelTemplates_SetTab = function(_, id) world.tab = id end
     _G.PanelTemplates_TabResize = function() end
     _G.EventRegistry = { RegisterCallback = function(_, event, fn) world.callbacks[event] = fn end }
+    -- Blizzard's own check, true while any bag window is open (world.bagsOpen).
+    _G.IsAnyBagOpen = function() return world.bagsOpen == true end
     _G.SlashCmdList = {}
     _G.UnmakerRules = nil
     _G.UnmakerStats = nil
@@ -654,6 +660,76 @@ do
     Check("and show it again", bagButton.shown)
     _G.SlashCmdList.UNMAKER("")
     Check("/unmaker still opens the window", _G.UnmakerFrame.shown)
+end
+
+--- Open or close the game's bags the way Blizzard does: the bag state changes, then the event.
+-- @param open true to open, false to close
+-- @param event the EventRegistry event to fire
+local function Bags(open, event)
+    world.bagsOpen = open
+    world.callbacks[event]()
+end
+
+do
+    Start({ bags = StandardBags(), db = { settings = { openOnBags = true } } })
+    Bags(true, "ContainerFrame.OpenAllBags")
+    Check("Open with my bags opens it with the bags", _G.UnmakerFrame.shown)
+    Bags(false, "ContainerFrame.CloseAllBags")
+    Check("and closes it when the bags close", not _G.UnmakerFrame.shown)
+
+    -- Bags shown one window each close one at a time; Unmaker waits for the last one.
+    Bags(true, "ContainerFrame.OpenBag")
+    world.callbacks["ContainerFrame.CloseBag"]()
+    Check("it stays open while another bag window is still open", _G.UnmakerFrame.shown)
+    Bags(false, "ContainerFrame.CloseBag")
+    Check("and closes with the last bag window", not _G.UnmakerFrame.shown)
+
+    _G.SlashCmdList.UNMAKER("")
+    Bags(true, "ContainerFrame.OpenBag")
+    Bags(false, "ContainerFrame.CloseAllBags")
+    Check("a window opened with /um stays open when the bags close", _G.UnmakerFrame.shown)
+
+    _G.SlashCmdList.UNMAKER("")
+    Bags(true, "ContainerFrame.OpenBag")
+    _G.SlashCmdList.UNMAKER("")
+    _G.SlashCmdList.UNMAKER("")
+    Bags(false, "ContainerFrame.CloseAllBags")
+    Check("closing and opening it by hand while the bags are open keeps it open too", _G.UnmakerFrame.shown)
+
+    _G.SlashCmdList.UNMAKER("") -- closes it, so the bags open it next
+    Bags(true, "ContainerFrame.OpenBag")
+    world.inCombat = true
+    Bags(false, "ContainerFrame.CloseAllBags")
+    Check("in combat it waits", _G.UnmakerFrame.shown)
+    world.inCombat = false
+    Fire("PLAYER_REGEN_ENABLED")
+    Check("and closes when the fight ends", not _G.UnmakerFrame.shown)
+
+    -- Bags opened and closed again in one fight: nothing pops up when it ends.
+    world.inCombat = true
+    Bags(true, "ContainerFrame.OpenAllBags")
+    Bags(false, "ContainerFrame.CloseAllBags")
+    world.inCombat = false
+    Fire("PLAYER_REGEN_ENABLED")
+    Check("bags opened and closed in one fight leave it closed after", not _G.UnmakerFrame.shown)
+
+    -- The backpack button shows and hides the combined bag window with no bag event.
+    local combined = _G.ContainerFrameCombinedBags
+    world.bagsOpen = true
+    combined.hooks.OnShow(combined)
+    Check("the combined bag window opening by itself opens it", _G.UnmakerFrame.shown)
+    world.bagsOpen = false
+    combined.hooks.OnHide(combined)
+    Check("and its hiding closes it", not _G.UnmakerFrame.shown)
+end
+
+do
+    Start({ bags = StandardBags() })
+    _G.UnmakerDB.settings.openOnBags = false
+    _G.SlashCmdList.UNMAKER("")
+    Bags(true, "ContainerFrame.OpenBag")
+    Bags(false, "ContainerFrame.CloseAllBags")
+    Check("with the setting off, closing the bags leaves it open", _G.UnmakerFrame.shown)
 end
 
 do

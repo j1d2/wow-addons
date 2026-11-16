@@ -72,6 +72,9 @@ local lootSeen = false -- a loot window opened for the current cast
 local lastError -- the game's red error text during the current attempt
 local awaitingReason = false -- a cast failed and its error text hasn't come yet
 local bagsSettled = false
+-- True while the window is open because the bags opened it ("Open with my bags"), so closing
+-- the bags closes it too. Opening or closing it any other way clears it.
+local openedWithBags = false
 local waited = 0
 local seenLinks
 local wanted = {} -- show or hide asked for in combat: { shown = true/false }
@@ -441,8 +444,10 @@ local function SetShown(shown)
     end
 end
 
---- Show the window if it is hidden, hide it if it is shown.
+--- Show the window if it is hidden, hide it if it is shown. A window the player opened or
+-- closed by hand no longer closes with the bags.
 local function Toggle()
+    openedWithBags = false
     SetShown(not (built and frame:IsShown()))
 end
 
@@ -1031,6 +1036,7 @@ local function OnBagsChanged()
     if seenLinks and db.settings.openOnLoot and KnowsDisenchant() then
         for link in pairs(links) do
             if not seenLinks[link] then
+                openedWithBags = false
                 SetShown(true)
                 break
             end
@@ -1039,13 +1045,28 @@ local function OnBagsChanged()
     seenLinks = links
 end
 
---- When a Blizzard bag window opens: open Unmaker too if "Open with my bags" is on, this
--- character knows Disenchant and there is something to disenchant.
+--- When a Blizzard bag window opens: open Unmaker too if "Open and close with my bags" is on, this
+-- character knows Disenchant and there is something to disenchant. A window that was already
+-- open stays the player's, so it won't close with the bags.
 local function OnBagOpened()
     if db and db.settings.openOnBags and KnowsDisenchant() then
         Refresh()
-        if #rows > 0 then
+        if #rows > 0 and not (built and frame:IsShown()) then
+            openedWithBags = true
             SetShown(true)
+        end
+    end
+end
+
+--- When a Blizzard bag window closes: close Unmaker too once the last bag window is closed, if
+-- the bags opened it. It runs after the bag window has hidden, so IsAnyBagOpen already counts
+-- the one closing.
+local function OnBagClosed()
+    if openedWithBags and not IsAnyBagOpen() then
+        openedWithBags = false
+        -- wanted.shown: the bags opened it in combat and the fight hasn't ended yet.
+        if db.settings.openOnBags and ((built and frame:IsShown()) or wanted.shown) then
+            SetShown(false)
         end
     end
 end
@@ -1076,6 +1097,16 @@ function handlers.ADDON_LOADED(name)
     if type(EventRegistry) == "table" then
         EventRegistry:RegisterCallback("ContainerFrame.OpenAllBags", OnBagOpened, frame or db)
         EventRegistry:RegisterCallback("ContainerFrame.OpenBag", OnBagOpened, frame or db)
+        EventRegistry:RegisterCallback("ContainerFrame.CloseAllBags", OnBagClosed, frame or db)
+        EventRegistry:RegisterCallback("ContainerFrame.CloseBag", OnBagClosed, frame or db)
+    end
+    -- The combined bag window (one window for all bags) sends no OpenBag or CloseBag event, and
+    -- the backpack button shows and hides it without OpenAllBags or CloseAllBags, so follow
+    -- its own show and hide too. HookScript only listens; it changes nothing on Blizzard's frame.
+    local combined = _G.ContainerFrameCombinedBags
+    if type(combined) == "table" and type(combined.HookScript) == "function" then
+        combined:HookScript("OnShow", OnBagOpened)
+        combined:HookScript("OnHide", OnBagClosed)
     end
 end
 
