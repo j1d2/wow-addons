@@ -8,6 +8,10 @@ All notable changes to Unmaker. The format follows [Keep a Changelog](https://ke
 
 - `/um`, a short way to type `/unmaker`.
 
+### Changed
+
+- "Open with my bags" is now "Open and close with my bags": when the bags opened Unmaker, closing the bags closes it too. A window you opened yourself, with `/um` or the bag button, stays open.
+
 ## [0.4.1] - 2026-11-15
 
 ### Changed

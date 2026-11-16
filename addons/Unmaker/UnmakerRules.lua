@@ -30,7 +30,7 @@ R.SETTINGS = {
     { key = "keepSoulbound", label = "Keep soulbound gear (start unchecked)", default = true },
     { key = "hideSetItems", label = "Hide items in equipment sets", default = true },
     { key = "openOnLoot", label = "Open when I loot something to disenchant", default = false },
-    { key = "openOnBags", label = "Open with my bags", default = false },
+    { key = "openOnBags", label = "Open and close with my bags", default = false },
     { key = "bagButton", label = "Show the Unmaker button above the bags", default = true },
 }
 
