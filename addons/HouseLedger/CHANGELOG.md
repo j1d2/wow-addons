@@ -7,6 +7,9 @@ All notable changes to HouseLedger. The format follows [Keep a Changelog](https:
 ### Added
 
 - **Price history length** on the Settings tab: keep 14 or 30 days of prices. Going back to 14 drops the older days right away.
+- **Price Check** scrolls with the mouse wheel through every match, and the bottom line says which ones show and how many there are ("13-24 of 57 items").
+- Click **Item**, **Price** or **Trend** in Price Check to sort; click again to reverse.
+- With Price Check open, shift-click an item in your bags or a chat link to look it up.
 - The price chart grows with your history. It starts at the first day an item was scanned, with at least 7 bars and up to 14 or 30, and its caption says how many days it shows.
 
 ### Changed

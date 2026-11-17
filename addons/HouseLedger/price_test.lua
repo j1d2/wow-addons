@@ -713,6 +713,11 @@ do
     Check("find: under 2 letters finds nothing", #P.FindByName(house, "l") == 0 and #P.FindByName(house, nil) == 0)
     Check("find: items without a saved name can't be found by name", #P.FindByName(house, "item") == 0)
     Check("find: a limit keeps the first ones", Names(P.FindByName(house, "cloth", 2)) == "Bolt of Linen Cloth,Linen Cloth")
+    local _, total = P.FindByName(house, "cloth", 2)
+    local _, all = P.FindByName(house, "linen")
+    Check("find: the count is every match, past the limit too", total == 3 and all == 3)
+    Check("find: nothing found counts 0", select(2, P.FindByName(house, "zz")) == 0
+        and select(2, P.FindByName(nil, "linen")) == 0)
     Check("find: no house, nothing", #P.FindByName(nil, "linen") == 0)
 end
 

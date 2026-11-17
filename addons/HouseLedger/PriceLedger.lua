@@ -822,15 +822,16 @@ end
 -- @param house a house table, or nil
 -- @param text what the player typed; under 2 letters finds nothing
 -- @param limit optional; at most this many (default 100)
--- @return list of { itemID, name, quality }
+-- @return list of { itemID, name, quality }, and how many matched in all (more than the list
+--   holds when the limit cut it)
 function PriceLedger.FindByName(house, text, limit)
     local found = {}
     if type(house) ~= "table" or type(house.items) ~= "table" or type(text) ~= "string" then
-        return found
+        return found, 0
     end
     local needle = text:lower():match("^%s*(.-)%s*$")
     if #needle < 2 then
-        return found
+        return found, 0
     end
     for itemID, row in pairs(house.items) do
         if type(row) == "table" and type(row.name) == "string" then
@@ -850,11 +851,12 @@ function PriceLedger.FindByName(house, text, limit)
         end
         return a.itemID < b.itemID
     end)
+    local total = #found
     limit = limit or 100
-    while #found > limit do
-        table.remove(found)
+    for index = total, limit + 1, -1 do
+        found[index] = nil
     end
-    return found
+    return found, total
 end
 
 --- A sorted copy of a list, by one value per item: a column click in the window. Items with no

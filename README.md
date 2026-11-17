@@ -57,7 +57,7 @@ Open the addon's CurseForge page, [HouseLedger](https://www.curseforge.com/wow/a
 - **Sell tab:** drop an item in to see the lowest price now and its history. Then post it in Blizzard's window.
 - **Market tab:** the deals, biggest drops and biggest rises from your last scan, with no searching.
 - **Settings tab:** turn tooltip prices off, always show the day lines without Shift, or keep 30 days of prices instead of 14.
-- **Price Check:** type `/pc` anywhere, or click **Price Check** above your bags, to look up a saved price by name.
+- **Price Check:** type `/pc` anywhere, or click **Price Check** above your bags, to look up a saved price by name. Shift-click an item in your bags or a chat link to look it up, scroll through every match, and click a heading to sort.
 - **Never** buys, posts or scans by itself.
 
 <p align="center">
@@ -105,6 +105,8 @@ Open the addon's CurseForge page, [HouseLedger](https://www.curseforge.com/wow/a
 1. **Search** your saved prices by name.
 2. **Results:** the last price and trend.
 3. **Click a result** for its day lines and (4) its chart.
+
+Scroll with the mouse wheel; the line at the bottom says which matches show and how many there are. Click **Item**, **Price** or **Trend** to sort, and again to reverse. With Price Check open, shift-click an item in your bags or a chat link to look it up.
 
 <p align="center">
   <img src="docs/screenshots/houseledger-settings.png" alt="HouseLedger Settings tab: tooltip prices, day lines without Shift, and the Price Check button" width="420">
