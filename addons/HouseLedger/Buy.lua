@@ -26,6 +26,13 @@ local PRICE_SORT = {
     { sortOrder = Enum.AuctionHouseSortOrder.Name, reverseSort = false },
 }
 
+-- The Show dropdown's choices: what a Search asks the house for besides the name and quality.
+local SHOW_CHOICES = {
+    { key = "all", label = "Show everything" },
+    { key = "gear", label = "Gear for me", searching = "Searching gear for this character..." },
+    { key = "recipes", label = "Recipes for me", searching = "Searching recipes for this character's professions..." },
+}
+
 -- The search's page can't show everything: said by the filters and in the status line.
 local LOWER_QUALITY_NOTE = "Click Search again to include lower qualities."
 local FIRST_RESULTS_NOTE = "These are the first %d results. Add a name or filter to see others."
@@ -42,6 +49,8 @@ local buySort = {}
 -- The lowest quality the last search asked the house for (0 is every quality). A looser quality
 -- filter can't show what that search left out, so the status line says to search again.
 local searchedQuality = 0
+-- The Show choice's key; "all" until another is picked, and again after Clear.
+local showKey = "all"
 -- The Market tab's rows (shaped like browse results), how far they're scrolled, and the
 -- PriceLedger.Market lists, kept until the house has a newer scan.
 local marketList = {}
@@ -477,6 +486,11 @@ function Buy.SetMarketMode(market)
         ui.buyPanel.filterNameBox:Hide()
         quality:SetPoint("LEFT", ui.frame, "TOPLEFT", 14, FILTER_ROW_Y)
     end
+    -- The note sits after the last control that shows: Show on Buy, the item level on Market.
+    local notice = ui.buyPanel.notice
+    notice:ClearAllPoints()
+    notice:SetPoint("LEFT", market and ui.buyPanel.maxLevelBox or ui.buyPanel.showDropdown, "RIGHT", 12, 0)
+    notice:SetPoint("RIGHT", ui.frame, "RIGHT", -14, 0)
     Buy.ClearDetails()
     RefreshHeader()
     if market then
@@ -540,9 +554,11 @@ function Buy.ClearSearch()
     state.filter.minQuality, state.filter.minLevel, state.filter.maxLevel = nil, nil, nil
     ui.buyPanel.minLevelBox:SetText("")
     ui.buyPanel.maxLevelBox:SetText("")
-    local quality = ui.buyPanel.qualityDropdown
-    if type(quality.GenerateMenu) == "function" then
-        quality:GenerateMenu() -- shows "Any quality" on the button again
+    showKey = "all"
+    for _, dropdown in ipairs({ ui.buyPanel.qualityDropdown, ui.buyPanel.showDropdown }) do
+        if type(dropdown.GenerateMenu) == "function" then
+            dropdown:GenerateMenu() -- shows "Any quality" and "Show everything" on the buttons again
+        end
     end
     searchedQuality = 0
     for _, row in ipairs(ui.rows) do
@@ -572,9 +588,25 @@ function Buy.SendSearch()
             SetListMessage(why)
         end
     end
-    if strlenutf8(text) < C.MIN_SEARCH_LENGTH and not (text == "" and state.filter.minQuality) then
+    if strlenutf8(text) < C.MIN_SEARCH_LENGTH and not (text == "" and (state.filter.minQuality or showKey ~= "all")) then
         Refuse("Type at least 2 letters, or pick a quality.")
         return
+    end
+    -- Show: gear this character can use (the house's own usable-only filter, on weapons and
+    -- armor), or recipes for its professions.
+    local classes, usable
+    if showKey == "gear" then
+        classes = { { classID = Enum.ItemClass.Weapon }, { classID = Enum.ItemClass.Armor } }
+        usable = true
+    elseif showKey == "recipes" then
+        classes = {}
+        for _, subclass in ipairs(U.RecipeSubclasses()) do
+            classes[#classes + 1] = { classID = Enum.ItemClass.Recipe, subClassID = subclass }
+        end
+        if #classes == 0 then
+            Refuse("This character has no profession with recipes.")
+            return
+        end
     end
     if not AuctionHouseFrame or not AuctionHouseFrame:IsShown() then
         Refuse("Open the auction house first.")
@@ -592,13 +624,23 @@ function Buy.SendSearch()
     for quality = state.filter.minQuality or 0, #QUALITY_FILTERS - 1 do
         qualities[#qualities + 1] = QUALITY_FILTERS[quality + 1]
     end
+    if usable then
+        qualities[#qualities + 1] = Enum.AuctionHouseFilter.UsableOnly
+    end
     C_AuctionHouse.SendBrowseQuery({
         searchString = text,
         sorts = PRICE_SORT,
         filters = qualities,
+        itemClassFilters = classes,
     })
     searchedQuality = state.filter.minQuality or 0
-    SetStatus(text ~= "" and ("Searching for " .. text .. "...") or "Searching...")
+    local searching = "Searching..."
+    for _, choice in ipairs(SHOW_CHOICES) do
+        if choice.key == showKey and choice.searching then
+            searching = choice.searching
+        end
+    end
+    SetStatus(text ~= "" and ("Searching for " .. text .. "...") or searching)
 end
 
 --- Anchors one line of cells, right to left.
@@ -777,9 +819,30 @@ function Buy.BuildFilterRow()
     maxBox:SetPoint("LEFT", dash, "RIGHT", 8, 0)
     ui.buyPanel.minLevelBox, ui.buyPanel.maxLevelBox = minBox, maxBox
 
+    -- Show (Buy only): what the next Search asks for. Picking one sends nothing.
+    local show = CreateFrame("DropdownButton", nil, ui.buyPanel, "WowStyle1DropdownTemplate")
+    show:SetWidth(130)
+    show:SetPoint("LEFT", maxBox, "RIGHT", 14, 0)
+    show:SetupMenu(function(_, root)
+        for _, choice in ipairs(SHOW_CHOICES) do
+            root:CreateRadio(choice.label, function(picked)
+                return showKey == picked
+            end, function(picked)
+                showKey = picked
+                -- The house does this filtering, so results already shown stay until a Search.
+                if #state.results > 0 then
+                    SetStatus("Click Search to use \"" .. choice.label .. "\".")
+                end
+            end, choice.key)
+        end
+    end)
+    ui.buyPanel.showDropdown = show
+    -- A search control: Market hides it with the search box.
+    table.insert(ui.buyPanel.searchControls, show)
+
     -- An orange note right of the filters, for something to act on (two short lines at most).
     local notice = U.Cell(ui.buyPanel, "GameFontNormalSmall", "LEFT")
-    notice:SetPoint("LEFT", maxBox, "RIGHT", 12, 0)
+    notice:SetPoint("LEFT", show, "RIGHT", 12, 0)
     notice:SetPoint("RIGHT", ui.frame, "RIGHT", -14, 0)
     notice:SetWordWrap(true)
     notice:SetTextColor(1, 0.5, 0.1)

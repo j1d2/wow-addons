@@ -227,12 +227,38 @@ local function Setup(opts)
 
     _G.Enum = {
         AuctionHouseFilter = {
-            PoorQuality = 6, CommonQuality = 7, UncommonQuality = 8,
+            UsableOnly = 2, PoorQuality = 6, CommonQuality = 7, UncommonQuality = 8,
             RareQuality = 9, EpicQuality = 10,
         },
+        ItemClass = { Weapon = 2, Armor = 4, Recipe = 9 },
+        ItemRecipeSubclass = { Book = 0, Leatherworking = 1, Tailoring = 2, Engineering = 3, Blacksmithing = 4,
+            Cooking = 5, Alchemy = 6, FirstAid = 7, Enchanting = 8, Fishing = 9, Jewelcrafting = 10, Inscription = 11 },
+        Profession = { FirstAid = 0, Blacksmithing = 1, Leatherworking = 2, Alchemy = 3, Herbalism = 4, Cooking = 5,
+            Mining = 6, Tailoring = 7, Engineering = 8, Enchanting = 9, Fishing = 10, Skinning = 11 },
         AuctionHouseSortOrder = { Price = 0, Name = 1 },
         TooltipDataType = { Item = 0 },
         ItemCommodityStatus = { Unknown = 0, Item = 1, Commodity = 2 },
+    }
+
+    -- The character's professions, as Forever's GetProfessions gives them: prof1, prof2, first aid,
+    -- fishing, cooking (each a spellbook index or nil). world.professions lists
+    -- { skillLine, profession } per index; profession nil makes the code fall back on the skill line.
+    _G.GetProfessions = function()
+        local p = world.professions or {}
+        return p[1] and 1, p[2] and 2, p[3] and 3, p[4] and 4, p[5] and 5
+    end
+    _G.GetProfessionInfo = function(index)
+        local entry = (world.professions or {})[index]
+        return "Profession " .. index, 0, 1, 300, 0, 0, entry.skillLine
+    end
+    _G.C_TradeSkillUI = {
+        GetProfessionInfoBySkillLineID = function(skillLine)
+            for _, entry in pairs(world.professions or {}) do
+                if entry.skillLine == skillLine then
+                    return { profession = entry.profession, professionID = skillLine }
+                end
+            end
+        end,
     }
 
     _G.UIParent = NewObject("Frame", "UIParent")
@@ -2074,6 +2100,75 @@ do
     Check("Buy hides the Settings panel", frame.buyPanel.shown and not panel.shown)
 end
 
+
+-- ---------------------------------------------------------------------
+-- Show: everything, gear this character can use, or recipes for its professions
+-- ---------------------------------------------------------------------
+
+do
+    Setup()
+    Load()
+    OpenHouse()
+    local panel = MainFrame().buyPanel
+    local show = panel.showDropdown
+    Check("the Show dropdown starts at everything, with three choices", Picked(show) == "Show everything"
+        and #MenuChoices(show) == 3 and show.shown)
+    Pick(show, "Gear for me")
+    Check("picking a choice sends nothing", #world.browseQueries == 0)
+    Click("Search")
+    local query = world.browseQueries[1]
+    Check("Gear for me searches with no name, for usable weapons and armor", #world.browseQueries == 1
+        and query.searchString == "" and query.filters[#query.filters] == Enum.AuctionHouseFilter.UsableOnly
+        and #query.itemClassFilters == 2 and query.itemClassFilters[1].classID == Enum.ItemClass.Weapon
+        and query.itemClassFilters[2].classID == Enum.ItemClass.Armor)
+    Check("the status says what it searched for", StatusLine() == "Searching gear for this character...")
+    SearchBox():SetText("sword")
+    Click("Search")
+    Check("a name narrows it", world.browseQueries[2].searchString == "sword"
+        and world.browseQueries[2].itemClassFilters ~= nil)
+
+    world.browseResults = BrowseResults(1, 3)
+    Fire("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
+    Pick(show, "Show everything")
+    Check("changing Show with results up says a Search applies it", StatusLine() == "Click Search to use \"Show everything\"."
+        and #world.browseQueries == 2)
+    world.professions = { { skillLine = 197, profession = Enum.Profession.Tailoring },
+        { skillLine = 186, profession = Enum.Profession.Mining }, nil, nil,
+        { skillLine = 185, profession = Enum.Profession.Cooking } }
+    Pick(show, "Recipes for me")
+    SearchBox():SetText("")
+    Click("Search")
+    query = world.browseQueries[3]
+    local subclasses = {}
+    for _, class in ipairs(query.itemClassFilters) do
+        subclasses[#subclasses + 1] = class.classID == Enum.ItemClass.Recipe and class.subClassID
+    end
+    Check("Recipes for me searches recipes of this character's crafting professions",
+        #subclasses == 2 and subclasses[1] == Enum.ItemRecipeSubclass.Tailoring
+        and subclasses[2] == Enum.ItemRecipeSubclass.Cooking and query.searchString == "")
+    Check("recipes aren't limited to usable ones", query.filters[#query.filters] ~= Enum.AuctionHouseFilter.UsableOnly)
+
+    world.professions = { { skillLine = 165 }, { skillLine = 129 } }
+    Click("Search")
+    query = world.browseQueries[4]
+    Check("without the game's profession name, the skill line still finds the recipes",
+        #query.itemClassFilters == 2 and query.itemClassFilters[1].subClassID == Enum.ItemRecipeSubclass.Leatherworking
+        and query.itemClassFilters[2].subClassID == Enum.ItemRecipeSubclass.FirstAid)
+
+    world.professions = { { skillLine = 182, profession = Enum.Profession.Herbalism } }
+    Click("Search")
+    Check("a character with no crafting profession is told so, and nothing is sent", #world.browseQueries == 4
+        and StatusLine() == "This character has no profession with recipes.")
+
+    Click("Market")
+    Check("Market hides the Show dropdown", not show.shown)
+    Click("Buy")
+    Check("Buy shows it again", show.shown)
+    Click("Clear")
+    Check("Clear goes back to everything", Picked(show) == "Show everything")
+    Click("Search")
+    Check("then an empty name needs letters or a quality again", #world.browseQueries == 4)
+end
 
 -- ---------------------------------------------------------------------
 -- House overview: the Buy details block while no row is picked
