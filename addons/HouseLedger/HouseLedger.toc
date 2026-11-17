@@ -10,4 +10,13 @@
 ## ExcludeLoadGameType: standard, classic
 
 PriceLedger.lua
+Core.lua
+Chart.lua
+Tooltip.lua
+Scan.lua
+Buy.lua
+Sell.lua
+PriceCheck.lua
+Settings.lua
+Window.lua
 HouseLedger.lua

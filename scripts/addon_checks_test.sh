@@ -97,6 +97,30 @@ if [[ $status -eq 1 && "$out" == *"addons/Demo/Demo.lua: does not parse"* ]]; th
 check "syntax: broken Lua is caught" "$rc"
 
 good_addon
+lua5.1 -e 'for i = 1, 161 do print("local v" .. i .. " = " .. i) end' >"$ROOT/addons/Demo/Demo.lua"
+run_check limits
+if [[ $status -eq 1 && "$out" == *"addons/Demo/Demo.lua:0: has 161 locals in one function"* ]]; then rc=0; else rc=1; fi
+check "limits: a file with too many locals in its main chunk is caught" "$rc"
+
+good_addon
+lua5.1 -e 'for i = 1, 160 do print("local v" .. i .. " = " .. i) end' >"$ROOT/addons/Demo/Demo.lua"
+run_check limits
+check "limits: 160 locals passes" "$status"
+
+good_addon
+lua5.1 -e 'for i = 1, 49 do print("local u" .. i .. " = " .. i) end
+    io.write("local function Sum()\n    return 0") for i = 1, 49 do io.write(" + u" .. i) end print("\nend")' \
+    >"$ROOT/addons/Demo/Demo.lua"
+run_check limits
+if [[ $status -eq 1 && "$out" == *"addons/Demo/Demo.lua:50: has a function with 49 upvalues"* ]]; then rc=0; else rc=1; fi
+check "limits: a function with too many upvalues is caught, with its line" "$rc"
+
+good_addon
+lua5.1 -e 'for i = 1, 200 do print("local v" .. i .. " = " .. i) end' >"$ROOT/addons/Demo/demo_test.lua"
+run_check limits
+check "limits: test files are not measured" "$status"
+
+good_addon
 printf 'local Demo = {}\nfunction Helper() end\nCount = 1\n' >"$ROOT/addons/Demo/Demo.lua"
 run_check globals
 if [[ $status -eq 1 && "$out" == *"Demo.lua:2: writes global 'Helper'"* \

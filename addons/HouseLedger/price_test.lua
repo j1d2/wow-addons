@@ -4,9 +4,7 @@ Run: lua price_test.lua
 ]]
 
 local folder = arg[0]:match("^(.*)/") or "."
-dofile(folder .. "/PriceLedger.lua")
-
-local P = HouseLedgerPrice
+local P = dofile(folder .. "/PriceLedger.lua")
 local failed = 0
 
 --- Records one check: prints "ok  <name>", or "FAIL  <name>" and counts the failure.
