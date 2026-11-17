@@ -126,6 +126,12 @@ local function BenchHouseLedger(items, days)
     print(string.format("\nHouseLedger, %d items x %d days", items, days))
     local base = KeptKB()
     local db, houseKey = Synth.HouseLedgerDB(items, days, P.DayKey)
+    -- Keep the history length being measured, so loading the data doesn't set it back to 14 and
+    -- turn the Commit step into a mass trim. 60 days isn't a Settings choice: it stays at 14 here
+    -- and is a what-if for the saved file's size only.
+    if P.IsHistoryChoice(days) then
+        db.settings.historyDays = days
+    end
     local house = db.houses[houseKey]
     local dayRows = 0
     for _, row in pairs(house.items) do
