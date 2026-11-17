@@ -357,7 +357,8 @@ end
 -- replaces the stored one; the same unit price adds its stack to qty.
 -- The item's name and quality are kept from any listing that has them: the
 -- game leaves the name nil for an item it hasn't loaded yet.
--- @param best itemID -> { buyout, count, qty, name, quality }; changed in place
+-- @param best itemID -> { buyout, count, qty, units, name, quality }; changed in place. qty is how
+--   many are up at the cheapest unit price, units how many are up with a buyout at any price
 -- @param itemID the item's id
 -- @param count stack size
 -- @param buyout stack buyout in copper
@@ -382,17 +383,20 @@ function PriceLedger.Consider(best, itemID, count, buyout, name, quality)
         quality = current and current.quality
     end
     if current == nil then
-        best[itemID] = { buyout = buyout, count = count, qty = count, name = name, quality = quality }
+        best[itemID] = { buyout = buyout, count = count, qty = count, units = count, name = name, quality = quality }
         return
     end
     current.name, current.quality = name, quality
+    -- Every unit with a buyout counts toward the item's units, whatever its price.
+    local units = (current.units or current.qty) + count
 
     local incoming = buyout * current.count
     local stored = current.buyout * count
     if incoming < stored then
-        best[itemID] = { buyout = buyout, count = count, qty = count, name = name, quality = quality }
+        best[itemID] = { buyout = buyout, count = count, qty = count, units = units, name = name, quality = quality }
         return
     end
+    current.units = units
     if incoming == stored then
         current.qty = current.qty + count
     end
@@ -459,6 +463,8 @@ local function OldestKept(now)
 end
 
 --- Adds one listing to a scan's house totals. A bid-only listing (no buyout) isn't counted.
+-- The value counts the listing's own buyout; Commit replaces it with the value at each item's
+-- cheapest price, so a few listings at joke prices don't swamp it.
 -- @param totals { listings, units, value }, changed in place; starts empty
 -- @param count how many items the listing holds
 -- @param buyout the listing's buyout in copper
@@ -563,6 +569,15 @@ function PriceLedger.Commit(db, houseKey, best, now, totals)
         if type(row) == "table" and type(row.days) == "table" and row.seen ~= now then
             PruneDays(row.days, oldest)
         end
+    end
+    if type(totals) == "table" then
+        -- Each item's units at its cheapest unit price: what the house holds at the prices
+        -- buyers would pay first, not the sum of every asking price.
+        local value = 0
+        for _, listing in pairs(best) do
+            value = value + PriceLedger.UnitCopper(listing.buyout, listing.count) * (listing.units or listing.qty or 0)
+        end
+        totals.value = value
     end
     RecordHouseDay(house, now, totals)
     PruneDays(house.daily, oldest)
@@ -1479,10 +1494,10 @@ function PriceLedger.OverviewLines(overview, coinText)
     if latest.listings then
         lines[4] = { left = "Listings / units",
             right = PriceLedger.Thousands(latest.listings) .. " / " .. PriceLedger.Thousands(latest.units) }
-        lines[5] = { left = "Value listed", right = coinText(latest.value) }
+        lines[5] = { left = "Value at lowest prices", right = coinText(latest.value) }
     else
         lines[4] = { left = "Listings / units", right = "from your next scan" }
-        lines[5] = { left = "Value listed", right = "from your next scan" }
+        lines[5] = { left = "Value at lowest prices", right = "from your next scan" }
     end
     return title, lines
 end

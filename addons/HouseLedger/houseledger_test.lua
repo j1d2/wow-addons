@@ -2184,12 +2184,13 @@ do
     Fire("REPLICATE_ITEM_LIST_UPDATE")
     RunTimers()
     local daily = HouseLedgerDB.houses["Alliance|TestRealm"].daily
+    -- Value: 25 units of 4306 at its cheapest (50 each) and 2 of 2589 at 45.
     Check("a scan saves the day's listings, units and value, skipping bid-only listings",
-        #daily == 1 and daily[1][2] == 3 and daily[1][3] == 27 and daily[1][4] == 2340)
+        #daily == 1 and daily[1][2] == 3 and daily[1][3] == 27 and daily[1][4] == 1340)
     local panel = MainFrame().buyPanel
     Check("the overview shows the scan it just saved", panel.detailTitle.text
         == "House overview, 1 day of scans"
-        and panel.detailLines[4].right.text == "3 / 27" and panel.detailLines[5].right.text == "<money 2340>")
+        and panel.detailLines[4].right.text == "3 / 27" and panel.detailLines[5].right.text == "<money 1340>")
 end
 
 -- ---------------------------------------------------------------------

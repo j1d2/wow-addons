@@ -650,12 +650,24 @@ do
     P.AddToTotals(totals, nil, 50)
     Check("totals count buyout listings, their units and value", totals.listings == 2 and totals.units == 25
         and totals.value == 1250)
+    local best = {}
+    P.Consider(best, 7, 1, 999999)
+    P.Consider(best, 7, 4, 200)
+    P.Consider(best, 7, 2, 100)
+    P.Consider(best, 7, 1, 0)
+    Check("an item counts all its units with a buyout, whatever their price", best[7].units == 7
+        and best[7].qty == 6 and best[7].buyout == 200)
+    local valueDB = P.EmptyDB()
+    local valueTotals = { listings = 4, units = 8, value = 1000499 }
+    P.Commit(valueDB, "Alliance|Test", best, At(0), valueTotals)
+    Check("the day's value is each item's units at its cheapest price, not the joke listing",
+        valueDB.houses["Alliance|Test"].daily[1][4] == 350)
 
     local db = P.EmptyDB()
     local function ScanDay(dayOffset, items, seconds)
         local best, sums = {}, {}
         for itemID = 1, items do
-            P.Consider(best, itemID, 1, 100)
+            P.Consider(best, itemID, 2, 300)
             P.AddToTotals(sums, 2, 300)
         end
         P.Commit(db, "Alliance|Test", best, At(dayOffset, seconds), sums)
@@ -735,7 +747,7 @@ do
         lines[1].right == "6,580 at the last scan (avg 5,900)" and lines[2].right == "+3.1% a day"
         and lines[3].left == "Next day, about" and lines[3].right == "6,900 items"
         and lines[4].left == "Listings / units" and lines[4].right == "41,230 / 1,204,553"
-        and lines[5].left == "Value listed" and lines[5].right == "987654321c")
+        and lines[5].left == "Value at lowest prices" and lines[5].right == "987654321c")
     overview.trendPct = -0.004
     Check("a trend under half a percent is steady", select(2, P.OverviewLines(overview, Coins))[2].right == "steady")
     overview.trendPct = -0.12
