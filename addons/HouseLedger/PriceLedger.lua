@@ -464,27 +464,110 @@ local function Round(value)
     return math.floor(value + 0.5)
 end
 
---- Adds up the days from `fromKey` to `toKey`, both included.
+--- How many days each window holds, in the order Stats reads them: the WINDOWS, then the widest
+-- (DAYS_KEPT), then the baseline (BASELINE_DAYS). Rebuilt when one of those changes.
+local windowLengths, lengthsFor = {}, {}
+--- First day key of each window, for the scan time in startsFor. A full scan saves one time for
+-- every item it saw, so Market and the tooltips reuse these instead of formatting dates per item.
+local windowStarts, latestKeyFor, startsFor = {}, nil, nil
+
+--- The window lengths for the current settings.
+-- @return the list of lengths, with the widest at #WINDOWS + 1 and the baseline at #WINDOWS + 2
+local function WindowLengths()
+    local windows = PriceLedger.WINDOWS
+    if lengthsFor.windows ~= windows or lengthsFor.count ~= #windows
+        or lengthsFor.kept ~= PriceLedger.DAYS_KEPT or lengthsFor.baseline ~= PriceLedger.BASELINE_DAYS then
+        windowLengths = {}
+        for index, length in ipairs(windows) do
+            windowLengths[index] = length
+        end
+        windowLengths[#windows + 1] = PriceLedger.DAYS_KEPT
+        windowLengths[#windows + 2] = PriceLedger.BASELINE_DAYS
+        lengthsFor = { windows = windows, count = #windows, kept = PriceLedger.DAYS_KEPT,
+            baseline = PriceLedger.BASELINE_DAYS }
+        -- New lengths need new first days.
+        startsFor = nil
+    end
+    return windowLengths
+end
+
+--- The day key of a scan time and the first day key of each window back from it.
+-- @param seen the latest scan's time() value
+-- @param lengths from WindowLengths
+-- @return the latest day key and the list of first day keys (shared: don't change it)
+local function WindowStarts(seen, lengths)
+    if seen ~= startsFor then
+        windowStarts = {}
+        for index, length in ipairs(lengths) do
+            windowStarts[index] = PriceLedger.DayKey(seen - (length - 1) * SECONDS_PER_DAY)
+        end
+        latestKeyFor = PriceLedger.DayKey(seen)
+        startsFor = seen
+    end
+    return latestKeyFor, windowStarts
+end
+
+-- Running totals per window, reused by every Stats call so a pass over thousands of items makes
+-- no tables for them.
+local totalScans, totalDays, totalSum, totalSquares, totalLow, totalHigh = {}, {}, {}, {}, {}, {}
+
+--- Adds up a row's days into windows first..last in one walk over the days.
 -- @param days a row's day list
--- @param fromKey first day key to count
--- @param toKey last day key to count
--- @return { scans, days, sum, sumOfSquares, low, high }; low and high are nil with no days
-local function Totals(days, fromKey, toKey)
-    local totals = { scans = 0, days = 0, sum = 0, sumOfSquares = 0 }
+-- @param latestKey the last day to count
+-- @param starts first day key of each window
+-- @param first the first window to add up
+-- @param last the last window to add up
+local function AddUpWindows(days, latestKey, starts, first, last)
+    for index = first, last do
+        totalScans[index], totalDays[index], totalSum[index], totalSquares[index] = 0, 0, 0, 0
+        totalLow[index], totalHigh[index] = nil, nil
+    end
     for _, day in ipairs(days) do
-        if day[1] >= fromKey and day[1] <= toKey then
-            totals.scans = totals.scans + day[4]
-            totals.days = totals.days + 1
-            totals.sum = totals.sum + day[5]
-            totals.sumOfSquares = totals.sumOfSquares + day[6]
-            totals.low = math.min(totals.low or day[2], day[2])
-            totals.high = math.max(totals.high or day[3], day[3])
+        local key = day[1]
+        if key <= latestKey then
+            local scans, low, high, sum, squares = day[4], day[2], day[3], day[5], day[6]
+            for index = first, last do
+                if key >= starts[index] then
+                    totalScans[index] = totalScans[index] + scans
+                    totalDays[index] = totalDays[index] + 1
+                    totalSum[index] = totalSum[index] + sum
+                    totalSquares[index] = totalSquares[index] + squares
+                    totalLow[index] = math.min(totalLow[index] or low, low)
+                    totalHigh[index] = math.max(totalHigh[index] or high, high)
+                end
+            end
         end
     end
-    return totals
+end
+
+--- Sets earlierScans, typical and spread from the baseline window's totals.
+-- The baseline leaves the latest scan out, so it is not compared with itself.
+-- @param target the table to set them on
+-- @param unit the latest scan's price
+-- @param base the baseline window's index in the totals
+local function SetBaseline(target, unit, base)
+    local count = totalScans[base] - 1
+    target.earlierScans = math.max(0, count)
+    target.typical, target.spread = nil, nil
+    if count >= PriceLedger.TREND_MIN_SCANS then
+        local sum = totalSum[base] - unit
+        local mean = sum / count
+        local variance = (totalSquares[base] - unit * unit - count * mean * mean) / (count - 1)
+        target.typical = Round(mean)
+        target.spread = math.sqrt(math.max(0, variance))
+    end
+end
+
+--- True when a row has what Stats needs.
+-- @param row an item row
+-- @return true or false
+local function HasStats(row)
+    return type(row) == "table" and type(row.days) == "table" and #row.days > 0
+        and type(row.unit) == "number" and type(row.seen) == "number"
 end
 
 --- Stats for one item, measured back from its latest scan's day.
+-- Walks the row's days once for all windows.
 -- @param row an item row with unit, seen and days
 -- @return nil for a row with no days (or no unit or seen), or a table:
 --   unit: latest price; seen: when it was seen
@@ -496,46 +579,31 @@ end
 --   spread: their sample standard deviation, with typical
 --   trend, trendPct, deal, dealPct: PriceLedger.Judge of the latest price
 function PriceLedger.Stats(row)
-    if type(row) ~= "table" or type(row.days) ~= "table" or #row.days == 0 then
-        return nil
-    end
-    if type(row.unit) ~= "number" or type(row.seen) ~= "number" then
+    if not HasStats(row) then
         return nil
     end
 
-    local latestKey = PriceLedger.DayKey(row.seen)
-    --- The day key `count` days before the latest scan.
-    local function KeyDaysBack(count)
-        return PriceLedger.DayKey(row.seen - count * SECONDS_PER_DAY)
-    end
+    local lengths = WindowLengths()
+    local latestKey, starts = WindowStarts(row.seen, lengths)
+    local windowCount = #PriceLedger.WINDOWS
+    AddUpWindows(row.days, latestKey, starts, 1, windowCount + 2)
 
     local stats = { unit = row.unit, seen = row.seen, windows = {} }
-    for _, length in ipairs(PriceLedger.WINDOWS) do
-        local totals = Totals(row.days, KeyDaysBack(length - 1), latestKey)
-        stats.windows[#stats.windows + 1] = {
-            days = length,
-            scans = totals.scans,
-            low = totals.low,
-            high = totals.high,
-            avg = totals.scans > 0 and Round(totals.sum / totals.scans) or nil,
+    for index = 1, windowCount do
+        local scans = totalScans[index]
+        stats.windows[index] = {
+            days = lengths[index],
+            scans = scans,
+            low = totalLow[index],
+            high = totalHigh[index],
+            avg = scans > 0 and Round(totalSum[index] / scans) or nil,
         }
     end
-    local widest = Totals(row.days, KeyDaysBack(PriceLedger.DAYS_KEPT - 1), latestKey)
-    stats.scans, stats.days = widest.scans, widest.days
-    stats.low, stats.high = widest.low, widest.high
+    local widest = windowCount + 1
+    stats.scans, stats.days = totalScans[widest], totalDays[widest]
+    stats.low, stats.high = totalLow[widest], totalHigh[widest]
 
-    -- The baseline leaves the latest scan out, so it is not compared
-    -- with itself.
-    local base = Totals(row.days, KeyDaysBack(PriceLedger.BASELINE_DAYS - 1), latestKey)
-    local count = base.scans - 1
-    stats.earlierScans = math.max(0, count)
-    if count >= PriceLedger.TREND_MIN_SCANS then
-        local sum = base.sum - row.unit
-        local mean = sum / count
-        local variance = (base.sumOfSquares - row.unit * row.unit - count * mean * mean) / (count - 1)
-        stats.typical = Round(mean)
-        stats.spread = math.sqrt(math.max(0, variance))
-    end
+    SetBaseline(stats, row.unit, windowCount + 2)
 
     local verdict = PriceLedger.Judge(stats, row.unit)
     stats.trend = verdict.trend
@@ -733,20 +801,28 @@ function PriceLedger.Market(house)
         return market
     end
     market.scannedAt = house.scannedAt
+    -- Only the baseline window matters here, so this adds up that one window and judges the
+    -- price, the same way Stats does, without building the other windows.
+    local base = #PriceLedger.WINDOWS + 2
+    local baseline = {}
     for itemID, row in pairs(house.items) do
-        if type(row) == "table" and row.seen == house.scannedAt then
-            local stats = PriceLedger.Stats(row)
-            if stats and type(stats.trendPct) == "number" then
+        if HasStats(row) and row.seen == house.scannedAt then
+            local latestKey, starts = WindowStarts(row.seen, WindowLengths())
+            AddUpWindows(row.days, latestKey, starts, base, base)
+            SetBaseline(baseline, row.unit, base)
+            local verdict = PriceLedger.Judge(baseline, row.unit)
+            local listed = verdict.deal or verdict.trend == "down" or verdict.trend == "up"
+            if listed then
                 local entry = {
-                    itemID = itemID, name = row.name, quality = row.quality, unit = stats.unit,
-                    qty = row.qty, typical = stats.typical, trendPct = stats.trendPct, deal = stats.deal == true,
+                    itemID = itemID, name = row.name, quality = row.quality, unit = row.unit,
+                    qty = row.qty, typical = baseline.typical, trendPct = verdict.trendPct, deal = verdict.deal,
                 }
                 if entry.deal then
                     market.deals[#market.deals + 1] = entry
                 end
-                if stats.trend == "down" then
+                if verdict.trend == "down" then
                     market.drops[#market.drops + 1] = entry
-                elseif stats.trend == "up" then
+                elseif verdict.trend == "up" then
                     market.rises[#market.rises + 1] = entry
                 end
             end
