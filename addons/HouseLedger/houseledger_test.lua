@@ -2106,10 +2106,11 @@ do
     Check("its chart shows each day and the next day's estimate", chart.shown and chart.slotCount == 8
         and chart.caption.text == "Items listed, 7 days" and chart.bars[7].shown and chart.bars[8].shown
         and not chart.bars[1].shown and not chart.bars[9].shown)
-    Check("the last scan's day is gold, the estimate faint", chart.bars[7].colorTexture[1] == 1
-        and chart.bars[8].colorTexture[4] < 1 and chart.bars[6].colorTexture[1] < 1)
-    Check("the overview chart fills the room right of its lines", chart.chartWidth == MainFrame().width - 356
-        and chart.barArea == 72)
+    Check("the last scan's day is gold, the estimate purple", chart.bars[7].colorTexture[1] == 1
+        and chart.bars[8].colorTexture[3] == 1 and chart.bars[8].colorTexture[2] < 0.5
+        and chart.bars[6].colorTexture[1] < 1)
+    Check("the overview chart fills the room right of its lines", chart.chartWidth == MainFrame().width - 396
+        and chart.barArea == 62)
     Check("the trend line runs across the chart", chart.line.shown and chart.line.startPoint ~= nil
         and chart.line.endPoint[4] > chart.line.startPoint[3])
     Check("the overview sends nothing", #world.browseQueries == 0 and world.replicateCalls == 0)

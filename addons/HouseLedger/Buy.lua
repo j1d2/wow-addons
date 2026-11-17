@@ -47,10 +47,10 @@ local searchedQuality = 0
 local marketList = {}
 local marketOffset = 0
 local marketCache
--- The overview chart's left edge from the window's left, right of its text lines, and its
--- height: from the status lines up to the list.
-local OVERVIEW_LEFT = 340
-local OVERVIEW_HEIGHT = C.LIST_BOTTOM - 6 - (C.STATUS_HEIGHT + 4)
+-- The overview chart's left edge from the window's left, clear of its text lines (an average
+-- like "(avg 5,799)" ends near 365 in game), and its height, leaving a gap under the list.
+local OVERVIEW_LEFT = 380
+local OVERVIEW_HEIGHT = 80
 -- True while the details block shows the house overview, and the overview kept until the house
 -- has a newer scan or the history length changes.
 local overviewShown = false

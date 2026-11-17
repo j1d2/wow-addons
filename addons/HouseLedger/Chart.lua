@@ -98,10 +98,10 @@ end
 
 -- The house overview chart: items listed a day in blue (the last scan's day in gold), the
 -- normal range around the trend line as a faint band, the trend line in white, and the next
--- day's estimate as a faint gold bar.
+-- day's estimate in purple, so it doesn't read as one more day.
 local OVERVIEW_BAND_COLOR = { 1, 1, 1, 0.12 }
 local OVERVIEW_LINE_COLOR = { 1, 1, 1, 0.8 }
-local OVERVIEW_NEXT_COLOR = { 1, 0.82, 0, 0.35 }
+local OVERVIEW_NEXT_COLOR = { 0.72, 0.45, 1, 0.85 }
 
 --- Draws the house overview: one bar per day's items listed, on an axis that starts a little
 -- under the lowest day so day-to-day changes show; the trend line and its normal range (one
