@@ -103,6 +103,30 @@ state.buildAfterCombat = false
 -- Bag button work that waits for combat to end: making them, or showing or hiding them.
 state.bagButtonsPending = false
 
+-- A profession's recipes by its skill line, for when the game doesn't name the profession: the
+-- skill line IDs the game has used since its first release.
+local RECIPES_BY_SKILL_LINE = {
+    [129] = "FirstAid", [164] = "Blacksmithing", [165] = "Leatherworking", [171] = "Alchemy", [185] = "Cooking",
+    [197] = "Tailoring", [202] = "Engineering", [333] = "Enchanting", [356] = "Fishing", [755] = "Jewelcrafting",
+    [773] = "Inscription",
+}
+
+-- Each class's armor: its best type before and from LATE_ARMOR_LEVEL (when warriors and paladins
+-- learn plate, and hunters and shamans mail), whether it carries a shield, and its relic kind.
+-- Names are Enum.ItemArmorSubclass keys.
+local CLASS_ARMOR = {
+    WARRIOR = { early = "Mail", late = "Plate", shield = true },
+    PALADIN = { early = "Mail", late = "Plate", shield = true, relic = "Libram" },
+    HUNTER = { early = "Leather", late = "Mail" },
+    SHAMAN = { early = "Leather", late = "Mail", shield = true, relic = "Totem" },
+    ROGUE = { early = "Leather" },
+    DRUID = { early = "Leather", relic = "Idol" },
+    MAGE = { early = "Cloth" },
+    PRIEST = { early = "Cloth" },
+    WARLOCK = { early = "Cloth" },
+}
+local LATE_ARMOR_LEVEL = 40
+
 -- FrameWidth's limits.
 local FRAME_WIDTH_MAX = 640
 local SCREEN_MARGIN = 8
@@ -418,4 +442,67 @@ function U.FrameWidth()
     end
     local room = math.floor(screenRight - houseRight - C.PIN_GAP - SCREEN_MARGIN)
     return math.max(C.FRAME_WIDTH_MIN, math.min(FRAME_WIDTH_MAX, room))
+end
+
+--- The recipe kinds (Enum.ItemRecipeSubclass values) of this character's professions, in the
+-- order the game lists them: two main professions, then first aid, fishing and cooking. A
+-- gathering profession has no recipes and is left out. Asks the game about the character only.
+-- @return a list of subclass numbers; empty without professions or the game's tables
+function U.RecipeSubclasses()
+    local list = {}
+    if type(GetProfessions) ~= "function" or type(GetProfessionInfo) ~= "function" or Enum == nil
+        or type(Enum.ItemRecipeSubclass) ~= "table" then
+        return list
+    end
+    local names = {}
+    for name, value in pairs(type(Enum.Profession) == "table" and Enum.Profession or {}) do
+        names[value] = name
+    end
+    local indexes = { GetProfessions() }
+    for slot = 1, 5 do
+        local index = indexes[slot]
+        local skillLine = index and select(7, GetProfessionInfo(index))
+        if skillLine then
+            local info = C_TradeSkillUI and type(C_TradeSkillUI.GetProfessionInfoBySkillLineID) == "function"
+                and C_TradeSkillUI.GetProfessionInfoBySkillLineID(skillLine)
+            local name = info and info.profession and names[info.profession] or RECIPES_BY_SKILL_LINE[skillLine]
+            local subclass = name and Enum.ItemRecipeSubclass[name]
+            if subclass then
+                list[#list + 1] = subclass
+            end
+        end
+    end
+    return list
+end
+
+--- The class filters for gear this character wears best: all weapons, its best armor type, the
+-- armor every class wears (rings, necks, trinkets, off-hands, and cloaks, which are cloth), and its
+-- shield and relic kind. The search's usable-only filter then drops weapons it can't use.
+-- @return the list of AuctionHouseItemClassFilter tables and the armor type's name (like
+--   "Plate"), or nil for a class this doesn't know
+function U.BestGearFilters()
+    local _, classFile = UnitClass("player")
+    local armor = CLASS_ARMOR[classFile]
+    if armor == nil then
+        return nil
+    end
+    local level = UnitLevel("player") or 0
+    local best = (armor.late and level >= LATE_ARMOR_LEVEL) and armor.late or armor.early
+    local kinds = Enum.ItemArmorSubclass
+    local classes = {
+        { classID = Enum.ItemClass.Weapon },
+        { classID = Enum.ItemClass.Armor, subClassID = kinds[best] },
+        { classID = Enum.ItemClass.Armor, subClassID = kinds.Generic },
+    }
+    if best ~= "Cloth" then
+        classes[#classes + 1] = { classID = Enum.ItemClass.Armor, subClassID = kinds.Cloth,
+            inventoryType = Enum.InventoryType.IndexCloakType }
+    end
+    if armor.shield then
+        classes[#classes + 1] = { classID = Enum.ItemClass.Armor, subClassID = kinds.Shield }
+    end
+    if armor.relic then
+        classes[#classes + 1] = { classID = Enum.ItemClass.Armor, subClassID = kinds[armor.relic] }
+    end
+    return classes, best
 end
