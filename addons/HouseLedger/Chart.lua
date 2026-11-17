@@ -184,6 +184,16 @@ function Chart.ShowOverview(chart, overview)
     chart:Show()
 end
 
+--- Sets a chart's size, and the width and bar height the next Show or ShowOverview draws in.
+-- @param chart a chart from Chart.Build or Chart.BuildOverview
+-- @param width the new width
+-- @param height the new height
+function Chart.Resize(chart, width, height)
+    chart:SetSize(width, height)
+    chart.chartWidth = width
+    chart.barArea = height - 18
+end
+
 --- Makes the house overview chart, hidden until Chart.ShowOverview fills it: a dark box, the top
 -- of its axis in the corner, a bar and a band texture per day slot plus one for the estimate,
 -- and the trend line when the client can draw lines.

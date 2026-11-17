@@ -1457,7 +1457,7 @@ function PriceLedger.OverviewLines(overview, coinText)
             break
         end
     end
-    local title = "House overview, " .. Plural(overview.scanDays, "day") .. " of scans. Click a row for its prices."
+    local title = "House overview, " .. Plural(overview.scanDays, "day") .. " of scans"
     local listed = PriceLedger.Thousands(lastItems or 0) .. " at the last scan"
     if overview.scanDays >= 2 then
         listed = listed .. " (avg " .. PriceLedger.Thousands(overview.mean) .. ")"

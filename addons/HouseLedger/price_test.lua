@@ -723,7 +723,7 @@ do
     overview.slots[1] = { items = 6580 }
     local title, lines = P.OverviewLines(overview, Coins)
     Check("the overview title counts days and points at the rows",
-        title == "House overview, 1 day of scans. Click a row for its prices.")
+        title == "House overview, 1 day of scans")
     Check("one day: the count, and what the rest waits for", lines[1].left == "Items listed"
         and lines[1].right == "6,580 at the last scan" and lines[2].right == "after 2 days of scans"
         and lines[3].right == "after 5 days of scans" and lines[4].right == "from your next scan"

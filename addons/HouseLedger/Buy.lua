@@ -47,6 +47,10 @@ local searchedQuality = 0
 local marketList = {}
 local marketOffset = 0
 local marketCache
+-- The overview chart's left edge from the window's left, right of its text lines, and its
+-- height: from the status lines up to the list.
+local OVERVIEW_LEFT = 340
+local OVERVIEW_HEIGHT = C.LIST_BOTTOM - 6 - (C.STATUS_HEIGHT + 4)
 -- True while the details block shows the house overview, and the overview kept until the house
 -- has a newer scan or the history length changes.
 local overviewShown = false
@@ -703,8 +707,12 @@ function Buy.LayoutColumns(width)
     if not showTypical then
         ui.buyPanel.chart:Hide()
         ui.buyPanel.overviewChart:Hide()
-    elseif overviewShown then
-        Buy.ShowOverview()
+    else
+        -- The overview's chart takes the room right of its text, up to the list.
+        Chart.Resize(ui.buyPanel.overviewChart, width - OVERVIEW_LEFT - 16, OVERVIEW_HEIGHT)
+        if overviewShown then
+            Buy.ShowOverview()
+        end
     end
     for _, line in ipairs(ui.buyPanel.detailLines or {}) do
         line.right:SetPoint("RIGHT", ui.frame, "RIGHT", showTypical and -(C.CHART_WIDTH + 24) or -16, 0)

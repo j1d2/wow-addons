@@ -1143,7 +1143,7 @@ do
 
     local panel = MainFrame().buyPanel
     Check("before a click, the details block shows the house overview",
-        panel.detailTitle.text == "House overview, 5 days of scans. Click a row for its prices.")
+        panel.detailTitle.text == "House overview, 5 days of scans")
     local queries = #world.browseQueries
     row:GetScript("OnClick")(row)
     local function Detail(index, left, right)
@@ -2100,7 +2100,7 @@ do
         return panel.detailLines[index].left.text .. " = " .. panel.detailLines[index].right.text
     end
     Check("with saved scans, Buy shows the house overview",
-        panel.detailTitle.text == "House overview, 5 days of scans. Click a row for its prices."
+        panel.detailTitle.text == "House overview, 5 days of scans"
         and Line(1) == "Items listed = 1 at the last scan (avg 1)" and Line(2) == "Trend = steady"
         and Line(3) == "Next day, about = 1 item" and Line(4) == "Listings / units = from your next scan")
     Check("its chart shows each day and the next day's estimate", chart.shown and chart.slotCount == 8
@@ -2108,6 +2108,8 @@ do
         and not chart.bars[1].shown and not chart.bars[9].shown)
     Check("the last scan's day is gold, the estimate faint", chart.bars[7].colorTexture[1] == 1
         and chart.bars[8].colorTexture[4] < 1 and chart.bars[6].colorTexture[1] < 1)
+    Check("the overview chart fills the room right of its lines", chart.chartWidth == MainFrame().width - 356
+        and chart.barArea == 72)
     Check("the trend line runs across the chart", chart.line.shown and chart.line.startPoint ~= nil
         and chart.line.endPoint[4] > chart.line.startPoint[3])
     Check("the overview sends nothing", #world.browseQueries == 0 and world.replicateCalls == 0)
@@ -2186,7 +2188,7 @@ do
         #daily == 1 and daily[1][2] == 3 and daily[1][3] == 27 and daily[1][4] == 2340)
     local panel = MainFrame().buyPanel
     Check("the overview shows the scan it just saved", panel.detailTitle.text
-        == "House overview, 1 day of scans. Click a row for its prices."
+        == "House overview, 1 day of scans"
         and panel.detailLines[4].right.text == "3 / 27" and panel.detailLines[5].right.text == "<money 2340>")
 end
 
