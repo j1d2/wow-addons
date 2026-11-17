@@ -47,6 +47,16 @@ local searchedQuality = 0
 local marketList = {}
 local marketOffset = 0
 local marketCache
+-- The overview chart's left edge from the window's left, clear of its text lines (an average
+-- like "(avg 5,799)" ends near 365 in game), and its height, leaving a gap under the list.
+local OVERVIEW_LEFT = 380
+local OVERVIEW_HEIGHT = 80
+-- True while the details block shows the house overview, and the overview kept until the house
+-- has a newer scan or the history length changes.
+local overviewShown = false
+local overviewCache
+-- True while the details block shows a clicked row's prices.
+local rowShown = false
 
 --- Sets the Buy tab's status line, once the window is built.
 -- @param text the line's text
@@ -290,14 +300,63 @@ function Buy.RenderRows()
     SetStatus(string.format("Showing %d-%d of %d%s.", scrollOffset + 1, last, #list, filtered) .. noteText)
 end
 
---- Empties the details block under the Buy list.
-function Buy.ClearDetails()
+--- Empties the details block under the list: the hint, no lines, no chart.
+local function EmptyDetails()
+    overviewShown, rowShown = false, false
     ui.buyPanel.detailTitle:SetText(DETAIL_HINT)
     for _, line in ipairs(ui.buyPanel.detailLines) do
         line.left:SetText("")
         line.right:SetText("")
     end
     ui.buyPanel.chart:Hide()
+    ui.buyPanel.overviewChart:Hide()
+end
+
+--- Fills the details block with the house overview: items listed each day, its trend and the
+-- day's totals, with the overview chart when the window is wide enough. Before any scan it keeps
+-- the hint. Reads saved data only.
+function Buy.ShowOverview()
+    EmptyDetails()
+    local house = U.MarketHouse()
+    if house == nil then
+        return
+    end
+    local cache = overviewCache
+    if cache == nil or cache.house ~= house or cache.scannedAt ~= house.scannedAt or cache.days ~= Price.DAYS_KEPT then
+        cache = { house = house, scannedAt = house.scannedAt, days = Price.DAYS_KEPT,
+            overview = Price.HouseOverview(house) }
+        overviewCache = cache
+    end
+    if cache.overview == nil then
+        return
+    end
+    overviewShown = true
+    local title, lines = Price.OverviewLines(cache.overview, U.CopperToText)
+    ui.buyPanel.detailTitle:SetText(title)
+    for index, line in ipairs(ui.buyPanel.detailLines) do
+        line.left:SetText(lines[index] and lines[index].left or "")
+        line.right:SetText(lines[index] and lines[index].right or "")
+    end
+    if ui.buyPanel.chartRoom then
+        Chart.ShowOverview(ui.buyPanel.overviewChart, cache.overview)
+    end
+end
+
+--- Shows the overview again unless a clicked row's prices or Market are showing: after a scan
+-- saved new data, or when the auction house opens (its house may differ from the last one).
+function Buy.RefreshOverview()
+    if not rowShown and not ui.buyPanel.marketMode then
+        Buy.ShowOverview()
+    end
+end
+
+--- Clears a picked row from the details block: the house overview on Buy, the hint on Market.
+function Buy.ClearDetails()
+    if ui.buyPanel.marketMode then
+        EmptyDetails()
+    else
+        Buy.ShowOverview()
+    end
 end
 
 --- Reads the new browse results, scrolls to the top and draws them.
@@ -339,7 +398,8 @@ local function ShowRowDetails(row)
     if row.result == nil then
         return
     end
-    Buy.ClearDetails()
+    EmptyDetails()
+    rowShown = true
     local name = U.ItemLook(row.result.itemKey, row.result)
     local stats = U.SavedStats(row.result.itemKey and row.result.itemKey.itemID)
     if stats == nil then
@@ -646,6 +706,13 @@ function Buy.LayoutColumns(width)
     ui.buyPanel.chartRoom = showTypical
     if not showTypical then
         ui.buyPanel.chart:Hide()
+        ui.buyPanel.overviewChart:Hide()
+    else
+        -- The overview's chart takes the room right of its text, up to the list.
+        Chart.Resize(ui.buyPanel.overviewChart, width - OVERVIEW_LEFT - 16, OVERVIEW_HEIGHT)
+        if overviewShown then
+            Buy.ShowOverview()
+        end
     end
     for _, line in ipairs(ui.buyPanel.detailLines or {}) do
         line.right:SetPoint("RIGHT", ui.frame, "RIGHT", showTypical and -(C.CHART_WIDTH + 24) or -16, 0)

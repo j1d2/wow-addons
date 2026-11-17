@@ -6,6 +6,7 @@ All notable changes to HouseLedger. The format follows [Keep a Changelog](https:
 
 ### Added
 
+- **House overview** on the Buy tab, until you click a row: items listed at the last scan and on average, the trend per day, a next-day estimate after 5 days of scans, and the last scan's listings, units and value (each item's units at its cheapest price, so joke-priced listings don't inflate it), with a chart of each day, a trend line and its normal range. Items per day come from the scans you've already saved; listings, units and value start with your next scan.
 - **Price history length** on the Settings tab: keep 14 or 30 days of prices. Going back to 14 drops the older days right away.
 - **Price Check** scrolls with the mouse wheel through every match, and the bottom line says which ones show and how many there are ("13-24 of 57 items").
 - Click **Item**, **Price** or **Trend** in Price Check to sort; click again to reverse.

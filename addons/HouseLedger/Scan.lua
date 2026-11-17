@@ -110,7 +110,7 @@ end
 --- Saves a finished read and says how many prices were saved.
 -- @param token the read's token; a stale one does nothing
 -- @param best the lowest-price table built by PriceLedger.Consider
-local function FinishRead(token, best)
+local function FinishRead(token, best, totals)
     if token ~= readToken or state.scanState ~= "reading" then
         return
     end
@@ -119,12 +119,14 @@ local function FinishRead(token, best)
         Scan.SetStatus("The house sent no listings. Nothing saved.", 8)
         return
     end
-    local saved = Price.Commit(HouseLedgerDB, scanHouseKey, best, time())
+    local saved = Price.Commit(HouseLedgerDB, scanHouseKey, best, time(), totals)
     Scan.StopReading()
     if state.currentTab == C.MARKET_TAB then
         -- The Market lists come from the scan just saved.
         Buy.RefreshMarket()
         Buy.RenderRows()
+    else
+        Buy.RefreshOverview()
     end
     Scan.SetStatus(string.format("Saved %d prices (%s).", saved, Price.HouseLabel(scanHouseKey)), 8)
 end
@@ -135,7 +137,8 @@ end
 -- @param index first listing to read, from 0
 -- @param total how many listings the house sent
 -- @param best the lowest-price table so far; changed in place
-local function ReadListings(token, index, total, best)
+-- @param totals the scan's listings, units and value so far (PriceLedger.AddToTotals); changed in place
+local function ReadListings(token, index, total, best, totals)
     if token ~= readToken or state.scanState ~= "reading" then
         return
     end
@@ -152,17 +155,18 @@ local function ReadListings(token, index, total, best)
         local name, _, count, quality, _, _, _, _, _, buyout, _, _, _, _, _, _, itemID =
             C_AuctionHouse.GetReplicateItemInfo(i)
         Price.Consider(best, itemID, count, buyout, name, quality)
+        Price.AddToTotals(totals, count, buyout)
     end
 
     local nextIndex = last + 1
     if nextIndex >= total then
-        FinishRead(token, best)
+        FinishRead(token, best, totals)
         return
     end
 
     -- The next batch is scheduled first, so nothing that shows the progress can stop the read.
     C_Timer.After(0, function()
-        ReadListings(token, nextIndex, total, best)
+        ReadListings(token, nextIndex, total, best, totals)
     end)
     Scan.SetStatus(string.format("Reading listings %d of %d...", nextIndex, total))
     Scan.ShowProgress(nextIndex, total)
@@ -181,7 +185,7 @@ local function BeginRead()
     state.acceptAnswerUntil = 0
     Scan.SetStatus(string.format("Reading %d listings...", total))
     Scan.ShowProgress(0, total)
-    ReadListings(readToken, 0, total, {})
+    ReadListings(readToken, 0, total, {}, {})
 end
 
 --- Scan click: sends one full-house request, at most once each 15 minutes.
