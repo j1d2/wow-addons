@@ -4,6 +4,11 @@ All notable changes to HouseLedger. The format follows [Keep a Changelog](https:
 
 ## [Unreleased]
 
+### Added
+
+- **Price history length** on the Settings tab: keep 14 or 30 days of prices. Going back to 14 drops the older days right away.
+- The price chart grows with your history. It starts at the first day an item was scanned, with at least 7 bars and up to 14 or 30, and its caption says how many days it shows.
+
 ### Changed
 
 - The Market tab opens about 6 times faster, and price tooltips and details take about 5 times less work. The numbers are the same as before.

@@ -619,7 +619,7 @@ do
     Check("damaged settings are replaced", type(P.EnsureDB({ settings = 5 }).settings) == "table")
 end
 
--- Chart: 14 days of daily lows and highs
+-- Chart: one slot per day from the oldest saved day (at least 7), up to the history length
 do
     local db = P.EmptyDB()
     ScanOn(db, -10, 80)
@@ -627,13 +627,54 @@ do
     ScanOn(db, -3, 100, 60)
     local row = ScanOn(db, 0, 90)
     local chart = P.ChartDays(row.days, row.seen)
-    Check("the chart has 14 days, oldest first", chart and #chart.slots == 14
-        and chart.slots[14].dayKey == P.DayKey(At(0)) and chart.slots[1].dayKey == P.DayKey(At(-13)))
-    Check("a day with scans has its low and high", chart.slots[11].low == 100 and chart.slots[11].high == 120
-        and chart.slots[4].low == 80 and chart.slots[14].low == 90)
-    Check("a day without a scan is empty", chart.slots[12].low == nil and chart.slots[1].low == nil)
+    Check("the chart starts at the oldest saved day, oldest first", chart and #chart.slots == 11
+        and chart.days == 11 and chart.slots[11].dayKey == P.DayKey(At(0))
+        and chart.slots[1].dayKey == P.DayKey(At(-10)))
+    Check("a day with scans has its low and high", chart.slots[8].low == 100 and chart.slots[8].high == 120
+        and chart.slots[1].low == 80 and chart.slots[11].low == 90)
+    Check("a day without a scan is empty", chart.slots[9].low == nil and chart.slots[2].low == nil)
     Check("the chart's top is the highest price", chart.top == 120)
     Check("no days, no chart", P.ChartDays({}, At(0)) == nil and P.ChartDays(nil, nil) == nil)
+    local young = P.ChartDays(ScanOn(P.EmptyDB(), 0, 50).days, At(0))
+    Check("a new item's chart still has 7 slots", #young.slots == 7 and young.days == 7
+        and young.slots[7].low == 50 and young.slots[1].dayKey == P.DayKey(At(-6)))
+end
+
+-- History length: 14 or 30 days, saved in settings, trimmed right away when shortened
+do
+    Check("history is 14 days by default", P.EnsureDB(P.EmptyDB()).settings.historyDays == nil and P.DAYS_KEPT == 14)
+    local db = P.EmptyDB()
+    Check("30 days can be picked", P.SetHistoryDays(db, 30) == 30 and P.DAYS_KEPT == 30
+        and db.settings.historyDays == 30)
+    local row
+    for dayOffset = -29, 0 do
+        row = ScanOn(db, dayOffset, 100 + dayOffset)
+    end
+    -- A second house, last scanned on day -10: it trims back from its own last scan.
+    for _, dayOffset in ipairs({ -25, -10 }) do
+        local best = {}
+        P.Consider(best, 2589, 1, 40)
+        P.Commit(db, "Horde|Test", best, At(dayOffset))
+    end
+    Check("30 days keeps 30 days", #row.days == 30)
+    local chart = P.ChartDays(row.days, row.seen)
+    Check("the chart grows to 30 slots", #chart.slots == 30 and chart.slots[1].low == 71)
+    Check("an unknown length is ignored", P.SetHistoryDays(db, 60) == 30 and P.SetHistoryDays(db, "x") == 30
+        and P.DAYS_KEPT == 30 and db.settings.historyDays == 30)
+    Check("14 days again", P.SetHistoryDays(db, 14) == 14 and P.DAYS_KEPT == 14 and db.settings.historyDays == 14)
+    Check("going back to 14 days trims every item at once", #row.days == 14
+        and row.days[1][1] == P.DayKey(At(-13)))
+    local other = db.houses["Horde|Test"].items[2589].days
+    Check("each house trims back from its own last scan", #other == 1 and other[1][1] == P.DayKey(At(-10)))
+    Check("its chart is 14 slots again", #P.ChartDays(row.days, row.seen).slots == 14)
+    P.SetHistoryDays(db, 30)
+    local loaded = P.EnsureDB({ version = 3, houses = {}, settings = { historyDays = 14 } })
+    Check("loading saved data uses its history length", P.DAYS_KEPT == 14 and loaded.settings.historyDays == 14)
+    P.EnsureDB({ version = 3, houses = {}, settings = { historyDays = 45 } })
+    Check("a damaged saved length loads as 14 days", P.DAYS_KEPT == 14)
+    P.SetHistoryDays(P.EmptyDB(), 30)
+    P.EnsureDB({ version = 3, houses = {} })
+    Check("saved data with no length loads as 14 days", P.DAYS_KEPT == 14)
 end
 
 -- Sell advice in plain words

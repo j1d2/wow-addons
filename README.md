@@ -56,7 +56,7 @@ Open the addon's CurseForge page, [HouseLedger](https://www.curseforge.com/wow/a
 - **Buy tab:** search, then compare today's price with your 7-day average. Click a row for 1, 3, 7 and 14 days.
 - **Sell tab:** drop an item in to see the lowest price now and its history. Then post it in Blizzard's window.
 - **Market tab:** the deals, biggest drops and biggest rises from your last scan, with no searching.
-- **Settings tab:** turn tooltip prices off, or always show the day lines without Shift.
+- **Settings tab:** turn tooltip prices off, always show the day lines without Shift, or keep 30 days of prices instead of 14.
 - **Price Check:** type `/pc` anywhere, or click **Price Check** above your bags, to look up a saved price by name.
 - **Never** buys, posts or scans by itself.
 
@@ -70,8 +70,8 @@ Open the addon's CurseForge page, [HouseLedger](https://www.curseforge.com/wow/a
 2. **Hold Shift** for the average and range over 1, 3, 7 and 14 days. The Settings tab can show these without Shift.
 
 <p align="center">
-  <img src="docs/screenshots/houseledger-buy.png" alt="HouseLedger Buy tab: name search, quality and item level filters, sortable columns with an ilvl column, and a clicked row's saved prices with its 14-day chart" width="420">
-  <img src="docs/screenshots/houseledger-market.png" alt="HouseLedger Market tab: the Biggest drops view from the last scan, with name, quality and item level filters and a clicked row's 14-day chart" width="420">
+  <img src="docs/screenshots/houseledger-buy.png" alt="HouseLedger Buy tab: name search, quality and item level filters, sortable columns with an ilvl column, and a clicked row's saved prices with its price chart" width="420">
+  <img src="docs/screenshots/houseledger-market.png" alt="HouseLedger Market tab: the Biggest drops view from the last scan, with name, quality and item level filters and a clicked row's price chart" width="420">
 </p>
 
 **Buy tab** (left):
@@ -80,7 +80,7 @@ Open the addon's CurseForge page, [HouseLedger](https://www.curseforge.com/wow/a
 3. **Columns:** click a heading to sort by it, and again to reverse. **Price** is the cheapest up right now, **Avg 7d** your saved 7-day average, and **Trend** a green arrow for cheaper than usual, red for pricier, grey "steady" about the same, ⭐ for a deal.
 4. **Scan:** saves today's prices for the whole auction house. The button counts down the 15 minutes until you can scan again.
 5. **Click a row** for its saved prices over 1, 3, 7 and 14 days.
-6. **Its 14-day chart:** each day's lowest price, today in gold, with a faint band up to that day's highest.
+6. **Its chart:** each day's lowest price, today in gold, with a faint band up to that day's highest. It starts at the first day you scanned the item and grows to 14 or 30 days.
 
 **Market tab** (right): your last scan, with no searching. It reads only saved prices and never sends anything.
 1. **View:** Deals, Biggest drops or Biggest rises, and how long ago you scanned.
@@ -89,8 +89,8 @@ Open the addon's CurseForge page, [HouseLedger](https://www.curseforge.com/wow/a
 4. **Click a row** for its day lines and (5) its chart.
 
 <p align="center">
-  <img src="docs/screenshots/houseledger-sell.png" alt="HouseLedger Sell tab: a stack's lowest price now, how many are up, its saved history, trend and typical price, a plain-words verdict and a 14-day chart" width="420">
-  <img src="docs/screenshots/houseledger-pricecheck.png" alt="HouseLedger Price Check window: a name search over saved prices, the matching items with price and trend, and one item's day lines and 14-day chart" width="290">
+  <img src="docs/screenshots/houseledger-sell.png" alt="HouseLedger Sell tab: a stack's lowest price now, how many are up, its saved history, trend and typical price, a plain-words verdict and a price chart" width="420">
+  <img src="docs/screenshots/houseledger-pricecheck.png" alt="HouseLedger Price Check window: a name search over saved prices, the matching items with price and trend, and one item's day lines and price chart" width="290">
 </p>
 
 **Sell tab** (left):
@@ -99,7 +99,7 @@ Open the addon's CurseForge page, [HouseLedger](https://www.curseforge.com/wow/a
 3. **History:** your saved averages and ranges over 1, 3, 7 and 14 days.
 4. **Trend** against your 7-day average, and the **typical** price.
 5. **In plain words:** whether today's price is high, low or about normal.
-6. **Its 14-day chart.** **Reset** empties the tab.
+6. **Its chart.** **Reset** empties the tab.
 
 **Price Check** (right): type `/pc` (or `/pricecheck`) anywhere, no auction house needed.
 1. **Search** your saved prices by name.
@@ -115,6 +115,7 @@ Open the addon's CurseForge page, [HouseLedger](https://www.curseforge.com/wow/a
 1. **Tooltip prices** on or off.
 2. **Day lines on tooltips** without holding Shift.
 3. **The Price Check button** above your bags (right) on or off.
+4. **Price history:** keep 14 or 30 days. Longer history makes a bigger saved file. Going back to 14 drops the older days right away.
 
 <p align="center"><sub>Game art in the screenshots © Blizzard Entertainment, Inc.</sub></p>
 
