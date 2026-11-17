@@ -683,6 +683,168 @@ do
             days = { { 20261101, "x", 1, 1 } } } } } } }).houses.h.items[1].days == 0)
 end
 
+--- The slower Stats from before the one-pass version (0.4.1): each window walks the days again.
+-- Stats must give exactly what this gives, for any row.
+-- @param row an item row
+-- @return the stats table, or nil
+local function ReferenceStats(row)
+    if type(row) ~= "table" or type(row.days) ~= "table" or #row.days == 0 then
+        return nil
+    end
+    if type(row.unit) ~= "number" or type(row.seen) ~= "number" then
+        return nil
+    end
+    local function Totals(fromKey, toKey)
+        local totals = { scans = 0, days = 0, sum = 0, sumOfSquares = 0 }
+        for _, day in ipairs(row.days) do
+            if day[1] >= fromKey and day[1] <= toKey then
+                totals.scans = totals.scans + day[4]
+                totals.days = totals.days + 1
+                totals.sum = totals.sum + day[5]
+                totals.sumOfSquares = totals.sumOfSquares + day[6]
+                totals.low = math.min(totals.low or day[2], day[2])
+                totals.high = math.max(totals.high or day[3], day[3])
+            end
+        end
+        return totals
+    end
+    local latestKey = P.DayKey(row.seen)
+    local function Back(count)
+        return P.DayKey(row.seen - count * DAY)
+    end
+    local stats = { unit = row.unit, seen = row.seen, windows = {} }
+    for _, length in ipairs(P.WINDOWS) do
+        local totals = Totals(Back(length - 1), latestKey)
+        stats.windows[#stats.windows + 1] = {
+            days = length, scans = totals.scans, low = totals.low, high = totals.high,
+            avg = totals.scans > 0 and math.floor(totals.sum / totals.scans + 0.5) or nil,
+        }
+    end
+    local widest = Totals(Back(P.DAYS_KEPT - 1), latestKey)
+    stats.scans, stats.days, stats.low, stats.high = widest.scans, widest.days, widest.low, widest.high
+    local base = Totals(Back(P.BASELINE_DAYS - 1), latestKey)
+    local count = base.scans - 1
+    stats.earlierScans = math.max(0, count)
+    if count >= P.TREND_MIN_SCANS then
+        local mean = (base.sum - row.unit) / count
+        local variance = (base.sumOfSquares - row.unit * row.unit - count * mean * mean) / (count - 1)
+        stats.typical = math.floor(mean + 0.5)
+        stats.spread = math.sqrt(math.max(0, variance))
+    end
+    local verdict = P.Judge(stats, row.unit)
+    stats.trend, stats.trendPct, stats.deal, stats.dealPct = verdict.trend, verdict.trendPct, verdict.deal, verdict.dealPct
+    return stats
+end
+
+--- True when two values hold the same keys and values all the way down.
+-- @param a a value
+-- @param b a value
+-- @return true when they match
+local function Same(a, b)
+    if type(a) ~= "table" or type(b) ~= "table" then
+        return a == b
+    end
+    for key, value in pairs(a) do
+        if not Same(value, b[key]) then
+            return false
+        end
+    end
+    for key in pairs(b) do
+        if a[key] == nil then
+            return false
+        end
+    end
+    return true
+end
+
+--- Rows with made-up histories: gaps, several scans a day, a day newer than the latest scan,
+-- and runs of rows that share one scan time (as a full scan saves them) or don't.
+-- @param count how many rows
+-- @return the rows
+local function MixedRows(count)
+    local state = 12345
+    local function Next(top)
+        state = (state * 16807) % 2147483647
+        return state % top
+    end
+    local rows = {}
+    for index = 1, count do
+        local latest = At(-Next(3), Next(5) * 900)
+        local row = { unit = 50 + Next(200), seen = latest, days = {} }
+        for back = 20, -1, -1 do
+            if Next(4) > 0 then
+                local scans = 1 + Next(3)
+                local low, high = 40 + Next(100), 150 + Next(150)
+                local sum = scans * (low + high) / 2
+                row.days[#row.days + 1] = { P.DayKey(latest - back * DAY), low, high, scans, sum, sum * sum / scans + Next(900) }
+            end
+        end
+        if index % 3 == 0 then
+            row.seen = rows[index - 1].seen
+        end
+        rows[index] = row
+    end
+    return rows
+end
+
+do
+    local rows = MixedRows(400)
+    local function AllSame()
+        for _, row in ipairs(rows) do
+            if not Same(P.Stats(row), ReferenceStats(row)) then
+                return false
+            end
+        end
+        return true
+    end
+    Check("Stats gives what the slower version gave, for every kind of row", AllSame())
+    local kept, baseline = P.DAYS_KEPT, P.BASELINE_DAYS
+    local last = rows[#rows]
+    P.Stats(last)
+    P.DAYS_KEPT, P.BASELINE_DAYS = 21, 3
+    Check("a changed history length counts at once, for the same scan time",
+        Same(P.Stats(last), ReferenceStats(last)))
+    Check("Stats follows a changed history length and baseline", AllSame())
+    P.DAYS_KEPT, P.BASELINE_DAYS = kept, baseline
+    Check("Stats goes back to the usual windows afterwards", AllSame())
+    P.Stats(last)
+    local window = P.WINDOWS[3]
+    P.WINDOWS[3] = 5
+    Check("a window changed in place counts at once", Same(P.Stats(last), ReferenceStats(last)))
+    P.WINDOWS[3] = window
+end
+
+do
+    local rows = MixedRows(200)
+    local house = { scannedAt = rows[1].seen, items = {} }
+    for index, row in ipairs(rows) do
+        row.seen = house.scannedAt
+        house.items[index] = row
+    end
+    local market = P.Market(house)
+    local deals, drops, rises = 0, 0, 0
+    for _, row in ipairs(rows) do
+        local stats = ReferenceStats(row)
+        deals = deals + (stats.deal and 1 or 0)
+        drops = drops + (stats.trend == "down" and 1 or 0)
+        rises = rises + (stats.trend == "up" and 1 or 0)
+    end
+    Check("Market lists what the slower Stats found",
+        #market.deals == deals and #market.drops == drops and #market.rises == rises and deals > 0 and rises > 0)
+    local function EntriesMatch(list)
+        for _, entry in ipairs(list) do
+            local stats = ReferenceStats(house.items[entry.itemID])
+            if entry.unit ~= stats.unit or entry.typical ~= stats.typical or entry.trendPct ~= stats.trendPct
+                or entry.deal ~= stats.deal or entry.qty ~= house.items[entry.itemID].qty then
+                return false
+            end
+        end
+        return true
+    end
+    Check("each Market entry has the slower Stats' numbers",
+        EntriesMatch(market.deals) and EntriesMatch(market.drops) and EntriesMatch(market.rises))
+end
+
 if failed > 0 then
     io.write(string.format("%d failed\n", failed))
     os.exit(1)
