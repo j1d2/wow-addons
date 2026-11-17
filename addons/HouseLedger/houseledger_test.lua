@@ -1,5 +1,5 @@
 --[[
-Offline checks for HouseLedger.lua (frames, events, scan flow).
+Offline checks for HouseLedger's window files (frames, events, scan flow), loaded from the .toc.
 The game does not load this file: it is not listed in the .toc.
 
 It fakes just enough of the WoW API (frames, C_AuctionHouse, C_Timer,

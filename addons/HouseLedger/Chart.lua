@@ -15,7 +15,7 @@ local CHART_RANGE_COLOR = { 0.35, 0.6, 1, 0.3 }
 -- the latest day in gold. The chart has one slot per day from the item's oldest saved day (at
 -- least 7, at most the history length), so it grows as the history does. Hides the chart when
 -- there is nothing to draw. Saved data only.
--- @param chart a chart from BuildChart
+-- @param chart a chart from Chart.Build
 -- @param info the item's saved prices from PriceLedger.Lookup, or nil
 function Chart.Show(chart, info)
     local data = info and Price.ChartDays(info.days, info.seen)
@@ -60,9 +60,9 @@ function Chart.Show(chart, info)
     chart:Show()
 end
 
---- Makes a price chart, hidden until ShowChart fills it: a dark box, the top price in its
+--- Makes a price chart, hidden until Chart.Show fills it: a dark box, the top price in its
 -- corner, and two textures per day slot (the low's bar and the faint range band), enough for the
--- longest history. ShowChart places as many as the item's chart has days.
+-- longest history. Chart.Show places as many as the item's chart has days.
 -- @param parent the panel it belongs to
 -- @param width the chart's width
 -- @param height the chart's height
