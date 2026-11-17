@@ -84,6 +84,7 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
         ui.frame:Show()
         ui.frame:Raise()
         Scan.RefreshIdleLine()
+        Buy.RefreshOverview()
         return
     end
 

@@ -142,6 +142,14 @@ function FrameMethods:CreateTexture()
     return NewObject("Texture")
 end
 
+--- Makes a fake line, recording where it starts and ends.
+-- @return the line
+function FrameMethods:CreateLine()
+    return NewObject("Line")
+end
+function FrameMethods:SetStartPoint(...) self.startPoint = { ... } end
+function FrameMethods:SetEndPoint(...) self.endPoint = { ... } end
+
 --- Builds one listing for the fake replicate list.
 -- The fake GetReplicateItemInfo returns it in the game's order, with owner
 -- fields filled on purpose so the tests can prove they are never saved.
@@ -1134,8 +1142,8 @@ do
         row.trendText.text:find(HouseLedgerPrice.DEAL_ICON, 1, true) ~= nil)
 
     local panel = MainFrame().buyPanel
-    Check("before a click, the details block says what it is for",
-        panel.detailTitle.text == "Click a row for its saved prices over 1, 3, 7 and 14 days.")
+    Check("before a click, the details block shows the house overview",
+        panel.detailTitle.text == "House overview, 5 days of scans. Click a row for its prices.")
     local queries = #world.browseQueries
     row:GetScript("OnClick")(row)
     local function Detail(index, left, right)
@@ -2066,6 +2074,121 @@ do
     Check("Buy hides the Settings panel", frame.buyPanel.shown and not panel.shown)
 end
 
+
+-- ---------------------------------------------------------------------
+-- House overview: the Buy details block while no row is picked
+-- ---------------------------------------------------------------------
+
+do
+    Setup({ screenRight = 1400 })
+    Load()
+    OpenHouse()
+    local panel = MainFrame().buyPanel
+    Check("before any scan the details block keeps its hint",
+        panel.detailTitle.text == "Click a row for its saved prices over 1, 3, 7 and 14 days."
+        and not panel.overviewChart.shown)
+end
+
+do
+    Setup({ screenRight = 1400 })
+    Load()
+    SaveDailyHistory(5)
+    OpenHouse()
+    local panel = MainFrame().buyPanel
+    local chart = panel.overviewChart
+    local function Line(index)
+        return panel.detailLines[index].left.text .. " = " .. panel.detailLines[index].right.text
+    end
+    Check("with saved scans, Buy shows the house overview",
+        panel.detailTitle.text == "House overview, 5 days of scans. Click a row for its prices."
+        and Line(1) == "Items listed = 1 at the last scan (avg 1)" and Line(2) == "Trend = steady"
+        and Line(3) == "Next day, about = 1 item" and Line(4) == "Listings / units = from your next scan")
+    Check("its chart shows each day and the next day's estimate", chart.shown and chart.slotCount == 8
+        and chart.caption.text == "Items listed, 7 days" and chart.bars[7].shown and chart.bars[8].shown
+        and not chart.bars[1].shown and not chart.bars[9].shown)
+    Check("the last scan's day is gold, the estimate faint", chart.bars[7].colorTexture[1] == 1
+        and chart.bars[8].colorTexture[4] < 1 and chart.bars[6].colorTexture[1] < 1)
+    Check("the trend line runs across the chart", chart.line.shown and chart.line.startPoint ~= nil
+        and chart.line.endPoint[4] > chart.line.startPoint[3])
+    Check("the overview sends nothing", #world.browseQueries == 0 and world.replicateCalls == 0)
+
+    world.browseResults = BrowseResults(4306, 4306, 70)
+    Fire("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
+    Check("new search results keep the overview until a row is clicked",
+        panel.detailTitle.text:find("House overview", 1, true) == 1 and chart.shown)
+    local row = ResultRows()[1]
+    row:GetScript("OnClick")(row)
+    Check("a row click swaps in the item's prices and chart", not chart.shown and panel.chart.shown
+        and panel.detailTitle.text == "Item 4306, 5 scans over 5 days")
+    Click("Clear")
+    Check("Clear brings the overview back", chart.shown and not panel.chart.shown
+        and panel.detailTitle.text:find("House overview", 1, true) == 1)
+    Click("Market")
+    Check("Market keeps its hint instead", not chart.shown
+        and panel.detailTitle.text == "Click a row for its saved prices over 1, 3, 7 and 14 days.")
+    Click("Buy")
+    Check("back on Buy, the overview again", chart.shown)
+end
+
+do
+    Setup({ screenRight = 1400 })
+    Load()
+    local P = HouseLedgerPrice
+    -- Items listed each day go up and down, so there is spread around the trend line.
+    -- Oldest day first, the way scans happen.
+    for day, items in ipairs({ 3, 5, 4, 6, 5, 7 }) do
+        local best = {}
+        for itemID = 1, items do
+            P.Consider(best, itemID, 1, 100)
+        end
+        P.Commit(HouseLedgerDB, "Alliance|TestRealm", best, world.now - (6 - day) * 24 * 60 * 60)
+    end
+    OpenHouse()
+    local chart = MainFrame().buyPanel.overviewChart
+    local bands = 0
+    for index = 1, chart.slotCount do
+        bands = bands + (chart.bands[index].shown and 1 or 0)
+    end
+    Check("days that go up and down get the normal-range band around the line", bands > 0
+        and chart.line.shown and MainFrame().buyPanel.detailLines[2].right.text:find("a day", 1, true) ~= nil)
+end
+
+do
+    Setup({ screenRight = 1400 })
+    Load()
+    SaveDailyHistory(1)
+    OpenHouse()
+    local chart = MainFrame().buyPanel.overviewChart
+    Check("one day of scans: a bar but no trend line yet", chart.shown and chart.slotCount == 7
+        and not chart.line.shown and not chart.bands[1].shown)
+end
+
+do
+    Setup({ screenRight = 1100 })
+    Load()
+    SaveDailyHistory(5)
+    OpenHouse()
+    local panel = MainFrame().buyPanel
+    Check("a narrow window shows the overview's lines without its chart",
+        panel.detailTitle.text:find("House overview", 1, true) == 1 and not panel.overviewChart.shown)
+end
+
+do
+    Setup({ screenRight = 1400, listings = { Listing(4306, 5, 250), Listing(4306, 20, 2000), Listing(2589, 3, 0),
+        Listing(2589, 2, 90) } })
+    Load()
+    OpenHouse()
+    Click("Scan")
+    Fire("REPLICATE_ITEM_LIST_UPDATE")
+    RunTimers()
+    local daily = HouseLedgerDB.houses["Alliance|TestRealm"].daily
+    Check("a scan saves the day's listings, units and value, skipping bid-only listings",
+        #daily == 1 and daily[1][2] == 3 and daily[1][3] == 27 and daily[1][4] == 2340)
+    local panel = MainFrame().buyPanel
+    Check("the overview shows the scan it just saved", panel.detailTitle.text
+        == "House overview, 1 day of scans. Click a row for its prices."
+        and panel.detailLines[4].right.text == "3 / 27" and panel.detailLines[5].right.text == "<money 2340>")
+end
 
 -- ---------------------------------------------------------------------
 -- Price chart: Buy and Market details, and the Sell tab; it grows with the history

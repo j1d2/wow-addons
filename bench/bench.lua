@@ -43,6 +43,7 @@ local BUDGETS = {
     ["Stats, every item"] = { kb = 7600, ms = 2000 },
     Market = { kb = 1100, ms = 2000 },
     FindByName = { kb = 600, ms = 2000 },
+    HouseOverview = { kb = 10, ms = 2000 },
     ["ChartDays, every item"] = { kb = 13000, ms = 2000 },
     ["Commit, full scan"] = { kb = 500, ms = 2000 },
     SortHistory = { kb = 200, ms = 2000 },
@@ -180,6 +181,7 @@ local function BenchHouseLedger(items, days)
     end)
     Step("Market", function() P.Market(house) end)
     Step("FindByName", function() P.FindByName(house, "bench item 1", 100) end)
+    Step("HouseOverview", function() P.HouseOverview(house) end)
     Step("ChartDays, every item", function()
         for _, row in pairs(house.items) do
             P.ChartDays(row.days, row.seen)

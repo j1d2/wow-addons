@@ -1,6 +1,7 @@
 --[[
-The price chart: one bar per day's lowest price with a faint band up to its highest, drawn
-from saved data only. Used by Buy, Market, Sell and Price Check.
+The price chart (one bar per day's lowest price with a faint band up to its highest), used by
+Buy, Market, Sell and Price Check, and the house overview chart (items listed a day, with a trend
+line) on Buy. Both draw saved data only.
 ]]
 
 local _, ns = ...
@@ -90,6 +91,134 @@ function Chart.Build(parent, width, height)
         band:SetColorTexture(CHART_RANGE_COLOR[1], CHART_RANGE_COLOR[2], CHART_RANGE_COLOR[3], CHART_RANGE_COLOR[4])
         band:Hide()
         chart.bars[index], chart.bands[index] = bar, band
+    end
+    chart:Hide()
+    return chart
+end
+
+-- The house overview chart: items listed a day in blue (the last scan's day in gold), the
+-- normal range around the trend line as a faint band, the trend line in white, and the next
+-- day's estimate as a faint gold bar.
+local OVERVIEW_BAND_COLOR = { 1, 1, 1, 0.12 }
+local OVERVIEW_LINE_COLOR = { 1, 1, 1, 0.8 }
+local OVERVIEW_NEXT_COLOR = { 1, 0.82, 0, 0.35 }
+
+--- Draws the house overview: one bar per day's items listed, on an axis that starts a little
+-- under the lowest day so day-to-day changes show; the trend line and its normal range (one
+-- standard deviation around it) once there are enough days; and the next day's estimate.
+-- @param chart a chart from Chart.BuildOverview
+-- @param overview from PriceLedger.HouseOverview
+function Chart.ShowOverview(chart, overview)
+    local slots = overview.slots
+    local count = #slots + (overview.projection and 1 or 0)
+    local spread = overview.residual or 0
+    local low, high = overview.low, overview.top
+    if overview.fit then
+        for x = 1, count do
+            low = math.min(low, overview.fit(x) - spread)
+            high = math.max(high, overview.fit(x) + spread)
+        end
+    end
+    -- The axis starts below the lowest value by half the data's range, never under 0.
+    local bottom = high > low and math.max(0, low - (high - low) / 2) or 0
+    local area = chart.barArea
+    --- Height in pixels of a value on this axis, kept inside the bar area.
+    local function Height(value)
+        return math.min(area, math.max(0, (value - bottom) / (high - bottom) * area))
+    end
+    local slotWidth = chart.chartWidth / count
+    local barWidth = math.max(2, math.floor(slotWidth) - 2)
+    --- The x of a slot's left edge inside the chart.
+    local function Left(index)
+        return math.floor((index - 1) * slotWidth) + 1
+    end
+
+    for index = 1, #chart.bars do
+        chart.bars[index]:Hide()
+        chart.bands[index]:Hide()
+    end
+    for index = 1, count do
+        local bar, band = chart.bars[index], chart.bands[index]
+        local slot = slots[index]
+        local value = slot and slot.items or (index > #slots and overview.projection)
+        if value then
+            bar:ClearAllPoints()
+            bar:SetPoint("BOTTOMLEFT", chart, "BOTTOMLEFT", Left(index), 2)
+            bar:SetWidth(barWidth)
+            bar:SetHeight(math.max(1, math.floor(Height(value) + 0.5)))
+            local color = OVERVIEW_NEXT_COLOR
+            if index == #slots then
+                color = CHART_LATEST_COLOR
+            elseif index < #slots then
+                color = CHART_BAR_COLOR
+            end
+            bar:SetColorTexture(color[1], color[2], color[3], color[4])
+            bar:Show()
+        end
+        if overview.residual and overview.residual > 0 then
+            local center = overview.fit(index)
+            local from = math.floor(Height(center - spread) + 0.5)
+            local to = math.floor(Height(center + spread) + 0.5)
+            if to > from then
+                band:ClearAllPoints()
+                band:SetPoint("BOTTOMLEFT", chart, "BOTTOMLEFT", Left(index) - 1, 2 + from)
+                band:SetWidth(math.ceil(slotWidth))
+                band:SetHeight(to - from)
+                band:Show()
+            end
+        end
+    end
+    chart.slotCount = count
+    if chart.line then
+        if overview.fit then
+            local half = slotWidth / 2
+            chart.line:SetStartPoint("BOTTOMLEFT", chart, half, 2 + Height(overview.fit(1)))
+            chart.line:SetEndPoint("BOTTOMLEFT", chart, (count - 1) * slotWidth + half, 2 + Height(overview.fit(count)))
+            chart.line:Show()
+        else
+            chart.line:Hide()
+        end
+    end
+    chart.topText:SetText(Price.Thousands(high))
+    chart.caption:SetText("Items listed, " .. #slots .. " days")
+    chart:Show()
+end
+
+--- Makes the house overview chart, hidden until Chart.ShowOverview fills it: a dark box, the top
+-- of its axis in the corner, a bar and a band texture per day slot plus one for the estimate,
+-- and the trend line when the client can draw lines.
+-- @param parent the panel it belongs to
+-- @param width the chart's width
+-- @param height the chart's height
+-- @return the chart frame, with bars, bands, line, barArea, topText and caption
+function Chart.BuildOverview(parent, width, height)
+    local chart = CreateFrame("Frame", nil, parent)
+    chart:SetSize(width, height)
+    local background = chart:CreateTexture(nil, "BACKGROUND")
+    background:SetAllPoints(chart)
+    background:SetColorTexture(0, 0, 0, 0.3)
+    chart.topText = U.Cell(chart, "GameFontHighlightSmall", "LEFT")
+    chart.topText:SetPoint("TOPLEFT", chart, "TOPLEFT", 3, -2)
+    chart.caption = U.Cell(chart, "GameFontDisableSmall", "RIGHT")
+    chart.caption:SetPoint("TOPRIGHT", chart, "TOPRIGHT", -3, -2)
+    chart.barArea = height - 18
+    chart.chartWidth = width
+    chart.bars, chart.bands = {}, {}
+    local slots = Price.HISTORY_CHOICES[#Price.HISTORY_CHOICES] + 1
+    for index = 1, slots do
+        chart.bands[index] = chart:CreateTexture(nil, "BORDER")
+        chart.bands[index]:SetColorTexture(OVERVIEW_BAND_COLOR[1], OVERVIEW_BAND_COLOR[2], OVERVIEW_BAND_COLOR[3],
+            OVERVIEW_BAND_COLOR[4])
+        chart.bands[index]:Hide()
+        chart.bars[index] = chart:CreateTexture(nil, "ARTWORK")
+        chart.bars[index]:Hide()
+    end
+    if type(chart.CreateLine) == "function" then
+        chart.line = chart:CreateLine(nil, "OVERLAY")
+        chart.line:SetThickness(2)
+        chart.line:SetColorTexture(OVERVIEW_LINE_COLOR[1], OVERVIEW_LINE_COLOR[2], OVERVIEW_LINE_COLOR[3],
+            OVERVIEW_LINE_COLOR[4])
+        chart.line:Hide()
     end
     chart:Hide()
     return chart

@@ -40,6 +40,8 @@ PriceLedger.DAYS_KEPT = 14
 PriceLedger.HISTORY_CHOICES = { 14, 30 }
 -- The chart shows at least this many days, so a new item's few bars aren't stretched wide.
 PriceLedger.CHART_MIN_DAYS = 7
+-- The house overview estimates the next day only from this many days of scans.
+PriceLedger.OVERVIEW_MIN_DAYS = 5
 -- Stats windows, in days back from the latest scan's day, that day included.
 PriceLedger.WINDOWS = { 1, 3, 7, 14 }
 -- Trend and deal compare the latest price with the average of the
@@ -285,8 +287,23 @@ function PriceLedger.EnsureDB(db)
         db.settings.historyDays = nil
     end
     PriceLedger.DAYS_KEPT = db.settings.historyDays or PriceLedger.HISTORY_CHOICES[1]
-    -- Item names and qualities are optional, saved by scans from late 2026 on.
+    -- Item names and qualities are optional, saved by scans from late 2026 on, and so are the
+    -- house's daily totals.
     for _, house in pairs(db.houses) do
+        if type(house) == "table" and house.daily ~= nil then
+            if type(house.daily) ~= "table" then
+                house.daily = nil
+            else
+                local kept = {}
+                for _, day in ipairs(house.daily) do
+                    if type(day) == "table" and type(day[1]) == "number" and type(day[2]) == "number"
+                        and type(day[3]) == "number" and type(day[4]) == "number" then
+                        kept[#kept + 1] = day
+                    end
+                end
+                house.daily = kept
+            end
+        end
         if type(house) == "table" and type(house.items) == "table" then
             for _, row in pairs(house.items) do
                 if type(row) == "table" then
@@ -441,6 +458,41 @@ local function OldestKept(now)
     return PriceLedger.DayKey(now - (PriceLedger.DAYS_KEPT - 1) * SECONDS_PER_DAY)
 end
 
+--- Adds one listing to a scan's house totals. A bid-only listing (no buyout) isn't counted.
+-- @param totals { listings, units, value }, changed in place; starts empty
+-- @param count how many items the listing holds
+-- @param buyout the listing's buyout in copper
+function PriceLedger.AddToTotals(totals, count, buyout)
+    if type(count) ~= "number" or count <= 0 or type(buyout) ~= "number" or buyout <= 0 then
+        return
+    end
+    totals.listings = (totals.listings or 0) + 1
+    totals.units = (totals.units or 0) + count
+    totals.value = (totals.value or 0) + buyout
+end
+
+--- Saves a scan's house totals as its day's: { dayKey, listings, units, value }, oldest first.
+-- A later scan the same day replaces the day's totals, so each day keeps its last full scan.
+-- @param house the house table; its daily list is made when missing
+-- @param now when the scan ran
+-- @param totals from AddToTotals, or nil to save nothing
+local function RecordHouseDay(house, now, totals)
+    if type(house.daily) ~= "table" then
+        house.daily = {}
+    end
+    if type(totals) ~= "table" or (totals.listings or 0) <= 0 then
+        return
+    end
+    local key = PriceLedger.DayKey(now)
+    local daily = house.daily
+    local entry = { key, totals.listings, totals.units, totals.value }
+    if #daily > 0 and daily[#daily][1] == key then
+        daily[#daily] = entry
+    else
+        daily[#daily + 1] = entry
+    end
+end
+
 --- Remember, with the first day to keep worked out by the caller.
 -- @param house the house table
 -- @param itemID the item's id
@@ -489,8 +541,10 @@ end
 -- @param houseKey key of the house that was scanned
 -- @param best the lowest-price table from Consider
 -- @param now when the scan ran
+-- @param totals optional; the scan's listings, units and value from AddToTotals, saved as the
+--   day's house totals
 -- @return how many item prices were saved
-function PriceLedger.Commit(db, houseKey, best, now)
+function PriceLedger.Commit(db, houseKey, best, now, totals)
     local house = PriceLedger.EnsureHouse(db, houseKey)
     house.scannedAt = now
     local oldest = OldestKept(now)
@@ -510,6 +564,8 @@ function PriceLedger.Commit(db, houseKey, best, now)
             PruneDays(row.days, oldest)
         end
     end
+    RecordHouseDay(house, now, totals)
+    PruneDays(house.daily, oldest)
     db.lastHouseKey = houseKey
     return saved
 end
@@ -547,6 +603,9 @@ function PriceLedger.SetHistoryDays(db, days)
                 if type(row) == "table" and type(row.days) == "table" then
                     PruneDays(row.days, oldest)
                 end
+            end
+            if type(house.daily) == "table" then
+                PruneDays(house.daily, oldest)
             end
         end
     end
@@ -821,6 +880,109 @@ function PriceLedger.ChartDays(days, seen)
     end
     return chart
 end
+
+--- A whole number with commas between thousands, like 1,234,567.
+-- @param number a number; rounded to whole
+-- @return the text
+function PriceLedger.Thousands(number)
+    local text = tostring(math.floor(math.abs(number) + 0.5))
+    local grouped = text:reverse():gsub("(%d%d%d)", "%1,"):reverse()
+    grouped = grouped:gsub("^,", "")
+    return (number < 0 and "-" or "") .. grouped
+end
+
+--- The house overview: how many items each day's scans saw, with the day's totals, and a
+-- straight-line fit through the days that had scans. Reads saved data only.
+-- One slot per calendar day, oldest first, ending on the day of the house's last scan; it starts
+-- at the oldest day with a scan, with at least CHART_MIN_DAYS slots and at most DAYS_KEPT.
+-- @param house a house table, or nil
+-- @return nil before any scan, or a table:
+--   slots[i] = { dayKey, items, listings, units, value }; items is nil on a day with no scan,
+--     and the totals are nil on days saved before totals were kept
+--   scanDays: days with a scan; mean, low, top: of their item counts
+--   slope, intercept, fit(i): the least-squares line through (slot, items), from 2 days
+--   residual: the sample standard deviation around that line, from 3 days
+--   trendPct: slope as a share of the mean, per day
+--   projection: the line at the next day, rounded, from OVERVIEW_MIN_DAYS days
+function PriceLedger.HouseOverview(house)
+    if type(house) ~= "table" or type(house.items) ~= "table" or type(house.scannedAt) ~= "number" then
+        return nil
+    end
+    local counts = {}
+    for _, row in pairs(house.items) do
+        if type(row) == "table" and type(row.days) == "table" then
+            for _, day in ipairs(row.days) do
+                counts[day[1]] = (counts[day[1]] or 0) + 1
+            end
+        end
+    end
+    local totals = {}
+    for _, entry in ipairs(type(house.daily) == "table" and house.daily or {}) do
+        totals[entry[1]] = entry
+    end
+
+    local keys = {}
+    for back = 0, PriceLedger.DAYS_KEPT - 1 do
+        keys[back + 1] = PriceLedger.DayKey(house.scannedAt - back * SECONDS_PER_DAY)
+    end
+    local count = PriceLedger.CHART_MIN_DAYS
+    for index = #keys, 1, -1 do
+        if counts[keys[index]] then
+            count = math.max(count, index)
+            break
+        end
+    end
+    count = math.min(count, #keys)
+
+    local overview = { slots = {}, scanDays = 0 }
+    local sumX, sumY, sumXX, sumXY = 0, 0, 0, 0
+    for back = count - 1, 0, -1 do
+        local key = keys[back + 1]
+        local day = totals[key]
+        local slot = { dayKey = key, items = counts[key] }
+        if day then
+            slot.listings, slot.units, slot.value = day[2], day[3], day[4]
+        end
+        overview.slots[#overview.slots + 1] = slot
+        local items = slot.items
+        if items then
+            local x = #overview.slots
+            overview.scanDays = overview.scanDays + 1
+            sumX, sumY, sumXX, sumXY = sumX + x, sumY + items, sumXX + x * x, sumXY + x * items
+            overview.low = math.min(overview.low or items, items)
+            overview.top = math.max(overview.top or items, items)
+        end
+    end
+    local n = overview.scanDays
+    if n == 0 then
+        return nil
+    end
+    overview.mean = sumY / n
+    if n >= 2 then
+        local slope = (n * sumXY - sumX * sumY) / (n * sumXX - sumX * sumX)
+        local intercept = (sumY - slope * sumX) / n
+        overview.slope, overview.intercept = slope, intercept
+        overview.fit = function(x)
+            return intercept + slope * x
+        end
+        overview.trendPct = overview.mean > 0 and slope / overview.mean or 0
+    end
+    if n >= 3 then
+        local squares = 0
+        for x, slot in ipairs(overview.slots) do
+            if slot.items then
+                local off = slot.items - overview.fit(x)
+                squares = squares + off * off
+            end
+        end
+        overview.residual = math.sqrt(squares / (n - 2))
+    end
+    if n >= PriceLedger.OVERVIEW_MIN_DAYS then
+        overview.projection = math.max(0, Round(overview.fit(#overview.slots + 1)))
+    end
+    return overview
+end
+
 
 --- Price Check: the saved items whose name holds the text, ignoring case. Names that start with
 -- the text come first, then the rest, each A to Z. Reads saved data only; an item scanned before
@@ -1280,6 +1442,49 @@ function PriceLedger.TooltipLines(info, coinText, showDetails)
         }
     end
     return lines
+end
+
+--- The overview's text: a title, then five lines of { left, right } for the details block.
+-- @param overview from HouseOverview
+-- @param coinText formats copper as money
+-- @return the title and the lines
+function PriceLedger.OverviewLines(overview, coinText)
+    local latest = overview.slots[#overview.slots]
+    local lastItems
+    for index = #overview.slots, 1, -1 do
+        if overview.slots[index].items then
+            lastItems = overview.slots[index].items
+            break
+        end
+    end
+    local title = "House overview, " .. Plural(overview.scanDays, "day") .. " of scans. Click a row for its prices."
+    local listed = PriceLedger.Thousands(lastItems or 0) .. " at the last scan"
+    if overview.scanDays >= 2 then
+        listed = listed .. " (avg " .. PriceLedger.Thousands(overview.mean) .. ")"
+    end
+    local lines = { { left = "Items listed", right = listed } }
+    if overview.trendPct == nil then
+        lines[2] = { left = "Trend", right = "after 2 days of scans" }
+    elseif math.abs(overview.trendPct) < 0.005 then
+        lines[2] = { left = "Trend", right = "steady" }
+    else
+        lines[2] = { left = "Trend", right = string.format("%+.1f%% a day", overview.trendPct * 100) }
+    end
+    if overview.projection then
+        lines[3] = { left = "Next day, about",
+            right = PriceLedger.Thousands(overview.projection) .. (overview.projection == 1 and " item" or " items") }
+    else
+        lines[3] = { left = "Next day, about", right = "after " .. PriceLedger.OVERVIEW_MIN_DAYS .. " days of scans" }
+    end
+    if latest.listings then
+        lines[4] = { left = "Listings / units",
+            right = PriceLedger.Thousands(latest.listings) .. " / " .. PriceLedger.Thousands(latest.units) }
+        lines[5] = { left = "Value listed", right = coinText(latest.value) }
+    else
+        lines[4] = { left = "Listings / units", right = "from your next scan" }
+        lines[5] = { left = "Value listed", right = "from your next scan" }
+    end
+    return title, lines
 end
 
 return PriceLedger

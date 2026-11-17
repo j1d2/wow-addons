@@ -638,6 +638,110 @@ do
         and young.slots[7].low == 50 and young.slots[1].dayKey == P.DayKey(At(-6)))
 end
 
+-- House overview: per-day totals from scans, items listed per day, trend and next-day estimate
+do
+    Check("thousands get commas", P.Thousands(0) == "0" and P.Thousands(999) == "999"
+        and P.Thousands(1000) == "1,000" and P.Thousands(1234567) == "1,234,567" and P.Thousands(-4200) == "-4,200")
+    local totals = {}
+    P.AddToTotals(totals, 5, 250)
+    P.AddToTotals(totals, 20, 1000)
+    P.AddToTotals(totals, 1, 0)
+    P.AddToTotals(totals, 0, 50)
+    P.AddToTotals(totals, nil, 50)
+    Check("totals count buyout listings, their units and value", totals.listings == 2 and totals.units == 25
+        and totals.value == 1250)
+
+    local db = P.EmptyDB()
+    local function ScanDay(dayOffset, items, seconds)
+        local best, sums = {}, {}
+        for itemID = 1, items do
+            P.Consider(best, itemID, 1, 100)
+            P.AddToTotals(sums, 2, 300)
+        end
+        P.Commit(db, "Alliance|Test", best, At(dayOffset, seconds), sums)
+    end
+    ScanDay(-2, 10)
+    ScanDay(-2, 12, 900)
+    local house = db.houses["Alliance|Test"]
+    Check("a day keeps its latest scan's totals", #house.daily == 1 and house.daily[1][1] == P.DayKey(At(-2))
+        and house.daily[1][2] == 12 and house.daily[1][3] == 24 and house.daily[1][4] == 3600)
+    P.Commit(db, "Alliance|Test", { [1] = { buyout = 5, count = 1, qty = 1 } }, At(-1))
+    Check("a scan without totals saves none", #house.daily == 1)
+
+    local overview = P.HouseOverview(house)
+    Check("the overview counts items listed each day, from saved days", overview.slots[#overview.slots].items == 1
+        and overview.slots[#overview.slots - 1].items == 12)
+    Check("it has at least 7 slots, ending on the last scan's day", #overview.slots == 7
+        and overview.slots[7].dayKey == P.DayKey(At(-1)) and overview.slots[1].items == nil)
+    Check("a day's totals come with it", overview.slots[6].listings == 12 and overview.slots[6].units == 24
+        and overview.slots[6].value == 3600 and overview.slots[7].listings == nil)
+    Check("two days: no trend or estimate yet", overview.scanDays == 2 and overview.projection == nil
+        and overview.slope ~= nil)
+    Check("no house, no overview", P.HouseOverview(nil) == nil and P.HouseOverview({ items = {} }) == nil)
+
+    -- 6 days rising 100 items a day from 1,000: the fit is exact.
+    db = P.EmptyDB()
+    for day = 0, 5 do
+        ScanDay(day - 5, 1000 + day * 100)
+    end
+    overview = P.HouseOverview(db.houses["Alliance|Test"])
+    Check("the trend line fits the days", math.abs(overview.slope - 100) < 1e-9
+        and math.abs(overview.fit(7) - 1500) < 1e-9 and overview.scanDays == 6)
+    Check("tomorrow's estimate continues the line", overview.projection == 1600)
+    Check("a perfect line has no spread around it", overview.residual < 1e-6)
+    Check("the mean and top cover the days", overview.mean == 1250 and overview.top == 1500 and overview.low == 1000)
+    Check("trend per day as a share of the mean", math.abs(overview.trendPct - 100 / 1250) < 1e-9)
+
+    -- Up and down around 2,000: spread around the line, and a gap day left out.
+    db = P.EmptyDB()
+    for index, items in ipairs({ 2000, 2100, 1900, 2050, 1950 }) do
+        ScanDay(index * 2 - 10, items)
+    end
+    overview = P.HouseOverview(db.houses["Alliance|Test"])
+    Check("days without a scan stay empty and out of the fit", overview.scanDays == 5 and #overview.slots == 9
+        and overview.slots[2].items == nil and overview.residual > 0)
+    Check("5 days of scans give an estimate", type(overview.projection) == "number")
+
+    P.SetHistoryDays(db, 30)
+    for day = -29, 0 do
+        ScanDay(day + 30, 500)
+    end
+    Check("30 days kept, 30 days of totals", #db.houses["Alliance|Test"].daily == 30)
+    P.SetHistoryDays(db, 14)
+    Check("going back to 14 days trims the totals too", #db.houses["Alliance|Test"].daily == 14)
+    Check("the overview grows to the history length", #P.HouseOverview(db.houses["Alliance|Test"]).slots == 14)
+end
+
+do
+    local db = P.EnsureDB({ version = 3, houses = { h = { items = {}, scannedAt = At(0),
+        daily = { { 20261101, 5, 10, 100 }, { "x", 1, 1, 1 }, "junk", { 20261102, nil, 1, 1 } } },
+        g = { items = {}, daily = "junk" } } })
+    Check("damaged house totals are dropped on load", #db.houses.h.daily == 1 and db.houses.h.daily[1][1] == 20261101
+        and db.houses.g.daily == nil)
+
+    local overview = { slots = {}, scanDays = 1, mean = 6580, top = 6580, low = 6580 }
+    overview.slots[1] = { items = 6580 }
+    local title, lines = P.OverviewLines(overview, Coins)
+    Check("the overview title counts days and points at the rows",
+        title == "House overview, 1 day of scans. Click a row for its prices.")
+    Check("one day: the count, and what the rest waits for", lines[1].left == "Items listed"
+        and lines[1].right == "6,580 at the last scan" and lines[2].right == "after 2 days of scans"
+        and lines[3].right == "after 5 days of scans" and lines[4].right == "from your next scan"
+        and lines[5].right == "from your next scan" and #lines == 5)
+    overview = { scanDays = 6, mean = 5900, trendPct = 0.031, projection = 6900,
+        slots = { { items = 5000 }, { items = 6580, listings = 41230, units = 1204553, value = 987654321 } } }
+    title, lines = P.OverviewLines(overview, Coins)
+    Check("with days of scans: average, trend, next day and the totals",
+        lines[1].right == "6,580 at the last scan (avg 5,900)" and lines[2].right == "+3.1% a day"
+        and lines[3].left == "Next day, about" and lines[3].right == "6,900 items"
+        and lines[4].left == "Listings / units" and lines[4].right == "41,230 / 1,204,553"
+        and lines[5].left == "Value listed" and lines[5].right == "987654321c")
+    overview.trendPct = -0.004
+    Check("a trend under half a percent is steady", select(2, P.OverviewLines(overview, Coins))[2].right == "steady")
+    overview.trendPct = -0.12
+    Check("a falling trend has a minus", select(2, P.OverviewLines(overview, Coins))[2].right == "-12.0% a day")
+end
+
 -- History length: 14 or 30 days, saved in settings, trimmed right away when shortened
 do
     Check("history is 14 days by default", P.EnsureDB(P.EmptyDB()).settings.historyDays == nil and P.DAYS_KEPT == 14)

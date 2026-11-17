@@ -239,6 +239,9 @@ function Window.Build()
     -- The price chart sits right of the details lines, above the status lines.
     ui.buyPanel.chart = Chart.Build(ui.buyPanel, C.CHART_WIDTH, CHART_HEIGHT)
     ui.buyPanel.chart:SetPoint("BOTTOMRIGHT", ui.frame, "BOTTOMRIGHT", -16, C.STATUS_HEIGHT + 4)
+    -- The house overview's chart takes the same spot while no row is picked.
+    ui.buyPanel.overviewChart = Chart.BuildOverview(ui.buyPanel, C.CHART_WIDTH, CHART_HEIGHT)
+    ui.buyPanel.overviewChart:SetPoint("BOTTOMRIGHT", ui.frame, "BOTTOMRIGHT", -16, C.STATUS_HEIGHT + 4)
     Buy.LayoutColumns(C.FRAME_WIDTH_MIN)
 
     ui.statusText = ui.buyPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -499,6 +502,7 @@ function Window.OnCombatEnded()
         ui.frame:Show()
         ui.frame:Raise()
         Scan.RefreshIdleLine()
+        Buy.RefreshOverview()
     else
         ui.frame:Hide()
     end
