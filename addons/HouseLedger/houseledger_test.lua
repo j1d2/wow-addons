@@ -321,11 +321,15 @@ local function Setup(opts)
         After = function(_, fn) world.timers[#world.timers + 1] = fn end,
     }
 
-    _G.TooltipDataProcessor = {
-        AddTooltipPostCall = function(kind, fn)
-            world.tooltipHooks[#world.tooltipHooks + 1] = { kind = kind, fn = fn }
-        end,
-    }
+    -- opts.noTooltipHook: a client without TooltipDataProcessor.
+    _G.TooltipDataProcessor = nil
+    if not opts.noTooltipHook then
+        _G.TooltipDataProcessor = {
+            AddTooltipPostCall = function(kind, fn)
+                world.tooltipHooks[#world.tooltipHooks + 1] = { kind = kind, fn = fn }
+            end,
+        }
+    end
 
     _G.AuctionHouseFrame = nil
     -- Blizzard's display modes are lists of subframe names; only which
@@ -412,8 +416,16 @@ local function Setup(opts)
         end,
     }
 
-    dofile(folder .. "/PriceLedger.lua")
-    dofile(folder .. "/HouseLedger.lua")
+    -- Load every file the .toc lists, in its order, the way the game does: each file gets the
+    -- addon's name and its one shared table. The checks reach the price module as HouseLedgerPrice.
+    local ns = {}
+    for line in io.lines(folder .. "/HouseLedger.toc") do
+        local file = line:match("^%s*([^#%s][^%s]*%.lua)%s*$")
+        if file then
+            assert(loadfile(folder .. "/" .. file))("HouseLedger", ns)
+        end
+    end
+    _G.HouseLedgerPrice = ns.Price
 end
 
 --- The addon's event frame: the one registered for ADDON_LOADED.
@@ -1202,6 +1214,43 @@ do
     world.tooltipHooks[1].fn(tooltip, { id = 4306 })
     Check("without GetMoneyString the price is still gold, silver, copper",
         lines[1] == "HouseLedger  2g 50s 50c")
+end
+
+do
+    Setup({ listings = { Listing(4306, 5, 250) } })
+    Load()
+    OpenHouse()
+    Click("Scan")
+    Fire("REPLICATE_ITEM_LIST_UPDATE")
+    RunTimers()
+    local lines = {}
+    local tooltip = { AddLine = function(_, text) lines[#lines + 1] = text end }
+    _G.GetItemInfoInstant = function(link) return tonumber(link:match("item:(%d+)")) end
+    world.tooltipHooks[1].fn(tooltip, { hyperlink = "|cffffffff|Hitem:4306::::::::60:::::|h[Copper Ore]|h|r" })
+    Check("a tooltip with only a link finds the item from the link", lines[1] == "HouseLedger  <money 50>")
+    world.tooltipHooks[1].fn(nil, { id = 4306 })
+    world.tooltipHooks[1].fn({}, { id = 4306 })
+    world.tooltipHooks[1].fn(tooltip, nil)
+    Check("a tooltip that can't take lines, or no data, adds nothing", #lines == 1)
+end
+
+do
+    Setup({ noTooltipHook = true })
+    Load()
+    OpenHouse()
+    Check("a client without tooltip hooks says mouseover prices are off",
+        ScanLine() == "Mouseover prices are unavailable on this client.")
+end
+
+do
+    Setup()
+    local itemKind = Enum.TooltipDataType
+    Enum.TooltipDataType = nil
+    Load()
+    OpenHouse()
+    Check("a client without the item tooltip kind says so too", #world.tooltipHooks == 0
+        and ScanLine() == "Mouseover prices are unavailable on this client.")
+    Enum.TooltipDataType = itemKind
 end
 
 

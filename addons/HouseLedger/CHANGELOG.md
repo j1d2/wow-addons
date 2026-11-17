@@ -14,6 +14,7 @@ All notable changes to HouseLedger. The format follows [Keep a Changelog](https:
 
 ### Changed
 
+- HouseLedger's code is now split into smaller files. Nothing looks or works differently, but restart the game once after updating: a `/reload` doesn't pick up new files.
 - The Market tab opens about 6 times faster, and price tooltips and details take about 5 times less work. The numbers are the same as before.
 - Items that stop showing up in scans now drop their days older than 14 days too, so the saved file stays smaller. Their tooltip still shows the last price and when it was seen.
 

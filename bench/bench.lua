@@ -19,9 +19,8 @@ if mode ~= "--smoke" and mode ~= "--full" then
     os.exit(2)
 end
 
-dofile("addons/HouseLedger/PriceLedger.lua")
 dofile("addons/Unmaker/UnmakerStats.lua")
-local P = HouseLedgerPrice
+local P = dofile("addons/HouseLedger/PriceLedger.lua")
 local S = UnmakerStats
 local Synth = dofile("bench/synth.lua")
 

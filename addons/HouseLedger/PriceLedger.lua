@@ -12,8 +12,14 @@ Every number here is the cheapest asking price a scan saw, not a
 sale price.
 ]]
 
+-- The game hands each addon file its name and the addon's own table; the window code reads this
+-- module as ns.Price. Offline (lua5.1 and dofile) there is no table, and dofile returns the
+-- module instead (the return at the end).
+local _, ns = ...
 local PriceLedger = {}
-_G.HouseLedgerPrice = PriceLedger
+if type(ns) == "table" then
+    ns.Price = PriceLedger
+end
 
 PriceLedger.DB_VERSION = 3
 
@@ -1275,3 +1281,5 @@ function PriceLedger.TooltipLines(info, coinText, showDetails)
     end
     return lines
 end
+
+return PriceLedger
