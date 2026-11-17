@@ -1809,23 +1809,57 @@ local function BuildTabs()
     SelectTab(BUY_TAB)
 end
 
--- Price Check layout: rows under the search box, then the details and the chart.
-local PC_WIDTH = 400
-local PC_HEIGHT = 500
-local PC_ROWS = 12
-local PC_LIST_TOP = 64
-local PC_DETAIL_TOP = PC_LIST_TOP + PC_ROWS * ROW_HEIGHT + 8
+-- Price Check layout: column headings under the search box, the rows, then the details and the
+-- chart.
+local PC = {
+    WIDTH = 400,
+    HEADER_HEIGHT = 18,
+    ROWS = 12,
+    LIST_TOP = 64,
+    -- How many matches Price Check lists; the status line still counts them all.
+    MATCH_LIMIT = 100,
+    -- The sortable headings, left to right.
+    SORT_KEYS = { "name", "price", "trend" },
+}
+PC.HEIGHT = 500 + PC.HEADER_HEIGHT
+PC.ROWS_TOP = PC.LIST_TOP + PC.HEADER_HEIGHT
+PC.DETAIL_TOP = PC.ROWS_TOP + PC.ROWS * ROW_HEIGHT + 8
 
---- Fills Price Check's list from what the search box holds, from saved data only.
-local function RefreshPriceCheck()
-    local text = strtrim(priceCheck.searchBox:GetText() or "")
-    priceCheck.found = HouseLedgerPrice.FindByName(MarketHouse(), text)
-    priceCheck.offset = 0
+--- The value a Price Check row sorts by.
+-- @param entry a match from FindByName, with its saved prices in entry.info
+-- @param key "name", "price" or "trend"
+-- @return the value; nil sorts last
+function PC.Value(entry, key)
+    if key == "name" then
+        return entry.name:lower()
+    end
+    local info = entry.info
+    if key == "price" then
+        return info and info.unit
+    end
+    return info and info.stats and info.stats.trendPct
+end
+
+--- Writes Price Check's headings, with an arrow on the sorted one.
+function PC.RefreshHeader()
+    local sort = priceCheck.sort
+    for key, text in pairs(priceCheck.headerTexts) do
+        local label = HEADER_LABELS[key]
+        if sort.key == key then
+            label = label .. " |A:" .. (sort.ascending and "NPE_ArrowUp" or "NPE_ArrowDown") .. ":10:10|a"
+        end
+        text:SetText(label)
+    end
+end
+
+--- Draws Price Check's rows from the scroll position, and the status line.
+function PC.Render()
+    local list = priceCheck.found
     for index, row in ipairs(priceCheck.rows) do
-        local entry = priceCheck.found[index]
+        local entry = list[priceCheck.offset + index]
         row.entry = entry
         if entry then
-            local info = HouseLedgerPrice.Lookup(HouseLedgerDB, entry.itemID, PlayerHouseKey())
+            local info = entry.info
             row.nameText:SetText(entry.name)
             local r, g, b = 1, 1, 1
             if HouseLedgerPrice.IsQuality(entry.quality) and C_Item and type(C_Item.GetItemQualityColor) == "function" then
@@ -1849,23 +1883,95 @@ local function RefreshPriceCheck()
             row:Hide()
         end
     end
-    local count = #priceCheck.found
+    local text = strtrim(priceCheck.searchBox:GetText() or "")
+    local total = priceCheck.total
     if strlenutf8(text) < MIN_SEARCH_LENGTH then
         priceCheck.status:SetText("Type 2 letters of an item's name.")
     elseif MarketHouse() == nil then
         priceCheck.status:SetText("No prices saved yet. Scan once at the auction house.")
-    elseif count == 0 then
+    elseif total == 0 then
         priceCheck.status:SetText("No saved item matches. Names fill in from your scans.")
-    elseif count > PC_ROWS then
-        priceCheck.status:SetText(string.format("%d items match. Type more to narrow them.", count))
+    elseif total <= PC.ROWS then
+        priceCheck.status:SetText(total == 1 and "1 item matches." or string.format("%d items match.", total))
     else
-        priceCheck.status:SetText(count == 1 and "1 item matches." or string.format("%d items match.", count))
+        local last = math.min(priceCheck.offset + PC.ROWS, #list)
+        local line = string.format("%d-%d of %d items. Scroll for more.", priceCheck.offset + 1, last, total)
+        if total > #list then
+            line = string.format("%d-%d of %d items. Type more to narrow them.", priceCheck.offset + 1, last, total)
+        end
+        priceCheck.status:SetText(line)
+    end
+end
+
+--- Fills Price Check's list from what the search box holds, from saved data only, in the
+-- chosen sort, and goes back to the top.
+function PC.Refresh()
+    local text = strtrim(priceCheck.searchBox:GetText() or "")
+    local found, total = HouseLedgerPrice.FindByName(MarketHouse(), text, PC.MATCH_LIMIT)
+    for _, entry in ipairs(found) do
+        entry.info = HouseLedgerPrice.Lookup(HouseLedgerDB, entry.itemID, PlayerHouseKey())
+    end
+    local sort = priceCheck.sort
+    if sort.key then
+        found = HouseLedgerPrice.SortList(found, function(entry)
+            return PC.Value(entry, sort.key)
+        end, sort.ascending)
+    end
+    priceCheck.found, priceCheck.total, priceCheck.offset = found, total, 0
+    PC.Render()
+end
+
+--- Mouse wheel over Price Check: moves through the matches already found. Sends nothing.
+-- @param rowsDown rows to move; negative moves up. Clamped to the list.
+function PC.Scroll(rowsDown)
+    local maxOffset = math.max(0, #priceCheck.found - PC.ROWS)
+    local offset = math.min(maxOffset, math.max(0, priceCheck.offset + rowsDown))
+    if offset ~= priceCheck.offset then
+        priceCheck.offset = offset
+        PC.Render()
+    end
+end
+
+--- A Price Check heading click: sorts the matches by it, or reverses the sort. Sends nothing.
+-- @param key "name", "price" or "trend"
+function PC.Sort(key)
+    local sort = priceCheck.sort
+    if sort.key == key then
+        sort.ascending = not sort.ascending
+    else
+        sort.key, sort.ascending = key, SORT_FIRST_ASCENDING[key]
+    end
+    PC.RefreshHeader()
+    PC.Refresh()
+end
+
+--- Follows the game's item link insert (a shift-click on a bag item or a chat link): while
+-- Price Check is open and no chat box is taking the link, looks the item up by its name.
+-- Runs after the game's own code (hooksecurefunc) and sends nothing.
+-- @param link the link the game inserted
+function PC.FollowLink(link)
+    if not (priceCheck and priceCheck:IsShown()) or type(link) ~= "string" then
+        return
+    end
+    if not link:find("|Hitem:", 1, true) then
+        return
+    end
+    local chat = type(ChatFrameUtil) == "table" and type(ChatFrameUtil.GetActiveWindow) == "function"
+        and ChatFrameUtil.GetActiveWindow()
+    if chat and not priceCheck.searchBox:HasFocus() then
+        return
+    end
+    local name = link:match("|h%[(.-)%]|h")
+    if name and name ~= "" then
+        priceCheck.searchBox:SetText(name)
+        priceCheck.searchBox:ClearFocus()
+        PC.Refresh()
     end
 end
 
 --- A Price Check row click: its saved day lines and chart under the list. Saved data only.
 -- @param row the clicked row
-local function ShowPriceCheckDetails(row)
+function PC.ShowDetails(row)
     local entry = row.entry
     if entry == nil then
         return
@@ -1883,17 +1989,17 @@ end
 
 --- Opens or closes Price Check. With a name, opens it and searches for that name.
 -- @param name optional item name to search for
-local function TogglePriceCheck(name)
+function PC.Toggle(name)
     if name and name ~= "" then
         priceCheck.searchBox:SetText(name)
-        RefreshPriceCheck()
+        PC.Refresh()
         priceCheck:Show()
         return
     end
     if priceCheck:IsShown() then
         priceCheck:Hide()
     else
-        RefreshPriceCheck()
+        PC.Refresh()
         priceCheck:Show()
     end
 end
@@ -1928,7 +2034,7 @@ local function MakeBagButtons()
                 button:SetText("Price Check")
                 button:SetPoint("BOTTOMRIGHT", bagFrame, "TOPRIGHT", -84, 2)
                 button:SetScript("OnClick", function()
-                    TogglePriceCheck()
+                    PC.Toggle()
                 end)
                 priceCheck.bagButtons[#priceCheck.bagButtons + 1] = button
             end
@@ -1942,7 +2048,7 @@ end
 -- auction house open, and never sends anything. Escape closes it.
 local function BuildPriceCheck()
     priceCheck = CreateFrame("Frame", "HouseLedgerPriceCheck", UIParent, "ButtonFrameTemplate")
-    priceCheck:SetSize(PC_WIDTH, PC_HEIGHT)
+    priceCheck:SetSize(PC.WIDTH, PC.HEIGHT)
     priceCheck:SetPoint("CENTER")
     priceCheck:SetClampedToScreen(true)
     priceCheck:SetToplevel(true)
@@ -1969,18 +2075,55 @@ local function BuildPriceCheck()
     box:SetAutoFocus(false)
     box:SetScript("OnTextChanged", function(_, userInput)
         if userInput then
-            RefreshPriceCheck()
+            PC.Refresh()
         end
     end)
     box:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
     box:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     priceCheck.searchBox = box
 
+    -- Headings over the rows' columns; each is a button that sorts the matches.
+    local headerRow = CreateFrame("Frame", nil, priceCheck)
+    headerRow:SetHeight(PC.HEADER_HEIGHT)
+    headerRow:SetPoint("TOPLEFT", priceCheck, "TOPLEFT", 12, -PC.LIST_TOP)
+    headerRow:SetPoint("RIGHT", priceCheck, "RIGHT", -12, 0)
+    local trendHeading = Cell(headerRow, "GameFontNormalSmall", "RIGHT")
+    trendHeading:SetPoint("RIGHT", headerRow, "RIGHT", -4, 0)
+    trendHeading:SetWidth(70)
+    local priceHeading = Cell(headerRow, "GameFontNormalSmall", "RIGHT")
+    priceHeading:SetPoint("RIGHT", trendHeading, "LEFT", -6, 0)
+    priceHeading:SetWidth(90)
+    local nameHeading = Cell(headerRow, "GameFontNormalSmall", "LEFT")
+    nameHeading:SetPoint("LEFT", headerRow, "LEFT", 4 + ICON_SIZE + 6, 0)
+    nameHeading:SetPoint("RIGHT", priceHeading, "LEFT", -6, 0)
+    priceCheck.headerTexts = { name = nameHeading, price = priceHeading, trend = trendHeading }
+    priceCheck.sortButtons = {}
+    for _, key in ipairs(PC.SORT_KEYS) do
+        local text = priceCheck.headerTexts[key]
+        local button = CreateFrame("Button", nil, headerRow)
+        button:SetPoint("TOPLEFT", text, "TOPLEFT", -2, 4)
+        button:SetPoint("BOTTOMRIGHT", text, "BOTTOMRIGHT", 2, -4)
+        button:SetScript("OnClick", function()
+            PC.Sort(key)
+        end)
+        priceCheck.sortButtons[key] = button
+    end
+    priceCheck.sort = {}
+    priceCheck.found, priceCheck.total, priceCheck.offset = {}, 0, 0
+    PC.RefreshHeader()
+    priceCheck:EnableMouseWheel(true)
+    priceCheck:SetScript("OnMouseWheel", function(_, delta)
+        PC.Scroll(-delta * WHEEL_STEP)
+    end)
+    if type(ChatFrameUtil) == "table" and type(ChatFrameUtil.InsertLink) == "function" then
+        hooksecurefunc(ChatFrameUtil, "InsertLink", PC.FollowLink)
+    end
+
     priceCheck.rows = {}
-    for index = 1, PC_ROWS do
+    for index = 1, PC.ROWS do
         local row = CreateFrame("Button", nil, priceCheck)
         row:SetHeight(ROW_HEIGHT)
-        row:SetPoint("TOPLEFT", priceCheck, "TOPLEFT", 12, -PC_LIST_TOP - (index - 1) * ROW_HEIGHT)
+        row:SetPoint("TOPLEFT", priceCheck, "TOPLEFT", 12, -PC.ROWS_TOP - (index - 1) * ROW_HEIGHT)
         row:SetPoint("RIGHT", priceCheck, "RIGHT", -12, 0)
         row:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
         row.icon = row:CreateTexture(nil, "ARTWORK")
@@ -1995,7 +2138,7 @@ local function BuildPriceCheck()
         row.nameText = Cell(row, "GameFontHighlightSmall", "LEFT")
         row.nameText:SetPoint("LEFT", row.icon, "RIGHT", 6, 0)
         row.nameText:SetPoint("RIGHT", row.priceText, "LEFT", -6, 0)
-        row:SetScript("OnClick", ShowPriceCheckDetails)
+        row:SetScript("OnClick", PC.ShowDetails)
         row:SetScript("OnEnter", function(self)
             if self.entry and GameTooltip then
                 GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
@@ -2013,11 +2156,11 @@ local function BuildPriceCheck()
     end
 
     priceCheck.detailTitle = Cell(priceCheck, "GameFontNormal", "LEFT")
-    priceCheck.detailTitle:SetPoint("TOPLEFT", priceCheck, "TOPLEFT", 16, -PC_DETAIL_TOP)
+    priceCheck.detailTitle:SetPoint("TOPLEFT", priceCheck, "TOPLEFT", 16, -PC.DETAIL_TOP)
     priceCheck.detailTitle:SetPoint("RIGHT", priceCheck, "RIGHT", -16, 0)
     priceCheck.detailLines = {}
     for index = 1, DETAIL_LINES do
-        local y = -PC_DETAIL_TOP - index * DETAIL_LINE_HEIGHT
+        local y = -PC.DETAIL_TOP - index * DETAIL_LINE_HEIGHT
         local left = Cell(priceCheck, "GameFontHighlightSmall", "LEFT")
         left:SetPoint("TOPLEFT", priceCheck, "TOPLEFT", 24, y)
         left:SetWidth(150)
@@ -2026,9 +2169,9 @@ local function BuildPriceCheck()
         right:SetPoint("RIGHT", priceCheck, "RIGHT", -16, 0)
         priceCheck.detailLines[index] = { left = left, right = right }
     end
-    priceCheck.chart = BuildChart(priceCheck, PC_WIDTH - 40, 64)
+    priceCheck.chart = BuildChart(priceCheck, PC.WIDTH - 40, 64)
     priceCheck.chart:SetPoint("TOPLEFT", priceCheck, "TOPLEFT", 20,
-        -PC_DETAIL_TOP - (DETAIL_LINES + 1) * DETAIL_LINE_HEIGHT - 4)
+        -PC.DETAIL_TOP - (DETAIL_LINES + 1) * DETAIL_LINE_HEIGHT - 4)
 
     priceCheck.status = Cell(priceCheck, "GameFontHighlightSmall", "LEFT")
     priceCheck.status:SetPoint("BOTTOMLEFT", priceCheck, "BOTTOMLEFT", 14, 8)
@@ -2723,6 +2866,6 @@ SLASH_HOUSELEDGERPC1 = "/pricecheck"
 SLASH_HOUSELEDGERPC2 = "/pc"
 SlashCmdList.HOUSELEDGERPC = function(message)
     if priceCheck then
-        TogglePriceCheck(strtrim(message or ""))
+        PC.Toggle(strtrim(message or ""))
     end
 end

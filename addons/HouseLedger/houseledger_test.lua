@@ -58,6 +58,9 @@ function FrameMethods:RegisterEvent(event) self.events[event] = true end
 function FrameMethods:Show() NoteIfBlocked(self) self.shown = true end
 function FrameMethods:Hide() NoteIfBlocked(self) self.shown = false end
 function FrameMethods:IsShown() return self.shown end
+function FrameMethods:HasFocus() return self.focused == true end
+function FrameMethods:SetFocus() self.focused = true end
+function FrameMethods:ClearFocus() self.focused = false end
 function FrameMethods:Enable() NoteIfBlocked(self) self.enabled = true end
 function FrameMethods:Disable() NoteIfBlocked(self) self.enabled = false end
 function FrameMethods:IsProtected() return self.protected == true, false end
@@ -196,6 +199,15 @@ local function Setup(opts)
     end
     _G.GetRealmName = function() return "TestRealm" end
     _G.IsShiftKeyDown = function() return world.shiftDown == true end
+    -- The game's link insert, which a shift-click on a bag item or chat link calls. A chat box
+    -- is open when world.chatOpen is true.
+    _G.ChatFrameUtil = {
+        InsertLink = function(link)
+            world.insertedLinks = (world.insertedLinks or 0) + 1
+            return world.chatOpen == true
+        end,
+        GetActiveWindow = function() return world.chatOpen and {} or nil end,
+    }
     _G.UnitFactionGroup = function(unit)
         if unit == "npc" then
             return opts.npcSide or "Alliance"
@@ -1597,11 +1609,18 @@ do
     for _, hook in ipairs(world.hooks) do
         hooked[hook.name] = hook.owner == AuctionHouseFrame
     end
+    local function HouseHooks()
+        local count = 0
+        for _, hook in ipairs(world.hooks) do
+            count = count + (hook.owner == AuctionHouseFrame and 1 or 0)
+        end
+        return count
+    end
     Check("Blizzard's window is followed with hooksecurefunc",
-        #world.hooks == 2 and hooked.SetPostItem and hooked.SetDisplayMode)
+        HouseHooks() == 2 and hooked.SetPostItem and hooked.SetDisplayMode)
     CloseHouse()
     OpenHouse()
-    Check("reopening the house adds no second hook", #world.hooks == 2)
+    Check("reopening the house adds no second hook", HouseHooks() == 2)
 
     BlizzardTab(AuctionHouseFrameDisplayMode.ItemSell)
     Check("Blizzard's Sell tab opens the Sell tab here", frame.selectedTab == 2 and frame.sellPanel.shown)
@@ -2147,6 +2166,108 @@ do
         and button.parent == _G.ContainerFrameCombinedBags and window.bagButtons[2].parent == _G.ContainerFrame1)
     button:GetScript("OnClick")(button)
     Check("which closes and opens the window", not window.shown)
+    Check("each column heading is there to sort by", window.headerTexts.name.text == "Item"
+        and window.headerTexts.price.text == "Price" and window.headerTexts.trend.text == "Trend")
+end
+
+--- Saves `count` items named "Ore 01", "Ore 02"..., priced 10 copper apart from the top down,
+-- with a scan a day for `days` days, so some have trends.
+-- @param count how many items
+-- @return the saved db
+local function SaveOres(count)
+    local P = HouseLedgerPrice
+    local db = P.EmptyDB()
+    for day = 1, 3 do
+        local best = {}
+        for index = 1, count do
+            -- Item 2 drops on the last day, item 3 rises.
+            local price = 1000 - index * 5
+            if day == 3 and index == 2 then price = 100 end
+            if day == 3 and index == 3 then price = 2000 end
+            P.Consider(best, 5000 + index, 1, price, string.format("Ore %02d", index), 1)
+        end
+        P.Commit(db, "Alliance|TestRealm", best, world.now - (3 - day) * 24 * 60 * 60)
+    end
+    return db
+end
+
+do
+    Setup()
+    world.now = 1762900000
+    Load()
+    _G.HouseLedgerDB = HouseLedgerPrice.EnsureDB(SaveOres(30))
+    local window = _G.HouseLedgerPriceCheck
+    _G.SlashCmdList.HOUSELEDGERPC("ore")
+    local rows = window.rows
+    Check("more matches than rows: the status says which ones show and how many",
+        window.status.text == "1-12 of 30 items. Scroll for more." and rows[12].nameText.text == "Ore 12")
+    window:GetScript("OnMouseWheel")(window, -1)
+    Check("the wheel scrolls down 3 rows", rows[1].nameText.text == "Ore 04"
+        and window.status.text == "4-15 of 30 items. Scroll for more.")
+    for _ = 1, 10 do
+        window:GetScript("OnMouseWheel")(window, -1)
+    end
+    Check("it stops at the last match", rows[12].nameText.text == "Ore 30" and window.status.text == "19-30 of 30 items. Scroll for more.")
+    window:GetScript("OnMouseWheel")(window, 1)
+    Check("and scrolls back up", rows[1].nameText.text == "Ore 16")
+
+    window.sortButtons.price:GetScript("OnClick")(window.sortButtons.price)
+    Check("Price sorts cheapest first and goes back to the top", rows[1].nameText.text == "Ore 02"
+        and rows[2].nameText.text == "Ore 30" and window.headerTexts.price.text:find("NPE_ArrowUp", 1, true) ~= nil)
+    window.sortButtons.price:GetScript("OnClick")(window.sortButtons.price)
+    Check("a second click sorts dearest first", rows[1].nameText.text == "Ore 03"
+        and window.headerTexts.price.text:find("NPE_ArrowDown", 1, true) ~= nil)
+    window.sortButtons.trend:GetScript("OnClick")(window.sortButtons.trend)
+    Check("Trend sorts the biggest drop first", rows[1].nameText.text == "Ore 02"
+        and window.headerTexts.price.text == "Price")
+    window.sortButtons.name:GetScript("OnClick")(window.sortButtons.name)
+    Check("Item sorts A to Z", rows[1].nameText.text == "Ore 01")
+    Type(window.searchBox, "ore 1")
+    Check("a new search keeps the sort", rows[1].nameText.text == "Ore 10" and window.status.text == "10 items match.")
+    Check("sorting and scrolling send nothing", #world.browseQueries == 0 and world.replicateCalls == 0)
+end
+
+do
+    Setup()
+    world.now = 1762900000
+    Load()
+    _G.HouseLedgerDB = HouseLedgerPrice.EnsureDB(SaveOres(130))
+    local window = _G.HouseLedgerPriceCheck
+    _G.SlashCmdList.HOUSELEDGERPC("ore")
+    Check("past the list's limit, the count is still every match",
+        window.status.text == "1-12 of 130 items. Type more to narrow them.")
+    for _ = 1, 50 do
+        window:GetScript("OnMouseWheel")(window, -1)
+    end
+    Check("scrolling stops at the end of the list", window.rows[12].nameText.text == window.found[100].name
+        and window.status.text == "89-100 of 130 items. Type more to narrow them.")
+end
+
+do
+    Setup()
+    world.now = 1762900000
+    Load()
+    _G.HouseLedgerDB = HouseLedgerPrice.EnsureDB(SaveOres(5))
+    local window = _G.HouseLedgerPriceCheck
+    local link = "|cffffffff|Hitem:5003::::::::60:::::|h[Ore 03]|h|r"
+    ChatFrameUtil.InsertLink(link)
+    Check("a shift-click with Price Check closed does nothing to it", window.searchBox.text == "")
+    _G.SlashCmdList.HOUSELEDGERPC("")
+    ChatFrameUtil.InsertLink(link)
+    Check("a shift-clicked item is looked up in Price Check", window.searchBox.text == "Ore 03"
+        and window.rows[1].nameText.text == "Ore 03" and window.status.text == "1 item matches.")
+    Check("the game's own link insert still ran", world.insertedLinks == 2)
+    world.chatOpen = true
+    ChatFrameUtil.InsertLink("|cffffffff|Hitem:5001::::::::60:::::|h[Ore 01]|h|r")
+    Check("a link going into an open chat box leaves Price Check alone", window.searchBox.text == "Ore 03")
+    window.searchBox:SetFocus()
+    ChatFrameUtil.InsertLink("|cffffffff|Hitem:5001::::::::60:::::|h[Ore 01]|h|r")
+    Check("unless Price Check's box has the focus", window.searchBox.text == "Ore 01")
+    world.chatOpen = false
+    ChatFrameUtil.InsertLink("|cff71d5ff|Hspell:13262|h[Disenchant]|h|r")
+    Check("a spell link is not an item to look up", window.searchBox.text == "Ore 01")
+    Check("looking up a link sends nothing", #world.browseQueries == 0 and world.replicateCalls == 0
+        and #world.itemQueries == 0)
 end
 
 do
