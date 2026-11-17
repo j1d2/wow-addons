@@ -118,6 +118,42 @@ do
 end
 
 do
+    -- Item 2589 sells out after day 2; item 4306 keeps being scanned. Each scan also drops
+    -- 2589's old days, so a long-gone item doesn't keep its whole history in the saved file.
+    local db = P.EmptyDB()
+    local function ScanBoth(dayOffset)
+        local best = {}
+        P.Consider(best, 4306, 1, 100, "Copper Bar", 1)
+        if dayOffset <= 2 then
+            P.Consider(best, 2589, 1, 40, "Linen Cloth", 1)
+        end
+        P.Commit(db, "Alliance|Test", best, At(dayOffset))
+    end
+    for dayOffset = 0, 10 do
+        ScanBoth(dayOffset)
+    end
+    local items = db.houses["Alliance|Test"].items
+    local gone = items[2589]
+    Check("an item missing from scans keeps its days while they're in the window", #gone.days == 3)
+    ScanBoth(14)
+    Check("a scan drops a missing item's days older than the window",
+        #gone.days == 2 and gone.days[1][1] == P.DayKey(At(1)))
+    for dayOffset = 15, 18 do
+        ScanBoth(dayOffset)
+    end
+    Check("a missing item with every day out of the window keeps no days", #gone.days == 0)
+    Check("it keeps its last price, time and name", gone.unit == 40 and gone.seen == At(2)
+        and gone.name == "Linen Cloth" and gone.qty == 1)
+    local info = P.Lookup(db, 2589, "Alliance|Test")
+    local lines = P.TooltipLines(info, Coins, true)
+    Check("its tooltip still shows the last price and when it was seen",
+        info.stats == nil and lines[1].left == "HouseLedger  40c  last seen " .. os.date("%m/%d %H:%M", At(2)))
+    -- Scanned on days 0-10 and 14-18: the window back from day 18 starts on day 5.
+    Check("the scanned item keeps its days in the window",
+        #items[4306].days == 11 and items[4306].days[1][1] == P.DayKey(At(5)))
+end
+
+do
     -- Version 1 saved a list of price changes. Every saved item has to
     -- carry over: there are thousands of them in real saved data.
     local old = {

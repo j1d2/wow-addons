@@ -399,15 +399,41 @@ function PriceLedger.CoinText(copper)
     return table.concat(parts, " ")
 end
 
---- Saves one item's price from a scan: the latest price, and the day summary.
--- Days older than DAYS_KEPT are dropped.
+--- Drops days before `oldest`, and the oldest days past DAYS_KEPT.
+-- @param days a row's day list, oldest first; changed in place
+-- @param oldest the first day key to keep
+local function PruneDays(days, oldest)
+    local drop = 0
+    while drop < #days and (days[drop + 1][1] < oldest or #days - drop > PriceLedger.DAYS_KEPT) do
+        drop = drop + 1
+    end
+    if drop > 0 then
+        local count = #days
+        for index = 1, count - drop do
+            days[index] = days[index + drop]
+        end
+        for index = count - drop + 1, count do
+            days[index] = nil
+        end
+    end
+end
+
+--- The first day key a scan at `now` keeps.
+-- @param now when the scan ran
+-- @return the day key DAYS_KEPT - 1 days before now
+local function OldestKept(now)
+    return PriceLedger.DayKey(now - (PriceLedger.DAYS_KEPT - 1) * SECONDS_PER_DAY)
+end
+
+--- Remember, with the first day to keep worked out by the caller.
 -- @param house the house table
 -- @param itemID the item's id
 -- @param unit unit price in copper
 -- @param qty how many were listed at that price
 -- @param now when the scan ran
+-- @param oldest the first day key to keep
 -- @return the item's row
-function PriceLedger.Remember(house, itemID, unit, qty, now)
+local function RememberFrom(house, itemID, unit, qty, now, oldest)
     local row = house.items[itemID]
     if type(row) ~= "table" then
         row = {}
@@ -417,12 +443,8 @@ function PriceLedger.Remember(house, itemID, unit, qty, now)
         row.days = {}
     end
 
-    local days = row.days
-    AddToDays(days, unit, now)
-    local oldest = PriceLedger.DayKey(now - (PriceLedger.DAYS_KEPT - 1) * SECONDS_PER_DAY)
-    while #days > 0 and (days[1][1] < oldest or #days > PriceLedger.DAYS_KEPT) do
-        table.remove(days, 1)
-    end
+    AddToDays(row.days, unit, now)
+    PruneDays(row.days, oldest)
 
     row.unit = unit
     row.qty = qty
@@ -430,10 +452,23 @@ function PriceLedger.Remember(house, itemID, unit, qty, now)
     return row
 end
 
+--- Saves one item's price from a scan: the latest price, and the day summary.
+-- Days older than DAYS_KEPT are dropped.
+-- @param house the house table
+-- @param itemID the item's id
+-- @param unit unit price in copper
+-- @param qty how many were listed at that price
+-- @param now when the scan ran
+-- @return the item's row
+function PriceLedger.Remember(house, itemID, unit, qty, now)
+    return RememberFrom(house, itemID, unit, qty, now, OldestKept(now))
+end
+
 --- Saves one finished scan.
--- Items missing from `best` stay in the house with their old seen time,
--- so a later mouseover can still show the last known price. Also sets the
--- house's scannedAt and the db's lastHouseKey.
+-- Items missing from `best` stay in the house with their old price, seen
+-- time and name, so a later mouseover can still show the last known price,
+-- but their days older than DAYS_KEPT are dropped like everyone else's.
+-- Also sets the house's scannedAt and the db's lastHouseKey.
 -- @param db the saved table
 -- @param houseKey key of the house that was scanned
 -- @param best the lowest-price table from Consider
@@ -442,15 +477,21 @@ end
 function PriceLedger.Commit(db, houseKey, best, now)
     local house = PriceLedger.EnsureHouse(db, houseKey)
     house.scannedAt = now
+    local oldest = OldestKept(now)
     local saved = 0
     for itemID, listing in pairs(best) do
         local unit = PriceLedger.UnitCopper(listing.buyout, listing.count)
         if unit > 0 then
-            local row = PriceLedger.Remember(house, itemID, unit, listing.qty, now)
+            local row = RememberFrom(house, itemID, unit, listing.qty, now, oldest)
             -- A scan that didn't get the name keeps the one saved before.
             row.name = listing.name or row.name
             row.quality = listing.quality or row.quality
             saved = saved + 1
+        end
+    end
+    for _, row in pairs(house.items) do
+        if type(row) == "table" and type(row.days) == "table" and row.seen ~= now then
+            PruneDays(row.days, oldest)
         end
     end
     db.lastHouseKey = houseKey
