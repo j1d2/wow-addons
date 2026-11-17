@@ -55,7 +55,7 @@ local ROW_HEIGHT = 18
 -- (538 - 60 - 148 - 26) / 18 = 16 rows.
 -- The filter row (quality, item level, and Market's name filter) sits between the top row and the list.
 local FILTER_HEIGHT = 26
--- The 14-day chart: beside the Buy details on a wide window, and under the Sell lines.
+-- The price chart: beside the Buy details on a wide window, and under the Sell lines.
 local CHART_WIDTH = 170
 local CHART_HEIGHT = 74
 local SELL_CHART_WIDTH = 260
@@ -763,8 +763,10 @@ local function ClearDetails()
     buyPanel.chart:Hide()
 end
 
---- Draws an item's saved 14 days on a chart: one bar per day's low, a faint band up to its high,
--- the latest day in gold. Hides the chart when there is nothing to draw. Saved data only.
+--- Draws an item's saved days on a chart: one bar per day's low, a faint band up to its high,
+-- the latest day in gold. The chart has one slot per day from the item's oldest saved day (at
+-- least 7, at most the history length), so it grows as the history does. Hides the chart when
+-- there is nothing to draw. Saved data only.
 -- @param chart a chart from BuildChart
 -- @param info the item's saved prices from PriceLedger.Lookup, or nil
 local function ShowChart(chart, info)
@@ -773,8 +775,20 @@ local function ShowChart(chart, info)
         chart:Hide()
         return
     end
+    local slotWidth = chart.chartWidth / #data.slots
+    local barWidth = math.max(2, math.floor(slotWidth) - 2)
+    for index = #data.slots + 1, #chart.bars do
+        chart.bars[index]:Hide()
+        chart.bands[index]:Hide()
+    end
+    chart.slotCount = #data.slots
+    chart.caption:SetText("Daily low, " .. #data.slots .. " days")
     for index, slot in ipairs(data.slots) do
         local bar, band = chart.bars[index], chart.bands[index]
+        bar:ClearAllPoints()
+        bar:SetPoint("BOTTOMLEFT", chart, "BOTTOMLEFT", math.floor((index - 1) * slotWidth) + 1, 2)
+        bar:SetWidth(barWidth)
+        band:SetWidth(barWidth)
         if slot.low then
             local low = math.max(1, math.floor(slot.low / data.top * chart.barArea + 0.5))
             local high = math.floor(slot.high / data.top * chart.barArea + 0.5)
@@ -1647,8 +1661,9 @@ local function LayoutColumns(width)
     end
 end
 
---- Makes a 14-day chart, hidden until ShowChart fills it: a dark box, the top price in its corner,
--- and two textures per day (the low's bar and the faint range band).
+--- Makes a price chart, hidden until ShowChart fills it: a dark box, the top price in its
+-- corner, and two textures per day slot (the low's bar and the faint range band), enough for the
+-- longest history. ShowChart places as many as the item's chart has days.
 -- @param parent the panel it belongs to
 -- @param width the chart's width
 -- @param height the chart's height
@@ -1663,18 +1678,16 @@ local function BuildChart(parent, width, height)
     chart.topText:SetPoint("TOPLEFT", chart, "TOPLEFT", 3, -2)
     local caption = Cell(chart, "GameFontDisableSmall", "RIGHT")
     caption:SetPoint("TOPRIGHT", chart, "TOPRIGHT", -3, -2)
-    caption:SetText("Daily low, 14 days")
+    chart.caption = caption
     -- Room under the top line for the bars.
     chart.barArea = height - 18
+    chart.chartWidth = width
     chart.bars, chart.bands = {}, {}
-    local slotWidth = width / HouseLedgerPrice.DAYS_KEPT
-    for index = 1, HouseLedgerPrice.DAYS_KEPT do
+    local longest = HouseLedgerPrice.HISTORY_CHOICES[#HouseLedgerPrice.HISTORY_CHOICES]
+    for index = 1, longest do
         local bar = chart:CreateTexture(nil, "ARTWORK")
-        bar:SetPoint("BOTTOMLEFT", chart, "BOTTOMLEFT", math.floor((index - 1) * slotWidth) + 1, 2)
-        bar:SetWidth(math.max(2, math.floor(slotWidth) - 2))
         bar:Hide()
         local band = chart:CreateTexture(nil, "ARTWORK")
-        band:SetWidth(math.max(2, math.floor(slotWidth) - 2))
         band:SetColorTexture(CHART_RANGE_COLOR[1], CHART_RANGE_COLOR[2], CHART_RANGE_COLOR[3], CHART_RANGE_COLOR[4])
         band:Hide()
         chart.bars[index], chart.bands[index] = bar, band
@@ -1925,7 +1938,7 @@ local function MakeBagButtons()
 end
 
 --- Makes the Price Check window: a search box over saved item names, a list with the last price
--- and trend, and the clicked item's day lines and 14-day chart. It works anywhere, with no
+-- and trend, and the clicked item's day lines and price chart. It works anywhere, with no
 -- auction house open, and never sends anything. Escape closes it.
 local function BuildPriceCheck()
     priceCheck = CreateFrame("Frame", "HouseLedgerPriceCheck", UIParent, "ButtonFrameTemplate")
@@ -2051,6 +2064,28 @@ local function BuildSettingsPanel()
         label:SetText(setting.label)
         settingsPanel.boxes[setting.key] = box
     end
+
+    local historyLabel = Cell(settingsPanel, "GameFontHighlight", "LEFT")
+    historyLabel:SetPoint("TOPLEFT", settingsPanel, "TOPLEFT", 26,
+        -LIST_TOP - 22 - #HouseLedgerPrice.SETTINGS * 30)
+    historyLabel:SetText("Keep price history for")
+    local history = CreateFrame("DropdownButton", nil, settingsPanel, "WowStyle1DropdownTemplate")
+    history:SetWidth(110)
+    history:SetPoint("LEFT", historyLabel, "RIGHT", 10, 0)
+    history:SetupMenu(function(_, root)
+        for _, days in ipairs(HouseLedgerPrice.HISTORY_CHOICES) do
+            root:CreateRadio(days .. " days", function(picked)
+                return HouseLedgerPrice.DAYS_KEPT == picked
+            end, function(picked)
+                HouseLedgerPrice.SetHistoryDays(HouseLedgerDB, picked)
+            end, days)
+        end
+    end)
+    local historyHint = Cell(settingsPanel, "GameFontDisableSmall", "LEFT")
+    historyHint:SetPoint("TOPLEFT", historyLabel, "BOTTOMLEFT", 0, -14)
+    historyHint:SetPoint("RIGHT", settingsPanel, "RIGHT", -16, 0)
+    historyHint:SetText("Longer history makes a bigger saved file. A shorter one drops older days right away.")
+    settingsPanel.historyDropdown = history
 end
 
 --- Makes the filter row: Market's name filter, the quality dropdown and the item level range.
@@ -2252,7 +2287,7 @@ local function BuildFrame()
     for index = 1, VISIBLE_ROWS do
         rows[index] = BuildRow(list, index)
     end
-    -- The 14-day chart sits right of the details lines, above the status lines.
+    -- The price chart sits right of the details lines, above the status lines.
     buyPanel.chart = BuildChart(buyPanel, CHART_WIDTH, CHART_HEIGHT)
     buyPanel.chart:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -16, STATUS_HEIGHT + 4)
     LayoutColumns(FRAME_WIDTH_MIN)

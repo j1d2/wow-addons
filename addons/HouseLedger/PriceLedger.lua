@@ -4,7 +4,7 @@ Price history for one auction house.
 Pure data. No frames, no queries, and no seller names. The scan
 code hands in item id, stack size, and buyout. This file keeps the
 lowest price per item, one summary per calendar day for the last
-14 days (low, high, scan count, sum and sum of squares), and works out
+14 or 30 days (low, high, scan count, sum and sum of squares), and works out
 the stats the tooltip and window show: average, range and standard
 deviation over the last 1, 3, 7 and 14 days.
 
@@ -26,8 +26,14 @@ PriceLedger.SETTINGS = {
 }
 PriceLedger.SCAN_INTERVAL = 15 * 60
 
--- Days of summaries kept per item, today included. Matches the widest window.
+-- Days of summaries kept per item, today included. Set from the saved history length by EnsureDB
+-- and SetHistoryDays; 14 until then.
 PriceLedger.DAYS_KEPT = 14
+-- History lengths the Settings tab offers, in days; the first is the default. 60 waits for a
+-- smaller saved format: on a busy realm it could pass the saved file's constant limit.
+PriceLedger.HISTORY_CHOICES = { 14, 30 }
+-- The chart shows at least this many days, so a new item's few bars aren't stretched wide.
+PriceLedger.CHART_MIN_DAYS = 7
 -- Stats windows, in days back from the latest scan's day, that day included.
 PriceLedger.WINDOWS = { 1, 3, 7, 14 }
 -- Trend and deal compare the latest price with the average of the
@@ -269,6 +275,10 @@ function PriceLedger.EnsureDB(db)
             db.settings[setting.key] = setting.default
         end
     end
+    if not PriceLedger.IsHistoryChoice(db.settings.historyDays) then
+        db.settings.historyDays = nil
+    end
+    PriceLedger.DAYS_KEPT = db.settings.historyDays or PriceLedger.HISTORY_CHOICES[1]
     -- Item names and qualities are optional, saved by scans from late 2026 on.
     for _, house in pairs(db.houses) do
         if type(house) == "table" and type(house.items) == "table" then
@@ -498,6 +508,45 @@ function PriceLedger.Commit(db, houseKey, best, now)
     return saved
 end
 
+--- True for a history length the Settings tab offers.
+-- @param days a value
+-- @return true or false
+function PriceLedger.IsHistoryChoice(days)
+    for _, choice in ipairs(PriceLedger.HISTORY_CHOICES) do
+        if days == choice then
+            return true
+        end
+    end
+    return false
+end
+
+--- Sets how many days of prices each item keeps, and saves it. A shorter length trims every
+-- item in every house right away, each house back from its own last scan.
+-- @param db the saved table
+-- @param days one of HISTORY_CHOICES; anything else changes nothing
+-- @return the history length now in use
+function PriceLedger.SetHistoryDays(db, days)
+    if not PriceLedger.IsHistoryChoice(days) or type(db) ~= "table" then
+        return PriceLedger.DAYS_KEPT
+    end
+    if type(db.settings) ~= "table" then
+        db.settings = {}
+    end
+    db.settings.historyDays = days
+    PriceLedger.DAYS_KEPT = days
+    for _, house in pairs(type(db.houses) == "table" and db.houses or {}) do
+        if type(house) == "table" and type(house.items) == "table" and type(house.scannedAt) == "number" then
+            local oldest = OldestKept(house.scannedAt)
+            for _, row in pairs(house.items) do
+                if type(row) == "table" and type(row.days) == "table" then
+                    PruneDays(row.days, oldest)
+                end
+            end
+        end
+    end
+    return days
+end
+
 --- Rounds to the nearest whole number, halves up.
 -- @param value a number
 -- @return the rounded number
@@ -725,23 +774,39 @@ function PriceLedger.LowestListing(listings)
     return summary
 end
 
---- The 14-day chart's data: one slot per calendar day, oldest first, ending on the day of the
--- latest scan. Reads the row's saved day summaries only.
+--- The price chart's data: one slot per calendar day, oldest first, ending on the day of the
+-- latest scan. It starts at the oldest saved day, so it grows with the history: at least
+-- CHART_MIN_DAYS slots, at most DAYS_KEPT. Reads the row's saved day summaries only.
 -- @param days a row's day list ({ dayKey, low, high, ... } per day)
 -- @param seen when the row's latest scan was
--- @return nil without days, or { slots, top }: slots[i] is { dayKey, low, high }, with low and
---   high nil on a day with no scan; top is the highest price in the slots
+-- @return nil without days, or { slots, top, days }: slots[i] is { dayKey, low, high }, with low
+--   and high nil on a day with no scan; top is the highest price in the slots; days is #slots
 function PriceLedger.ChartDays(days, seen)
     if type(days) ~= "table" or #days == 0 or type(seen) ~= "number" then
         return nil
     end
-    local byKey = {}
+    local byKey, oldestKey = {}, nil
     for _, day in ipairs(days) do
         byKey[day[1]] = day
+        oldestKey = math.min(oldestKey or day[1], day[1])
     end
-    local chart = { slots = {}, top = 0 }
-    for back = PriceLedger.DAYS_KEPT - 1, 0, -1 do
-        local key = PriceLedger.DayKey(seen - back * SECONDS_PER_DAY)
+    -- Day keys back from the latest scan, as far as the history goes; the chart starts at the
+    -- oldest saved day, with at least CHART_MIN_DAYS slots.
+    local keys = {}
+    for back = 0, PriceLedger.DAYS_KEPT - 1 do
+        keys[back + 1] = PriceLedger.DayKey(seen - back * SECONDS_PER_DAY)
+    end
+    local count = PriceLedger.CHART_MIN_DAYS
+    for index = #keys, 1, -1 do
+        if keys[index] >= oldestKey then
+            count = math.max(count, index)
+            break
+        end
+    end
+    count = math.min(count, #keys)
+    local chart = { slots = {}, top = 0, days = count }
+    for back = count - 1, 0, -1 do
+        local key = keys[back + 1]
         local day = byKey[key]
         chart.slots[#chart.slots + 1] = { dayKey = key, low = day and day[2], high = day and day[3] }
         if day then

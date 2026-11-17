@@ -1987,12 +1987,20 @@ do
     boxes.tooltipPrices:GetScript("OnClick")(boxes.tooltipPrices)
     Check("with tooltip prices off, tooltips get nothing", HouseLedgerDB.settings.tooltipPrices == false and #Hover() == 0)
     Check("settings send nothing", #world.browseQueries == 0 and world.replicateCalls == 1)
+    Check("the history dropdown shows 14 days at first", Picked(panel.historyDropdown) == "14 days"
+        and #MenuChoices(panel.historyDropdown) == 2)
+    Pick(panel.historyDropdown, "30 days")
+    Check("picking 30 days saves it and keeps 30 days", HouseLedgerDB.settings.historyDays == 30
+        and HouseLedgerPrice.DAYS_KEPT == 30 and Picked(panel.historyDropdown) == "30 days")
+    Pick(panel.historyDropdown, "14 days")
+    Check("picking 14 days again saves it", HouseLedgerDB.settings.historyDays == 14 and HouseLedgerPrice.DAYS_KEPT == 14)
     Click("Buy")
     Check("Buy hides the Settings panel", frame.buyPanel.shown and not panel.shown)
 end
 
+
 -- ---------------------------------------------------------------------
--- 14-day chart: Buy and Market details, and the Sell tab
+-- Price chart: Buy and Market details, and the Sell tab; it grows with the history
 -- ---------------------------------------------------------------------
 
 --- The bars of a chart that show, by day slot.
@@ -2020,10 +2028,13 @@ do
     row:GetScript("OnClick")(row)
     local chart = panel.chart
     local heights = BarHeights(chart)
-    Check("a row click shows its 14-day chart", chart.shown and #chart.bars == 14)
-    Check("days with scans have bars, the rest none", heights[14] and heights[10] and not heights[9] and not heights[1])
-    Check("bars scale to the chart's top price", heights[14] == chart.barArea and heights[10] == chart.barArea)
-    Check("the latest day is gold", chart.bars[14].colorTexture[1] == 1 and chart.bars[13].colorTexture[1] < 1)
+    Check("a row click shows its chart, 7 days for a young item", chart.shown and chart.slotCount == 7
+        and chart.caption.text == "Daily low, 7 days" and #chart.bars == 30)
+    Check("days with scans have bars, the rest none", heights[7] and heights[3] and not heights[2] and not heights[1]
+        and not heights[8] and not heights[30])
+    Check("bars scale to the chart's top price", heights[7] == chart.barArea and heights[3] == chart.barArea)
+    Check("the latest day is gold", chart.bars[7].colorTexture[1] == 1 and chart.bars[6].colorTexture[1] < 1)
+    Check("7 slots share the chart's width", chart.bars[2].points[1][4] == math.floor(chart.chartWidth / 7) + 1)
     Check("the chart says its top price", chart.topText.text == "<money 100>")
     Check("the chart sends nothing", #world.browseQueries == queries)
     Click("Clear")
@@ -2053,9 +2064,35 @@ do
     Drop({ itemID = 2589, commodity = true })
     world.commodityResults = { { itemID = 2589, unitPrice = 120, quantity = 2, owners = {} } }
     Fire("COMMODITY_SEARCH_RESULTS_UPDATED", 2589)
-    Check("a dropped item with saved prices shows its chart", chart.shown and BarHeights(chart)[14])
+    Check("a dropped item with saved prices shows its chart", chart.shown and BarHeights(chart)[7])
     Click("Reset")
     Check("Reset hides it", not chart.shown)
+end
+
+do
+    -- 20 days of prices with 30 days kept: the chart grows to 20 slots; 14 days trims it.
+    Setup({ screenRight = 1400 })
+    Load()
+    HouseLedgerPrice.SetHistoryDays(HouseLedgerDB, 30)
+    SaveDailyHistory(20)
+    OpenHouse()
+    world.browseResults = BrowseResults(4306, 4306, 70)
+    Fire("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
+    local row = ResultRows()[1]
+    row:GetScript("OnClick")(row)
+    local chart = MainFrame().buyPanel.chart
+    local heights = BarHeights(chart)
+    Check("with 30 days kept, the chart grows to the oldest saved day", chart.slotCount == 20
+        and chart.caption.text == "Daily low, 20 days" and heights[1] and heights[20] and not heights[21])
+    Click("Settings")
+    Pick(MainFrame().settingsPanel.historyDropdown, "14 days")
+    Click("Buy")
+    row = ResultRows()[1]
+    row:GetScript("OnClick")(row)
+    heights = BarHeights(chart)
+    Check("14 days trims the history at once, and the chart with it", chart.slotCount == 14
+        and #HouseLedgerDB.houses["Alliance|TestRealm"].items[4306].days == 14 and heights[14] and not heights[15])
+    HouseLedgerPrice.SetHistoryDays(HouseLedgerDB, 14)
 end
 
 -- ---------------------------------------------------------------------
