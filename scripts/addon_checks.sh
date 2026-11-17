@@ -2,6 +2,9 @@
 # Checks for every addon under addons/. Plain bash plus the Lua 5.1 tools, no packages.
 #
 #   syntax   every .lua parses (luac5.1 -p)
+#   limits   no function (a file's main chunk included) comes near Lua 5.1's hard limits of 200
+#            locals and 60 upvalues: more than LOCALS_MAX (160) or UPVALUES_MAX (48) fails, so a
+#            file is split before luac refuses it
 #   globals  addon files only write globals listed in scripts/allowed-globals.txt
 #            (reads luac's SETGLOBAL listing, the core idea of luacheck, without the package)
 #   toc      each addon has a .toc with ## Interface, every listed file exists, test files are
@@ -15,14 +18,17 @@
 #   coverage the tests run at least COVERAGE_MIN percent (default 90) of the lines in each
 #            addon file (scripts/lua_coverage.lua: Lua's own line hook, no packages)
 #
-# Usage: scripts/addon_checks.sh [--root DIR] <syntax|globals|toc|policy|version|tests|coverage|all>
-# Environment: LUA (default lua5.1), LUAC (default luac5.1), COVERAGE_MIN (default 90)
+# Usage: scripts/addon_checks.sh [--root DIR] <syntax|limits|globals|toc|policy|version|tests|coverage|all>
+# Environment: LUA (default lua5.1), LUAC (default luac5.1), COVERAGE_MIN (default 90),
+#   LOCALS_MAX (default 160), UPVALUES_MAX (default 48)
 set -euo pipefail
 
 SCRIPTS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(dirname "$SCRIPTS")"
 LUA="${LUA:-lua5.1}"
 LUAC="${LUAC:-luac5.1}"
+LOCALS_MAX="${LOCALS_MAX:-160}"
+UPVALUES_MAX="${UPVALUES_MAX:-48}"
 
 if [[ "${1:-}" == "--root" ]]; then
     ROOT="$(cd "$2" && pwd)"
@@ -121,6 +127,34 @@ check_syntax() {
         if ! out="$("$LUAC" -p "$file" 2>&1)"; then
             problem "$(rel "$file")" "does not parse: ${out##*: }"
         fi
+    done < <(lua_files)
+}
+
+#######################################
+# Check that no function in an addon file nears Lua 5.1's limits: 200 locals per function
+# (LUAI_MAXVARS; a file's main chunk counts as one function) and 60 upvalues per closure
+# (LUAI_MAXUPVALUES). luac refuses a file past them; this fails at LOCALS_MAX and UPVALUES_MAX
+# first. Reads the "locals (N)" and "upvalues (N)" counts of luac's full listing.
+# Globals:
+#   LUAC, LOCALS_MAX, UPVALUES_MAX
+#   failures (counted through problem)
+# Outputs:
+#   Writes each problem to stdout.
+#######################################
+check_limits() {
+    local file where kind count
+    while IFS= read -r -d '' file; do
+        is_test "$file" && continue
+        while read -r where kind count; do
+            [[ -n "$kind" ]] || continue
+            if [[ "$kind" == "locals" && $count -gt $LOCALS_MAX ]]; then
+                problem "$(rel "$file"):$where" "has $count locals in one function (Lua 5.1 allows 200; keep it to $LOCALS_MAX): move code to another file or into a table"
+            elif [[ "$kind" == "upvalues" && $count -gt $UPVALUES_MAX ]]; then
+                problem "$(rel "$file"):$where" "has a function with $count upvalues (Lua 5.1 allows 60; keep it to $UPVALUES_MAX): read shared names through a table"
+            fi
+        done < <("$LUAC" -l -l -p "$file" 2>/dev/null | awk '
+            /^(main|function) </ { split($2, at, /[:,>]/); where = at[2] }
+            /^(locals|upvalues) \(/ { gsub(/[()]/, "", $2); print where, $1, $2 }')
     done < <(lua_files)
 }
 
@@ -330,6 +364,7 @@ check_coverage() {
 
 case "${1:-}" in
     syntax) check_syntax ;;
+    limits) check_limits ;;
     globals) check_globals ;;
     toc) check_toc ;;
     policy) check_policy ;;
@@ -338,6 +373,7 @@ case "${1:-}" in
     coverage) check_coverage ;;
     all)
         check_syntax
+        check_limits
         check_globals
         check_toc
         check_policy
@@ -346,7 +382,7 @@ case "${1:-}" in
         check_coverage
         ;;
     *)
-        echo "usage: $0 [--root DIR] <syntax|globals|toc|policy|version|tests|coverage|all>" >&2
+        echo "usage: $0 [--root DIR] <syntax|limits|globals|toc|policy|version|tests|coverage|all>" >&2
         exit 2
         ;;
 esac

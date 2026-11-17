@@ -60,8 +60,8 @@ for test in scripts/*_test.sh; do
     fi
 done
 
-step "addon checks: syntax, globals, toc, policy, version"
-for check in syntax globals toc policy version; do
+step "addon checks: syntax, limits, globals, toc, policy, version"
+for check in syntax limits globals toc policy version; do
     scripts/addon_checks.sh "$check"
     printf '%s passed.\n' "$check"
 done

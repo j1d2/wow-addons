@@ -68,9 +68,36 @@ scripts/install_hooks.sh   # once per clone: pre-commit, commit-msg and pre-push
 scripts/check.sh           # the full gate: what the hooks and CI run
 ```
 
-`scripts/check.sh` runs every check: hygiene, the privacy and secret scan, shellcheck, the scripts' own tests, the addon checks (syntax, globals, `.toc` files, `RULES.md` limits, versions), every addon test, line coverage, and the speed and memory smoke run. The hooks and CI run the same script.
+`scripts/check.sh` runs every check: hygiene, the privacy and secret scan, shellcheck, the scripts' own tests, the addon checks (syntax, Lua's limits, globals, `.toc` files, `RULES.md` limits, versions), every addon test, line coverage, and the speed and memory smoke run. The hooks and CI run the same script.
 
 **Coverage:** `scripts/addon_checks.sh coverage` runs each addon's tests under `scripts/lua_coverage.lua`, which uses Lua's own line hook (no packages). Each addon file must have at least 90% of its lines run. The report lists the lines that never ran, for example `not run: 6-7, 9`.
+
+## Code layout
+
+Each addon is plain Lua 5.1, the version the game runs, split into files that its `.toc` lists in load order. The game hands every file two values, `local ADDON_NAME, ns = ...`: the addon's folder name and one table that only that addon's files share. The files share code and state through `ns`, not through globals. The only globals an addon makes are its saved variables and slash commands, which `scripts/allowed-globals.txt` lists, and the few frames that need a name (Escape closes a window only by its name).
+
+HouseLedger loads in this order:
+
+| File | What it holds |
+| --- | --- |
+| `PriceLedger.lua` | Price history and stats as pure data (`ns.Price`): no frames and no game calls, so `price_test.lua` runs it under plain `lua5.1`. |
+| `Core.lua` | Makes the shared tables: `ns.C` (constants more than one file uses), `ns.ui` (shared frames), `ns.state` (shared state), and one table per file below. Small helpers (`ns.U`): money text, the player's house, item looks, font-string cells. |
+| `Chart.lua` | The price chart (`ns.Chart`). |
+| `Tooltip.lua` | Saved prices on item tooltips (`ns.Tooltip`). |
+| `Scan.lua` | The full scan and its 15-minute wait (`ns.Scan`). |
+| `Buy.lua` | The Buy and Market tabs: list, headings, filters, details, the browse search (`ns.Buy`). |
+| `Sell.lua` | The Sell tab (`ns.Sell`). |
+| `PriceCheck.lua` | The `/pc` window and its bag button (`ns.PC`). |
+| `Settings.lua` | The Settings tab (`ns.Settings`). |
+| `Window.lua` | The window, its tabs, its place beside the auction house, and following Blizzard's window (`ns.Window`). |
+| `HouseLedger.lua` | Events. It loads last. |
+
+- A function another file calls is a field of its file's table (`function Buy.RenderRows()`); a function only its own file uses stays `local`. Table fields are looked up when the code runs, so a file can call one that loads after it.
+- A constant or piece of state that only one file uses stays a `local` in that file.
+- `houseledger_test.lua` loads the files the way the game does: it reads the `.toc` and runs each file with the addon's name and one shared table.
+- A new file in the `.toc` needs a full game restart; `/reload` doesn't read the `.toc` again.
+
+**Lua 5.1 limits.** One function, a file's main chunk included, holds at most 200 local variables, and one closure at most 60 upvalues (the outer locals it uses). `luac` refuses a file past either. `scripts/addon_checks.sh limits` fails earlier, at 160 locals or 48 upvalues, and says where. The fix is to move code into another file, or read shared names through a table such as `ns.C` or `ns.state`, which counts as one name.
 
 ## Speed and memory
 
