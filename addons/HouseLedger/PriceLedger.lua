@@ -465,26 +465,41 @@ local function Round(value)
 end
 
 --- How many days each window holds, in the order Stats reads them: the WINDOWS, then the widest
--- (DAYS_KEPT), then the baseline (BASELINE_DAYS). Rebuilt when one of those changes.
-local windowLengths, lengthsFor = {}, {}
+-- (DAYS_KEPT), then the baseline (BASELINE_DAYS). Rebuilt when any of those changes.
+local windowLengths = {}
 --- First day key of each window, for the scan time in startsFor. A full scan saves one time for
 -- every item it saw, so Market and the tooltips reuse these instead of formatting dates per item.
 local windowStarts, latestKeyFor, startsFor = {}, nil, nil
+
+--- True when windowLengths still matches the settings, compared length by length, so a window
+-- changed in place counts too.
+-- @param windows PriceLedger.WINDOWS
+-- @return true or false
+local function LengthsCurrent(windows)
+    local count = #windows
+    if #windowLengths ~= count + 2 or windowLengths[count + 1] ~= PriceLedger.DAYS_KEPT
+        or windowLengths[count + 2] ~= PriceLedger.BASELINE_DAYS then
+        return false
+    end
+    for index = 1, count do
+        if windowLengths[index] ~= windows[index] then
+            return false
+        end
+    end
+    return true
+end
 
 --- The window lengths for the current settings.
 -- @return the list of lengths, with the widest at #WINDOWS + 1 and the baseline at #WINDOWS + 2
 local function WindowLengths()
     local windows = PriceLedger.WINDOWS
-    if lengthsFor.windows ~= windows or lengthsFor.count ~= #windows
-        or lengthsFor.kept ~= PriceLedger.DAYS_KEPT or lengthsFor.baseline ~= PriceLedger.BASELINE_DAYS then
+    if not LengthsCurrent(windows) then
         windowLengths = {}
         for index, length in ipairs(windows) do
             windowLengths[index] = length
         end
         windowLengths[#windows + 1] = PriceLedger.DAYS_KEPT
         windowLengths[#windows + 2] = PriceLedger.BASELINE_DAYS
-        lengthsFor = { windows = windows, count = #windows, kept = PriceLedger.DAYS_KEPT,
-            baseline = PriceLedger.BASELINE_DAYS }
         -- New lengths need new first days.
         startsFor = nil
     end

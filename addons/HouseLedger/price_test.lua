@@ -807,6 +807,11 @@ do
     Check("Stats follows a changed history length and baseline", AllSame())
     P.DAYS_KEPT, P.BASELINE_DAYS = kept, baseline
     Check("Stats goes back to the usual windows afterwards", AllSame())
+    P.Stats(last)
+    local window = P.WINDOWS[3]
+    P.WINDOWS[3] = 5
+    Check("a window changed in place counts at once", Same(P.Stats(last), ReferenceStats(last)))
+    P.WINDOWS[3] = window
 end
 
 do
