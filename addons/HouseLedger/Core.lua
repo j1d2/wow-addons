@@ -111,6 +111,22 @@ local RECIPES_BY_SKILL_LINE = {
     [773] = "Inscription",
 }
 
+-- Each class's armor: its best type before and from LATE_ARMOR_LEVEL (when warriors and paladins
+-- learn plate, and hunters and shamans mail), whether it carries a shield, and its relic kind.
+-- Names are Enum.ItemArmorSubclass keys.
+local CLASS_ARMOR = {
+    WARRIOR = { early = "Mail", late = "Plate", shield = true },
+    PALADIN = { early = "Mail", late = "Plate", shield = true, relic = "Libram" },
+    HUNTER = { early = "Leather", late = "Mail" },
+    SHAMAN = { early = "Leather", late = "Mail", shield = true, relic = "Totem" },
+    ROGUE = { early = "Leather" },
+    DRUID = { early = "Leather", relic = "Idol" },
+    MAGE = { early = "Cloth" },
+    PRIEST = { early = "Cloth" },
+    WARLOCK = { early = "Cloth" },
+}
+local LATE_ARMOR_LEVEL = 40
+
 -- FrameWidth's limits.
 local FRAME_WIDTH_MAX = 640
 local SCREEN_MARGIN = 8
@@ -457,4 +473,36 @@ function U.RecipeSubclasses()
         end
     end
     return list
+end
+
+--- The class filters for gear this character wears best: all weapons, its best armor type, the
+-- armor every class wears (rings, necks, trinkets, off-hands, and cloaks, which are cloth), and its
+-- shield and relic kind. The search's usable-only filter then drops weapons it can't use.
+-- @return the list of AuctionHouseItemClassFilter tables and the armor type's name (like
+--   "Plate"), or nil for a class this doesn't know
+function U.BestGearFilters()
+    local _, classFile = UnitClass("player")
+    local armor = CLASS_ARMOR[classFile]
+    if armor == nil then
+        return nil
+    end
+    local level = UnitLevel("player") or 0
+    local best = (armor.late and level >= LATE_ARMOR_LEVEL) and armor.late or armor.early
+    local kinds = Enum.ItemArmorSubclass
+    local classes = {
+        { classID = Enum.ItemClass.Weapon },
+        { classID = Enum.ItemClass.Armor, subClassID = kinds[best] },
+        { classID = Enum.ItemClass.Armor, subClassID = kinds.Generic },
+    }
+    if best ~= "Cloth" then
+        classes[#classes + 1] = { classID = Enum.ItemClass.Armor, subClassID = kinds.Cloth,
+            inventoryType = Enum.InventoryType.IndexCloakType }
+    end
+    if armor.shield then
+        classes[#classes + 1] = { classID = Enum.ItemClass.Armor, subClassID = kinds.Shield }
+    end
+    if armor.relic then
+        classes[#classes + 1] = { classID = Enum.ItemClass.Armor, subClassID = kinds[armor.relic] }
+    end
+    return classes, best
 end

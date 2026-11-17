@@ -30,6 +30,7 @@ local PRICE_SORT = {
 local SHOW_CHOICES = {
     { key = "all", label = "Show everything" },
     { key = "gear", label = "Gear for me", searching = "Searching gear for this character..." },
+    { key = "anygear", label = "Any gear I can use", searching = "Searching gear for this character..." },
     { key = "recipes", label = "Recipes for me", searching = "Searching recipes for this character's professions..." },
 }
 
@@ -592,11 +593,18 @@ function Buy.SendSearch()
         Refuse("Type at least 2 letters, or pick a quality.")
         return
     end
-    -- Show: gear this character can use (the house's own usable-only filter, on weapons and
-    -- armor), or recipes for its professions.
-    local classes, usable
+    -- Show: gear this character wears best or can use at all (the house's own usable-only filter
+    -- does the class and level check), or recipes for its professions.
+    local classes, usable, searching
     if showKey == "gear" then
-        classes = { { classID = Enum.ItemClass.Weapon }, { classID = Enum.ItemClass.Armor } }
+        local best
+        classes, best = U.BestGearFilters()
+        if best then
+            searching = "Searching weapons and " .. best:lower() .. " armor for this character..."
+        end
+    end
+    if showKey == "gear" or showKey == "anygear" then
+        classes = classes or { { classID = Enum.ItemClass.Weapon }, { classID = Enum.ItemClass.Armor } }
         usable = true
     elseif showKey == "recipes" then
         classes = {}
@@ -634,12 +642,12 @@ function Buy.SendSearch()
         itemClassFilters = classes,
     })
     searchedQuality = state.filter.minQuality or 0
-    local searching = "Searching..."
     for _, choice in ipairs(SHOW_CHOICES) do
-        if choice.key == showKey and choice.searching then
+        if choice.key == showKey and searching == nil then
             searching = choice.searching
         end
     end
+    searching = searching or "Searching..."
     SetStatus(text ~= "" and ("Searching for " .. text .. "...") or searching)
 end
 
