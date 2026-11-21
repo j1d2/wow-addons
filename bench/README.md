@@ -27,7 +27,7 @@ Day keys, prices that repeat and item names are shared, so a real file holds far
 
 ## The synthetic data
 
-`bench/synth.lua` makes the same data on every run: a fixed-seed generator, never `math.random`. It's tuned against one real 7-day file. 84% of item-days are listed, prices are rounded to four significant digits, and a scan finds the same cheapest price as the scan before 85% of the time. With those settings, 6,661 items x 7 days gives about 42,000 different values (the real file: 41,351) and 225 bytes of memory per day row (the real file: about 250).
+`bench/synth.lua` makes the same data on every run: a fixed-seed generator, never `math.random`. It's tuned against one real 7-day file. 84% of item-days are listed, prices are rounded to four significant digits, and a scan finds the same cheapest price as the scan before 85% of the time. With those settings, 6,661 items x 7 days gives about 42,000 different values (the real file: 41,351) and 225 bytes of memory per day row (the real file: about 250). Those numbers are from before scan lists. Each item now also keeps its last 30 scans; synth.lua spaces a day's 1 to 3 scans evenly up to 12:00, so every item in one scan shares its time, as in a real scan. That adds about 90 bytes per day row and almost no different values: a scan's time is shared by every item in it, and its price is nearly always that day's low or high.
 
 ## Budgets
 

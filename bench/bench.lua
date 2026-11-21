@@ -33,9 +33,10 @@ local overBudget = 0
 
 --- Smoke budgets per step: kb = most memory the step may allocate, ms = loose time guard.
 -- Kept memory is checked per day row. Set from measured values with about 1.5x headroom
--- (2026-11-15); see bench/README.md before raising one.
+-- (2026-11-15; kept memory, ChartScans and Commit 2026-11-21, when each item started keeping
+-- its last 30 scans); see bench/README.md before raising one.
 local BUDGETS = {
-    keptPerDayRow = 300,
+    keptPerDayRow = 470,
     -- Share of CONSTANT_LIMIT the smoke data may use.
     constantShare = 0.5,
     ["Load saved file"] = { kb = 13000, ms = 2000 },
@@ -45,7 +46,8 @@ local BUDGETS = {
     FindByName = { kb = 600, ms = 2000 },
     HouseOverview = { kb = 10, ms = 2000 },
     ["ChartDays, every item"] = { kb = 13000, ms = 2000 },
-    ["Commit, full scan"] = { kb = 500, ms = 2000 },
+    ["ChartScans, every item"] = { kb = 18000, ms = 2000 },
+    ["Commit, full scan"] = { kb = 870, ms = 2000 },
     SortHistory = { kb = 200, ms = 2000 },
     FilterHistory = { kb = 60, ms = 2000 },
     ["Record, full history"] = { kb = 20, ms = 2000 },
@@ -185,6 +187,11 @@ local function BenchHouseLedger(items, days)
     Step("ChartDays, every item", function()
         for _, row in pairs(house.items) do
             P.ChartDays(row.days, row.seen)
+        end
+    end)
+    Step("ChartScans, every item", function()
+        for _, row in pairs(house.items) do
+            P.ChartScans(row.scans)
         end
     end)
     local best = Synth.FullScan(house)
