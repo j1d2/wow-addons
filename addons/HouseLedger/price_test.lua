@@ -1041,6 +1041,139 @@ do
         EntriesMatch(market.deals) and EntriesMatch(market.drops) and EntriesMatch(market.rises))
 end
 
+-- A blank realm name (the Forever client since 2026-11-20) files prices under the realm the
+-- game last named, and the houses saved under the unknown realm join that realm's house.
+do
+    local db = P.EnsureDB(nil)
+    Check("a blank realm with none seen is the unknown realm", P.RealmFor(db, "") == P.UNKNOWN_REALM
+        and P.RealmFor(db, nil) == P.UNKNOWN_REALM and db.homeRealm == nil)
+    Check("a real realm name is used and remembered", P.RealmFor(db, "Realm Five") == "Realm Five"
+        and db.homeRealm == "Realm Five")
+    Check("a blank realm name then means the remembered realm", P.RealmFor(db, "") == "Realm Five"
+        and P.RealmFor(db, nil) == "Realm Five" and P.RealmFor(db, 7) == "Realm Five")
+end
+
+--- A day row with its sums, for one scan or several at one price.
+-- @param key the day key
+-- @param low the low
+-- @param high the high
+-- @param scans how many scans
+-- @return { key, low, high, scans, sum, sumOfSquares }
+local function Day(key, low, high, scans)
+    local sum = (low + high) / 2 * scans
+    return { key, low, high, scans, sum, (low * low + high * high) / 2 * scans }
+end
+
+do
+    P.DAYS_KEPT = 14
+    local nov20 = os.time({ year = 2026, month = 11, day = 20, hour = 7 })
+    local nov21 = os.time({ year = 2026, month = 11, day = 21, hour = 2 })
+    local into = {
+        scannedAt = nov20,
+        items = {
+            [1] = { unit = 50, qty = 2, seen = nov20, name = "Old name", quality = 1,
+                days = { Day(20261119, 40, 60, 2), Day(20261120, 50, 50, 1) } },
+            [3] = { unit = 7, qty = 1, seen = nov20, name = "Only old", days = { Day(20261120, 7, 7, 1) } },
+        },
+        daily = { { 20261119, 10, 20, 300 }, { 20261120, 11, 21, 310 } },
+    }
+    local from = {
+        scannedAt = nov21,
+        replicateAt = nov21,
+        items = {
+            [1] = { unit = 45, qty = 4, seen = nov21, days = { Day(20261120, 30, 55, 1), Day(20261121, 45, 45, 1) } },
+            [2] = { unit = 9, qty = 1, seen = nov21, name = "Only new", days = { Day(20261121, 9, 9, 1) } },
+        },
+        daily = { { 20261120, 12, 22, 320 }, { 20261121, 13, 23, 330 } },
+    }
+    local merged = P.MergeHouse(into, from)
+    local one = merged.items[1]
+    Check("merge keeps the house it merged into", merged == into)
+    Check("an item in both gets every day once, oldest first", #one.days == 3
+        and one.days[1][1] == 20261119 and one.days[2][1] == 20261120 and one.days[3][1] == 20261121)
+    local shared = one.days[2]
+    Check("a day in both adds up: lowest low, highest high, scans and sums",
+        shared[2] == 30 and shared[3] == 55 and shared[4] == 2
+        and shared[5] == Day(20261120, 50, 50, 1)[5] + Day(20261120, 30, 55, 1)[5]
+        and shared[6] == Day(20261120, 50, 50, 1)[6] + Day(20261120, 30, 55, 1)[6])
+    Check("the latest price comes from the house that saw it last",
+        one.unit == 45 and one.qty == 4 and one.seen == nov21)
+    Check("a name the newer row lacks comes from the older", one.name == "Old name" and one.quality == 1)
+    Check("an item only in one house is kept", merged.items[2].name == "Only new"
+        and merged.items[3].name == "Only old")
+    Check("daily totals: every day once, the later scan's on a shared day", #merged.daily == 3
+        and merged.daily[2][1] == 20261120 and merged.daily[2][2] == 12 and merged.daily[3][1] == 20261121)
+    Check("scan times are the later ones", merged.scannedAt == nov21 and merged.replicateAt == nov21)
+    local stats = P.Stats(one)
+    Check("Stats works on a merged row", stats ~= nil)
+end
+
+do
+    P.DAYS_KEPT = 14
+    local now = os.time({ year = 2026, month = 11, day = 30, hour = 12 })
+    local oldDays, newDays = {}, {}
+    for day = 1, 14 do
+        oldDays[#oldDays + 1] = Day(20261100 + day, 10, 10, 1)
+    end
+    for day = 17, 30 do
+        newDays[#newDays + 1] = Day(20261100 + day, 10, 10, 1)
+    end
+    local merged = P.MergeHouse({ scannedAt = now - 86400 * 3, items = { [5] = { seen = 1, days = oldDays } } },
+        { scannedAt = now, items = { [5] = { seen = now, days = newDays } } })
+    local days = merged.items[5].days
+    Check("a merged row is pruned to the history length", #days == 14 and days[1][1] == 20261117
+        and days[14][1] == 20261130)
+end
+
+do
+    local nov20 = os.time({ year = 2026, month = 11, day = 20, hour = 7 })
+    local nov21 = os.time({ year = 2026, month = 11, day = 21, hour = 2 })
+    local db = P.EnsureDB({
+        version = P.DB_VERSION,
+        lastHouseKey = "Horde|Forever",
+        settings = { historyDays = 30 },
+        houses = {
+            ["Horde|Realm Five"] = { scannedAt = nov20, items = {
+                [1] = { unit = 5, qty = 1, seen = nov20, days = { Day(20261109, 5, 5, 1), Day(20261120, 5, 5, 1) } } } },
+            ["Horde|Forever"] = { scannedAt = nov21, items = {
+                [1] = { unit = 6, qty = 1, seen = nov21, days = { Day(20261121, 6, 6, 1) } } } },
+            ["Neutral|Forever"] = { scannedAt = nov21, items = {
+                [8] = { unit = 6, qty = 1, seen = nov21, days = { Day(20261121, 6, 6, 1) } } } },
+        },
+    })
+    Check("a load joins the unknown realm's houses into the only named realm",
+        db.houses["Horde|Forever"] == nil and db.houses["Neutral|Forever"] == nil
+        and #db.houses["Horde|Realm Five"].items[1].days == 3 and db.houses["Neutral|Realm Five"].items[8] ~= nil)
+    Check("the joined house keeps the old days of a 30-day history",
+        db.houses["Horde|Realm Five"].items[1].days[1][1] == 20261109)
+    Check("the last house key follows the join", db.lastHouseKey == "Horde|Realm Five")
+    Check("the named realm becomes the remembered realm", db.homeRealm == "Realm Five")
+    Check("the join is listed once, for the addon to say", #P.joined == 2)
+    P.EnsureDB(db)
+    Check("a second load joins nothing", #P.joined == 0 and #db.houses["Horde|Realm Five"].items[1].days == 3)
+end
+
+do
+    local db = P.EnsureDB({ version = P.DB_VERSION, houses = {
+        ["Horde|Realm A"] = { items = {} }, ["Horde|Realm B"] = { items = {} }, ["Horde|Forever"] = { items = {} } } })
+    Check("two named realms and none remembered: the unknown realm stays apart",
+        db.houses["Horde|Forever"] ~= nil and db.homeRealm == nil and #P.joined == 0)
+    db.homeRealm = "Realm B"
+    P.EnsureDB(db)
+    Check("with a remembered realm it joins that one", db.houses["Horde|Forever"] == nil
+        and db.houses["Horde|Realm B"] ~= nil and db.houses["Horde|Realm A"] ~= nil)
+end
+
+do
+    local db = P.EnsureDB({ version = P.DB_VERSION, houses = { ["Horde|Forever"] = { items = { [1] = {
+        unit = 1, qty = 1, seen = 1, days = { Day(20261121, 1, 1, 1) } } } } } })
+    Check("only the unknown realm saved: left as it is", db.houses["Horde|Forever"] ~= nil and db.homeRealm == nil)
+    db.homeRealm = ""
+    P.EnsureDB(db)
+    Check("a blank remembered realm is dropped", db.homeRealm == nil and db.houses["Horde|Forever"] ~= nil)
+end
+P.DAYS_KEPT = 14
+
 if failed > 0 then
     io.write(string.format("%d failed\n", failed))
     os.exit(1)

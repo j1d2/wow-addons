@@ -205,7 +205,13 @@ local function Setup(opts)
             return "<money " .. tostring(copper) .. ">"
         end
     end
-    _G.GetRealmName = function() return "TestRealm" end
+    -- The Forever client gives a blank realm name since 2026-11-20; world.realmName sets it.
+    _G.GetRealmName = function()
+        if world.realmName ~= nil then
+            return world.realmName
+        end
+        return "TestRealm"
+    end
     _G.IsShiftKeyDown = function() return world.shiftDown == true end
     -- The game's link insert, which a shift-click on a bag item or chat link calls. A chat box
     -- is open when world.chatOpen is true.
@@ -883,6 +889,34 @@ do
     Fire("REPLICATE_ITEM_LIST_UPDATE")
     RunTimers()
     Check("goblin auctioneer scan is stored as Neutral", HouseLedgerDB.houses["Neutral|TestRealm"] ~= nil)
+end
+
+do
+    -- The game named the realm for old scans, then gave a blank name and a scan went to the
+    -- unknown realm. The load joins them, and a new scan with a blank name goes to the old house.
+    local saved = {
+        version = 3,
+        houses = {
+            ["Alliance|TestRealm"] = { scannedAt = 1000, items = { [4306] = { unit = 50, qty = 1, seen = 1000,
+                days = { { tonumber(os.date("%Y%m%d", 1000)), 50, 50, 1, 50, 2500 } } } } },
+            ["Alliance|Forever"] = { scannedAt = 2000, items = { [2589] = { unit = 9, qty = 1, seen = 2000,
+                days = { { tonumber(os.date("%Y%m%d", 2000)), 9, 9, 1, 9, 81 } } } } },
+        },
+        lastHouseKey = "Alliance|Forever",
+    }
+    Setup({ listings = { Listing(2592, 1, 70) }, savedDB = saved })
+    world.realmName = ""
+    Load()
+    Check("the load joins the blank-realm house into the named one",
+        HouseLedgerDB.houses["Alliance|Forever"] == nil and HouseLedgerDB.houses["Alliance|TestRealm"].items[2589] ~= nil)
+    OpenHouse()
+    Check("the auction house says once that the scans were joined", ScanLine():find("Joined scans", 1, true) ~= nil)
+    Click("Scan")
+    Fire("REPLICATE_ITEM_LIST_UPDATE")
+    RunTimers()
+    Check("a scan with a blank realm name saves into the named realm's house",
+        HouseLedgerDB.houses["Alliance|TestRealm"].items[2592] ~= nil and HouseLedgerDB.houses["Alliance|Forever"] == nil)
+    Check("the remembered realm is the named one", HouseLedgerDB.homeRealm == "TestRealm")
 end
 
 -- ---------------------------------------------------------------------

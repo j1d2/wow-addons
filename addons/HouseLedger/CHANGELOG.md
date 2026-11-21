@@ -19,6 +19,10 @@ All notable changes to HouseLedger. The format follows [Keep a Changelog](https:
 - The Market tab opens about 6 times faster, and price tooltips and details take about 5 times less work. The numbers are the same as before.
 - Items that stop showing up in scans now drop their days older than 14 days too, so the saved file stays smaller. Their tooltip still shows the last price and when it was seen.
 
+### Fixed
+
+- Since the game update of November 20, the game can give a blank realm name, and HouseLedger then started a new, empty price history for every scan after it. Your history wasn't lost: HouseLedger now joins those scans back into your saved history the first time it loads, and a blank realm name keeps using the realm the game last named. The auction house window says so once when it has joined them.
+
 ## [0.4.1] - 2026-11-15
 
 ### Changed
