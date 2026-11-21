@@ -138,7 +138,7 @@ Its Buy and Sell tabs switch Blizzard's tabs too, and the reverse.
 - "1 day" means today's scans. History keeps 14 calendar days.
 - Trends start from the 3rd scan, deals from the 5th. A price within 10% of its 7-day average shows as a grey "steady".
 - A deal is at least 25% under the average and well below the usual range (2 standard deviations).
-- Prices are kept per faction house (Alliance, Horde, neutral) and saved per account in `HouseLedgerDB`.
+- Prices are kept per auction house (Alliance, Horde and goblin) and saved per account in `HouseLedgerDB`. At a goblin auction house the window shows the goblin prices; tooltips always show your own faction's.
 - In combat the window waits until combat ends before it moves or switches tabs. That's a game rule.
 
 ### What it does not do

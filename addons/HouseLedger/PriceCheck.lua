@@ -82,7 +82,7 @@ function PC.Render()
     local total = ui.priceCheck.total
     if strlenutf8(text) < C.MIN_SEARCH_LENGTH then
         ui.priceCheck.status:SetText("Type 2 letters of an item's name.")
-    elseif U.MarketHouse() == nil then
+    elseif U.PlayerHouse() == nil then
         ui.priceCheck.status:SetText("No prices saved yet. Scan once at the auction house.")
     elseif total == 0 then
         ui.priceCheck.status:SetText("No saved item matches. Names fill in from your scans.")
@@ -102,7 +102,7 @@ end
 -- chosen sort, and goes back to the top.
 function PC.Refresh()
     local text = strtrim(ui.priceCheck.searchBox:GetText() or "")
-    local found, total = Price.FindByName(U.MarketHouse(), text, PC.MATCH_LIMIT)
+    local found, total = Price.FindByName(U.PlayerHouse(), text, PC.MATCH_LIMIT)
     for _, entry in ipairs(found) do
         entry.info = Price.Lookup(HouseLedgerDB, entry.itemID, U.PlayerHouseKey())
     end

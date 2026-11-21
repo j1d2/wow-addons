@@ -75,6 +75,8 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
     end
 
     if event == "AUCTION_HOUSE_SHOW" then
+        -- The auctioneer is the npc unit now: a goblin one makes the window read the goblin house.
+        state.openHouseKey = U.CurrentScanKey()
         -- Hooks Blizzard's window even in combat; the rest waits for it to end.
         Window.PlaceFrame(false)
         if U.InCombat() then
@@ -94,6 +96,7 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
     end
 
     if event == "AUCTION_HOUSE_CLOSED" then
+        state.openHouseKey = nil
         if U.InCombat() then
             state.afterCombat = true
         else
