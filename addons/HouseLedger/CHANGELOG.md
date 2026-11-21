@@ -22,6 +22,7 @@ All notable changes to HouseLedger. The format follows [Keep a Changelog](https:
 ### Fixed
 
 - Since the game update of November 20, the game can give a blank realm name, and HouseLedger then started a new, empty price history for every scan after it. Your history wasn't lost: HouseLedger now joins those scans back into your saved history the first time it loads, and a blank realm name keeps using the realm the game last named. The auction house window says so once when it has joined them.
+- At a goblin auction house, the window (Market, the house overview, Buy and Sell details, and the scan line) now shows that goblin house's prices instead of your faction's, and calls it "Goblin". Tooltips and Price Check always show your own faction's prices, and no longer fall back to another house's.
 
 ## [0.4.1] - 2026-11-15
 

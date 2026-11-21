@@ -350,7 +350,8 @@ end
 
 do
     Check("house label is the side only, so the realm stays off screen", P.HouseLabel("Horde|Some Realm") == "Horde")
-    Check("house label keeps a key with no realm", P.HouseLabel("Neutral") == "Neutral")
+    Check("house label keeps a key with no realm", P.HouseLabel("Odd key") == "Odd key")
+    Check("a goblin house reads as Goblin", P.HouseLabel("Neutral|Some Realm") == "Goblin")
     Check("house label handles nil", P.HouseLabel(nil) == "")
 end
 
@@ -383,13 +384,13 @@ do
     local neutral = {}
     P.Consider(neutral, 4306, 1, 50)
     P.Commit(db, "Neutral|Test", neutral, 1000)
-    local info = P.Lookup(db, 4306, "Alliance|Test")
-    Check("other house is labeled", info ~= nil and info.side == "Neutral" and info.unit == 50)
+    Check("another house's price is never used, even the last one scanned",
+        P.Lookup(db, 4306, "Alliance|Test") == nil and P.Lookup(db, 4306, "Neutral|Test").unit == 50)
     local home = {}
     P.Consider(home, 4306, 1, 20)
     P.Commit(db, "Alliance|Test", home, 2000)
     local preferred = P.Lookup(db, 4306, "Alliance|Test")
-    Check("own house wins over the last scan", preferred.unit == 20 and preferred.side == nil)
+    Check("each house reads its own price", preferred.unit == 20 and P.Lookup(db, 4306, "Neutral|Test").unit == 50)
     Check("unknown item has no tooltip", P.Lookup(db, 999999, "Alliance|Test") == nil)
     Check("tooltip helper rejects a missing price", P.TooltipLines(nil, Coins, false) == nil)
 end

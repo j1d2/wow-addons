@@ -102,6 +102,10 @@ state.afterCombat = false
 state.buildAfterCombat = false
 -- Bag button work that waits for combat to end: making them, or showing or hiding them.
 state.bagButtonsPending = false
+-- The house key of the auction house that is open (a goblin one is its own house), set when it
+-- opens and cleared when it closes. The window reads this house; tooltips always read the
+-- player's own faction's.
+state.openHouseKey = nil
 
 -- FrameWidth's limits.
 local FRAME_WIDTH_MAX = 640
@@ -232,12 +236,18 @@ function U.ItemLook(itemKey, result)
     return "unknown item", C.QUESTION_MARK_ICON, nil
 end
 
---- Saved stats for an item at the player's own house, or nil.
--- Falls back to the last scanned house as PriceLedger.Lookup does.
+--- The house the window reads: the auction house that is open, or the player's own faction's
+-- when none is.
+-- @return the house key
+function U.ViewHouseKey()
+    return state.openHouseKey or U.PlayerHouseKey()
+end
+
+--- Saved stats for an item at the house the window reads, or nil.
 -- @param itemID the item's id, or nil
 -- @return stats from PriceLedger.Stats, or nil
 function U.SavedStats(itemID)
-    local saved = Price.Lookup(HouseLedgerDB, itemID, U.PlayerHouseKey())
+    local saved = Price.Lookup(HouseLedgerDB, itemID, U.ViewHouseKey())
     return saved and saved.stats
 end
 
@@ -296,15 +306,25 @@ function U.AgoText(seconds)
     return string.format("%d days ago", math.floor(seconds / (24 * 60 * 60)))
 end
 
---- The house the Market tab reads: the player's own once it has a scan, else the last one scanned.
+--- The house the Market tab and the house overview read: the open auction house's, from
+-- U.ViewHouseKey, once it has a scan.
 -- @return the house table, or nil
 function U.MarketHouse()
-    local houses = HouseLedgerDB.houses or {}
-    local house = houses[U.PlayerHouseKey()]
+    local house = (HouseLedgerDB.houses or {})[U.ViewHouseKey()]
     if type(house) == "table" and house.scannedAt then
         return house
     end
-    return houses[HouseLedgerDB.lastHouseKey or ""]
+    return nil
+end
+
+--- The player's own faction's house, which Price Check reads like the tooltips, once it has a scan.
+-- @return the house table, or nil
+function U.PlayerHouse()
+    local house = (HouseLedgerDB.houses or {})[U.PlayerHouseKey()]
+    if type(house) == "table" and house.scannedAt then
+        return house
+    end
+    return nil
 end
 
 --- An item key for a saved item: the game's own maker when it has one.
