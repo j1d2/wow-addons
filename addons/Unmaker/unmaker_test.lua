@@ -200,7 +200,8 @@ local function Gear(itemID, name, quality, fields)
 end
 
 --- Put the fake game in place and load the addon files fresh.
--- @param setup optional table: bags = { [bag] = { [slot] = record } }, knows, sets, db, charDB
+-- @param setup optional table: bags = { [bag] = { [slot] = record } }, knows, sets, db, charDB,
+--   surname, realmName
 local function Load(setup)
     setup = setup or {}
     -- Named frames from the last scenario must not leak into this one.
@@ -222,8 +223,15 @@ local function Load(setup)
     _G.InCombatLockdown = function() return world.inCombat end
     _G.GetTime = function() return world.now end
     _G.time = function() return 1762900000 + world.now end
-    _G.UnitName = function() return "Tester" end
-    _G.GetRealmName = function() return "Testrealm" end
+    -- Forever gives a surname as UnitName's second value (setup.surname), and since 2026-11-20
+    -- can give a blank realm name (setup.realmName).
+    _G.UnitName = function() return "Tester", setup.surname end
+    _G.GetRealmName = function()
+        if setup.realmName ~= nil then
+            return setup.realmName
+        end
+        return "Testrealm"
+    end
     _G.GetNumLootItems = function() return #world.loot end
     _G.GetLootSlotInfo = function(slot)
         local mat = world.loot[slot]
@@ -1169,6 +1177,24 @@ do
     headers.time:GetScript("OnClick")(headers.time)
     Check("another heading moves the arrow there", headers.time.label.text:find("NPE_Arrow", 1, true) ~= nil
         and headers.who.label.text == "Who")
+end
+
+do
+    -- A Forever character with a surname, after the game started giving a blank realm name.
+    -- Its old entries were saved under its first name and the realm the game named then.
+    Start({ bags = StandardBags(), surname = "Vale", realmName = "", db = { history = {
+        { itemID = 7, name = "Old Gloves", quality = 2, character = "Tester", realm = "Testrealm", time = 5, mats = {} },
+    } } })
+    Click(_G.UnmakerNextButton)
+    FinishCast(0, 2, { { name = "Strange Dust", quantity = 2, quality = 1 } })
+    local db = _G.UnmakerDB
+    local newest = db.history[#db.history]
+    Check("a disenchant is saved under the full name and the remembered realm",
+        newest.character == "Tester Vale" and newest.realm == "Testrealm")
+    Check("the old first-name entry takes the full name", db.history[1].character == "Tester Vale")
+    Check("and counts for the full-name character", db.characters["Tester Vale-Testrealm"] ~= nil
+        and db.characters["Tester Vale-Testrealm"].total >= 1)
+    Check("no character is saved under the unknown realm", db.characters["Tester Vale-Forever"] == nil)
 end
 
 if failed > 0 then

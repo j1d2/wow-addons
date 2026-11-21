@@ -153,17 +153,16 @@ function U.RemainingText(seconds)
     return string.format("%d sec", seconds)
 end
 
---- The realm name, or "Forever" when the game gives none.
+--- The realm prices are filed under: the game's realm name, or, when the game gives a blank
+-- one (the Forever client has since 2026-11-20), the last realm it did name, from
+-- PriceLedger.RealmFor. "Forever" when no name was ever seen.
 -- @return the realm name
 local function RealmLabel()
-    if type(GetRealmName) ~= "function" then
-        return "Forever"
+    local name = type(GetRealmName) == "function" and GetRealmName() or nil
+    if type(HouseLedgerDB) ~= "table" then
+        return (type(name) == "string" and name ~= "") and name or Price.UNKNOWN_REALM
     end
-    local name = GetRealmName()
-    if type(name) ~= "string" or name == "" then
-        return "Forever"
-    end
-    return name
+    return Price.RealmFor(HouseLedgerDB, name)
 end
 
 --- The house key for the player's own faction on this realm.

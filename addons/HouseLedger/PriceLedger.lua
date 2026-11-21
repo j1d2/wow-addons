@@ -156,6 +156,16 @@ function PriceLedger.DayKey(seconds)
     return tonumber(FormatTime("%Y%m%d", seconds))
 end
 
+-- The realm part of a house key when the realm isn't known.
+PriceLedger.UNKNOWN_REALM = "Forever"
+
+--- True for a realm name the game really gave: a string that isn't empty.
+-- @param name a value
+-- @return true or false
+local function IsRealmName(name)
+    return type(name) == "string" and name ~= ""
+end
+
 --- A new saved-variables table with no houses.
 -- @return { version, houses }
 function PriceLedger.EmptyDB()
@@ -318,22 +328,40 @@ function PriceLedger.EnsureDB(db)
             end
         end
     end
+    if not IsRealmName(db.homeRealm) then
+        db.homeRealm = nil
+    end
+    PriceLedger.JoinUnknownRealm(db)
     db.version = PriceLedger.DB_VERSION
     return db
 end
 
 --- The key one house is saved under.
 -- @param side "Alliance", "Horde" or "Neutral"; "Unknown" when missing
--- @param realm the realm name; "Forever" when missing
+-- @param realm the realm name; UNKNOWN_REALM when missing
 -- @return the key, "<side>|<realm>"
 function PriceLedger.HouseKey(side, realm)
     if type(side) ~= "string" or side == "" then
         side = "Unknown"
     end
-    if type(realm) ~= "string" or realm == "" then
-        realm = "Forever"
+    if not IsRealmName(realm) then
+        realm = PriceLedger.UNKNOWN_REALM
     end
     return side .. "|" .. realm
+end
+
+--- The realm to file prices under. Since the Forever client update of 2026-11-20 the game can
+-- give a blank realm name; a blank one means the last realm the game did name, so a character's
+-- scans keep going into the same history. A real name is remembered as that realm.
+-- @param db the saved table; its homeRealm is set from a real name
+-- @param name what GetRealmName() returned
+-- @return the realm name, or UNKNOWN_REALM when no name was ever seen
+function PriceLedger.RealmFor(db, name)
+    if IsRealmName(name) then
+        db.homeRealm = name
+        return name
+    end
+    return db.homeRealm or PriceLedger.UNKNOWN_REALM
 end
 
 --- Finds a house in the db, adding it (with an empty item list) when missing.
@@ -583,6 +611,159 @@ function PriceLedger.Commit(db, houseKey, best, now, totals)
     PruneDays(house.daily, oldest)
     db.lastHouseKey = houseKey
     return saved
+end
+
+--- One day list from two: a day both have becomes one day (lowest low, highest high, the scans
+-- and sums added up), oldest first. Neither list is changed.
+-- @param first a row's day list
+-- @param second another row's day list
+-- @return a new day list
+local function MergeDays(first, second)
+    local byKey, merged = {}, {}
+    for _, list in ipairs({ first, second }) do
+        for _, day in ipairs(type(list) == "table" and list or {}) do
+            local have = byKey[day[1]]
+            if have then
+                have[2] = math.min(have[2], day[2])
+                have[3] = math.max(have[3], day[3])
+                have[4] = have[4] + day[4]
+                have[5] = have[5] + day[5]
+                have[6] = have[6] + day[6]
+            else
+                local copy = { day[1], day[2], day[3], day[4], day[5], day[6] }
+                byKey[day[1]] = copy
+                merged[#merged + 1] = copy
+            end
+        end
+    end
+    table.sort(merged, function(a, b)
+        return a[1] < b[1]
+    end)
+    return merged
+end
+
+--- Moves one house's items and daily totals into another, for two houses that are the same
+-- auction house saved under two keys. An item in both gets one day list (see MergeDays) and
+-- its latest price, count and seen time from whichever saw it last; its name and quality from
+-- there too, or from the other when that has none. A day in both daily lists keeps the totals
+-- of the house scanned last. Then both lists are pruned to the history length.
+-- @param into the house that stays; changed in place
+-- @param from the house that goes; its rows are moved, not copied
+-- @return into
+function PriceLedger.MergeHouse(into, from)
+    if type(into.items) ~= "table" then
+        into.items = {}
+    end
+    for itemID, row in pairs(type(from.items) == "table" and from.items or {}) do
+        local have = into.items[itemID]
+        if type(have) ~= "table" then
+            into.items[itemID] = row
+        elseif type(row) == "table" then
+            local newer, older = row, have
+            if (have.seen or 0) >= (row.seen or 0) then
+                newer, older = have, row
+            end
+            have.days = MergeDays(have.days, row.days)
+            have.unit, have.qty, have.seen = newer.unit, newer.qty, newer.seen
+            have.name = newer.name or older.name
+            have.quality = newer.quality or older.quality
+        end
+    end
+
+    local fromLater = (from.scannedAt or 0) >= (into.scannedAt or 0)
+    local dailyByKey, daily = {}, {}
+    local lists = fromLater and { into.daily, from.daily } or { from.daily, into.daily }
+    for _, list in ipairs(lists) do
+        for _, day in ipairs(type(list) == "table" and list or {}) do
+            if dailyByKey[day[1]] then
+                -- The later list wins the day.
+                daily[dailyByKey[day[1]]] = day
+            else
+                daily[#daily + 1] = day
+                dailyByKey[day[1]] = #daily
+            end
+        end
+    end
+    table.sort(daily, function(a, b)
+        return a[1] < b[1]
+    end)
+    into.daily = daily
+
+    into.scannedAt = math.max(into.scannedAt or 0, from.scannedAt or 0)
+    if into.scannedAt == 0 then
+        into.scannedAt = nil
+    end
+    if from.replicateAt and (into.replicateAt == nil or from.replicateAt > into.replicateAt) then
+        into.replicateAt = from.replicateAt
+    end
+    if into.scannedAt then
+        local oldest = OldestKept(into.scannedAt)
+        for _, row in pairs(into.items) do
+            if type(row) == "table" and type(row.days) == "table" then
+                PruneDays(row.days, oldest)
+            end
+        end
+        PruneDays(into.daily, oldest)
+    end
+    return into
+end
+
+-- The house keys JoinUnknownRealm joined on the last load, so the addon can say so once.
+PriceLedger.joined = {}
+
+--- Joins each house saved under the unknown realm into the same side's house on the realm the
+-- game last named, so scans saved while the game gave a blank realm name aren't a separate,
+-- nearly empty history. The realm comes from homeRealm, or, before that was saved, from the
+-- house keys when they name just one realm. With two or more named realms and no homeRealm the
+-- houses are left apart: which realm they belong to can't be told.
+-- @param db the saved table; changed in place
+-- @return the list of keys houses were joined into (also kept in PriceLedger.joined)
+function PriceLedger.JoinUnknownRealm(db)
+    PriceLedger.joined = {}
+    if db.homeRealm == nil then
+        local only
+        for key in pairs(db.houses) do
+            local realm = string.match(key, "^[^|]*|(.*)$")
+            if IsRealmName(realm) and realm ~= PriceLedger.UNKNOWN_REALM then
+                if only ~= nil and only ~= realm then
+                    return PriceLedger.joined
+                end
+                only = realm
+            end
+        end
+        if only == nil then
+            return PriceLedger.joined
+        end
+        db.homeRealm = only
+    end
+    if db.homeRealm == PriceLedger.UNKNOWN_REALM then
+        return PriceLedger.joined
+    end
+    local moves = {}
+    for key, house in pairs(db.houses) do
+        local side, realm = string.match(key, "^([^|]*)|(.*)$")
+        if realm == PriceLedger.UNKNOWN_REALM and type(house) == "table" then
+            moves[#moves + 1] = { from = key, into = side .. "|" .. db.homeRealm }
+        end
+    end
+    table.sort(moves, function(a, b)
+        return a.from < b.from
+    end)
+    for _, move in ipairs(moves) do
+        local from = db.houses[move.from]
+        local into = db.houses[move.into]
+        if type(into) == "table" then
+            PriceLedger.MergeHouse(into, from)
+        else
+            db.houses[move.into] = from
+        end
+        db.houses[move.from] = nil
+        if db.lastHouseKey == move.from then
+            db.lastHouseKey = move.into
+        end
+        PriceLedger.joined[#PriceLedger.joined + 1] = move.into
+    end
+    return PriceLedger.joined
 end
 
 --- True for a history length the Settings tab offers.

@@ -84,6 +84,11 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
         ui.frame:Show()
         ui.frame:Raise()
         Scan.RefreshIdleLine()
+        if #Price.joined > 0 then
+            -- Said once: this load joined scans saved under a blank realm name into the old history.
+            Scan.SetStatus("Joined scans from after the game update into your saved history.", 12)
+            Price.joined = {}
+        end
         Buy.RefreshOverview()
         return
     end
