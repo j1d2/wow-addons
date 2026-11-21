@@ -296,6 +296,59 @@ do
         and Names(S.SortHistory(history, "level", true)) == "Lost,Old Cloak,Boots,Ring")
 end
 
+-- Forever names: a first name and a surname; and a blank realm name since 2026-11-20.
+do
+    Check("a full name joins the first name and surname", S.FullName("Alt", "Vale") == "Alt Vale"
+        and S.FullName("Alt", "Vale", "-") == "Alt-Vale")
+    Check("no surname: the first name alone", S.FullName("Tester", nil) == "Tester" and S.FullName("Tester", "") == "Tester")
+    local db = { history = {} }
+    Check("a blank realm with none known is the unknown realm", S.RealmFor(db, "") == S.UNKNOWN_REALM
+        and db.homeRealm == nil)
+    Check("a real realm name is used and remembered", S.RealmFor(db, "Realm Five") == "Realm Five"
+        and db.homeRealm == "Realm Five")
+    Check("a blank realm name then means the remembered one", S.RealmFor(db, "") == "Realm Five"
+        and S.RealmFor(db, nil) == "Realm Five")
+    local fromHistory = { history = { { realm = "Realm Five" }, { realm = "" }, {} } }
+    Check("before one was remembered, the realm the history names",
+        S.RealmFor(fromHistory, "") == "Realm Five" and fromHistory.homeRealm == "Realm Five")
+    local twoRealms = { history = { { realm = "Realm A" }, { realm = "Realm B" } } }
+    Check("a history naming two realms: unknown", S.RealmFor(twoRealms, "") == S.UNKNOWN_REALM
+        and twoRealms.homeRealm == nil)
+end
+
+do
+    local db = S.EnsureStats({
+        characters = { ["Skunk-Realm Five"] = { total = 2, byQuality = { [2] = 2 }, mats = {}, items = {}, days = {} } },
+        history = {
+            { itemID = 11, name = "Old Boots", character = "Skunk", realm = "Realm Five", time = 1, quality = 2, mats = {} },
+            { itemID = 12, name = "Older Cap", character = "Skunk", time = 2, quality = 2, mats = {} },
+            { itemID = 13, name = "Blank Ring", character = "Alt", realm = "", time = 3, quality = 2,
+                mats = { { name = "Strange Dust", quantity = 2 } } },
+            { itemID = 14, name = "Elsewhere", character = "Skunk", realm = "Realm Six", time = 4, quality = 2, mats = {} },
+        },
+    }, "Realm Five")
+    Check("who: a blank realm counts as this realm", S.WhoText(db.history[3], "Realm Five") == "Alt")
+    S.Adopt(db, "Skunk", "Skunk Ridge", "Realm Five")
+    Check("old totals move to the full name", db.characters["Skunk Ridge-Realm Five"] ~= nil
+        and db.characters["Skunk Ridge-Realm Five"].total == 2 and db.characters["Skunk-Realm Five"] == nil)
+    Check("this realm's first-name entries get the full name, a no-realm one too",
+        db.history[1].character == "Skunk Ridge" and db.history[2].character == "Skunk Ridge")
+    Check("another realm's entry with that first name is left", db.history[4].character == "Skunk")
+    Check("another character's entry is left", db.history[3].character == "Alt")
+    S.Adopt(db, "Alt", "Alt Vale", "Realm Five")
+    local alt = db.characters["Alt Vale-Realm Five"]
+    Check("a blank-realm entry gets the realm and the full name",
+        db.history[3].realm == "Realm Five" and db.history[3].character == "Alt Vale")
+    Check("and is counted in that character's totals, with its loot",
+        alt ~= nil and alt.total == 1 and alt.mats["Strange Dust"] ~= nil)
+    S.Adopt(db, "Alt", "Alt Vale", "Realm Five")
+    Check("a second load counts nothing twice", alt.total == 1)
+    Check("who: the full name on this realm", S.WhoText(db.history[3], "Realm Five") == "Alt Vale")
+    local before = db.characters["Skunk Ridge-Realm Five"].total
+    S.Adopt(db, "Skunk", "Skunk Ridge", "Realm Five")
+    Check("adopting again changes nothing", db.characters["Skunk Ridge-Realm Five"].total == before)
+end
+
 if failed > 0 then
     io.write(string.format("%d failed\n", failed))
     os.exit(1)
