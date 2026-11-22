@@ -2193,7 +2193,7 @@ do
     OpenHouse()
     local panel = MainFrame().buyPanel
     local show = panel.showDropdown
-    Check("the Show dropdown starts at everything, with four choices", Picked(show) == "Show everything"
+    Check("the Show dropdown starts at everything, with four choices", Picked(show) == "Everything"
         and #MenuChoices(show) == 4 and show.shown)
     world.class, world.level = "PALADIN", 45
     Pick(show, "Gear for me")
@@ -2223,8 +2223,8 @@ do
     Check("a class it doesn't know gets everything it can use", Classes(world.browseQueries[4]) == "2 4"
         and StatusLine() == "Searching gear for this character...")
     world.class = "PALADIN"
-    Pick(show, "Any gear I can use")
-    Check("Any gear I can use: every weapon and armor type the house says it can use",
+    Pick(show, "Usable gear")
+    Check("Usable gear: every weapon and armor type the house says it can use",
         Classes(world.browseQueries[5]) == "2 4"
         and world.browseQueries[5].filters[#world.browseQueries[5].filters] == Enum.AuctionHouseFilter.UsableOnly)
     SearchBox():SetText("sword")
@@ -2234,20 +2234,20 @@ do
 
     world.browseResults = BrowseResults(1, 3)
     Fire("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
-    Pick(show, "Show everything")
+    Pick(show, "Everything")
     Check("changing Show with results up searches again, now for everything", #world.browseQueries == 7
         and world.browseQueries[7].searchString == "sword" and world.browseQueries[7].itemClassFilters == nil)
     world.professions = { { skillLine = 197, profession = Enum.Profession.Tailoring },
         { skillLine = 186, profession = Enum.Profession.Mining }, nil, nil,
         { skillLine = 185, profession = Enum.Profession.Cooking } }
     SearchBox():SetText("")
-    Pick(show, "Recipes for me")
+    Pick(show, "My recipes")
     query = world.browseQueries[8]
     local subclasses = {}
     for _, class in ipairs(query.itemClassFilters) do
         subclasses[#subclasses + 1] = class.classID == Enum.ItemClass.Recipe and class.subClassID
     end
-    Check("Recipes for me searches recipes of this character's crafting professions",
+    Check("My recipes searches recipes of this character's crafting professions",
         #subclasses == 2 and subclasses[1] == Enum.ItemRecipeSubclass.Tailoring
         and subclasses[2] == Enum.ItemRecipeSubclass.Cooking and query.searchString == "")
     Check("recipes aren't limited to usable ones", query.filters[#query.filters] ~= Enum.AuctionHouseFilter.UsableOnly)
@@ -2269,7 +2269,7 @@ do
     Click("Buy")
     Check("Buy shows it again", show.shown)
     Click("Clear")
-    Check("Clear goes back to everything", Picked(show) == "Show everything")
+    Check("Clear goes back to everything", Picked(show) == "Everything")
     Click("Search")
     Check("then an empty name needs letters or a quality again", #world.browseQueries == 9)
     Click("Market")

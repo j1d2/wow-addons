@@ -27,11 +27,12 @@ local PRICE_SORT = {
 }
 
 -- The Show dropdown's choices: what a Search asks the house for besides the name and quality.
+-- Labels stay short enough for the 130 px dropdown (about 12 letters), so none is cut to "...".
 local SHOW_CHOICES = {
-    { key = "all", label = "Show everything" },
+    { key = "all", label = "Everything" },
     { key = "gear", label = "Gear for me", searching = "Searching gear for this character..." },
-    { key = "anygear", label = "Any gear I can use", searching = "Searching gear for this character..." },
-    { key = "recipes", label = "Recipes for me", searching = "Searching recipes for this character's professions..." },
+    { key = "anygear", label = "Usable gear", searching = "Searching gear for this character..." },
+    { key = "recipes", label = "My recipes", searching = "Searching recipes for this character's professions..." },
 }
 
 -- The search's page can't show everything: said by the filters and in the status line.
@@ -558,7 +559,7 @@ function Buy.ClearSearch()
     showKey = "all"
     for _, dropdown in ipairs({ ui.buyPanel.qualityDropdown, ui.buyPanel.showDropdown }) do
         if type(dropdown.GenerateMenu) == "function" then
-            dropdown:GenerateMenu() -- shows "Any quality" and "Show everything" on the buttons again
+            dropdown:GenerateMenu() -- shows "Any quality" and "Everything" on the buttons again
         end
     end
     searchedQuality = 0
@@ -815,7 +816,8 @@ function Buy.BuildFilterRow()
 
     -- Blizzard's own dropdown, as its auction house filter uses on Forever.
     local quality = CreateFrame("DropdownButton", nil, ui.buyPanel, "WowStyle1DropdownTemplate")
-    quality:SetWidth(130)
+    -- Wide enough for "Uncommon & up", the longest quality choice.
+    quality:SetWidth(145)
     quality:SetPoint("LEFT", ui.frame, "TOPLEFT", 14, FILTER_ROW_Y)
     quality:SetupMenu(function(_, root)
         for _, choice in ipairs(Price.QUALITY_CHOICES) do
