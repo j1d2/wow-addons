@@ -51,9 +51,10 @@ local BUDGETS = {
     ["ChartFit, every item"] = { kb = 26600, ms = 2000 },
     ["Commit, same day"] = { kb = 410, ms = 2000 },
     ["Commit, full scan"] = { kb = 870, ms = 2000 },
-    SortHistory = { kb = 200, ms = 2000 },
-    FilterHistory = { kb = 60, ms = 2000 },
-    ["Record, full history"] = { kb = 20, ms = 2000 },
+    -- Unmaker at 1,000 entries, a history-length choice (2026-11-22; was 2,000 before it was one).
+    SortHistory = { kb = 85, ms = 2000 },
+    FilterHistory = { kb = 25, ms = 2000 },
+    ["Record, full history"] = { kb = 15, ms = 2000 },
 }
 
 --- The memory in use now, in KB, after a full collection.
@@ -230,13 +231,12 @@ end
 local function BenchUnmaker(entries)
     print(string.format("\nUnmaker, %d history entries", entries))
     local base = KeptKB()
-    local db = { history = Synth.UnmakerHistory(entries) }
+    -- The history length is a Settings choice, so the bench sizes are choices too.
+    local db = { history = Synth.UnmakerHistory(entries), settings = { historyMax = entries } }
     S.EnsureStats(db, "Bench Realm")
     print(string.format("memory  Unmaker %d entries: %.2f MB kept", entries, (KeptKB() - base) / 1024))
     Step("SortHistory", function() S.SortHistory(db.history, "name", false) end)
     Step("FilterHistory", function() S.FilterHistory(db.history, "Benchmain-Bench Realm", "Bench Realm") end)
-    local limit = S.HISTORY_MAX
-    S.HISTORY_MAX = entries
     local item = { itemID = 1001, name = "Bench Gear 1001", link = "x", quality = 2, level = 20,
         character = "Benchmain", realm = "Bench Realm" }
     Step("Record, full history", function()
@@ -244,12 +244,11 @@ local function BenchUnmaker(entries)
             S.Record(db, {}, item, Synth.NOW)
         end
     end, "10 disenchants")
-    S.HISTORY_MAX = limit
 end
 
 if mode == "--smoke" then
     BenchHouseLedger(2000, 14)
-    BenchUnmaker(2000)
+    BenchUnmaker(1000)
     if overBudget > 0 then
         print(string.format("\n%d over budget", overBudget))
         os.exit(1)
@@ -265,7 +264,7 @@ else
     -- limit here; rounded days (version 4) keep it far under.
     BenchHouseLedger(20000, 30, 10)
     BenchHouseLedger(20000, 60, 10)
-    for _, entries in ipairs({ 500, 2500, 5000, 10000 }) do
+    for _, entries in ipairs(S.HISTORY_CHOICES) do
         BenchUnmaker(entries)
     end
 end

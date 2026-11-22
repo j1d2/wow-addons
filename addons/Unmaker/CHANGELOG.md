@@ -7,6 +7,7 @@ All notable changes to Unmaker. The format follows [Keep a Changelog](https://ke
 ### Added
 
 - `/um`, a short way to type `/unmaker`.
+- **History length** on the Settings tab: keep 500, 1,000, 5,000 or 10,000 disenchants in the History tab. A shorter one drops the oldest right away. The Stats totals count every disenchant either way.
 
 ### Changed
 

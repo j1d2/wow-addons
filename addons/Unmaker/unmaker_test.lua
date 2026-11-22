@@ -640,6 +640,14 @@ do
     boxes.keepEpics:SetChecked(false)
     boxes.keepEpics:GetScript("OnClick")(boxes.keepEpics)
     Check("turning off Keep epics saves it", _G.UnmakerDB.settings.keepEpics == false)
+    local settingsPanel = boxes.keepEpics.parent
+    local history = settingsPanel.historyDropdown
+    Check("Settings has the history length, 500 at first", history ~= nil and Picked(history) == "500 disenchants"
+        and #MenuChoices(history) == 4)
+    Check("its hint says totals count everything", settingsPanel.historyHint.text:find("count every", 1, true))
+    Pick(history, "10,000 disenchants")
+    Check("picking 10,000 saves it", _G.UnmakerDB.settings.historyMax == 10000
+        and Picked(history) == "10,000 disenchants")
     _G.UnmakerFrameTab1:GetScript("OnClick")(_G.UnmakerFrameTab1)
     Check("and the epic is checked now", ShownRows()[1].check.checked == true)
 end
