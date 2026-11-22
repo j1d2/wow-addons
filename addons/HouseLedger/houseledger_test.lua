@@ -2175,7 +2175,8 @@ do
         and HouseLedgerPrice.DAYS_KEPT == 30 and Picked(panel.historyDropdown) == "30 days")
     Pick(panel.historyDropdown, "60 days")
     Check("picking 60 days saves it", HouseLedgerDB.settings.historyDays == 60 and HouseLedgerPrice.DAYS_KEPT == 60)
-    Check("the hint says a longer history uses more memory", panel.historyHint.text:find("more memory", 1, true))
+    Check("the hint says a longer history uses more memory, and wraps rather than cut off",
+        panel.historyHint.text:find("more memory", 1, true) and panel.historyHint.wordWrap == true)
     Pick(panel.historyDropdown, "14 days")
     Check("picking 14 days again saves it", HouseLedgerDB.settings.historyDays == 14 and HouseLedgerPrice.DAYS_KEPT == 14)
     Click("Buy")
