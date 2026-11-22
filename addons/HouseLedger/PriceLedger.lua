@@ -54,6 +54,13 @@ PriceLedger.SCANS_KEPT = 30
 PriceLedger.CHART_VIEWS = { "days", "scans" }
 -- The house overview estimates the next day only from this many days of scans.
 PriceLedger.OVERVIEW_MIN_DAYS = 5
+-- A price chart draws its line and normal range from this many bars, and its guess at the next
+-- day or scan from CHART_ESTIMATE_MIN_POINTS (as many as the house overview needs).
+PriceLedger.CHART_FIT_MIN_POINTS = 4
+PriceLedger.CHART_ESTIMATE_MIN_POINTS = 5
+-- Turns the median distance from the line into a standard deviation, for prices that scatter
+-- the usual way; unlike a standard deviation, one odd listing can't stretch it.
+PriceLedger.ROBUST_SPREAD_SCALE = 1.4826
 -- Stats windows, in days back from the latest scan's day, that day included.
 PriceLedger.WINDOWS = { 1, 3, 7, 14 }
 -- Trend and deal compare the latest price with the average of the
@@ -1339,6 +1346,82 @@ function PriceLedger.ScanSpanText(chart)
         return FormatStamp(first)
     end
     return FormatStamp(first) .. " to " .. FormatStamp(last)
+end
+
+--- The middle value of a list (the mean of the two middle ones for an even count).
+-- Sorts the list in place, so pass one made for the purpose.
+-- @param list numbers, at least one
+-- @return the median
+local function Median(list)
+    table.sort(list)
+    local count = #list
+    if count % 2 == 1 then
+        return list[(count + 1) / 2]
+    end
+    return (list[count / 2] + list[count / 2 + 1]) / 2
+end
+
+--- A straight line through a price chart's bars, its normal range and a guess at the next slot,
+-- like the house overview's, but fit so one odd listing can't tilt it: cheapest prices jump
+-- whenever one seller lists low, which pulls a least-squares line a long way. The slope is the
+-- median of the slopes between every two bars (the Theil-Sen line), the line goes through the
+-- median of what is left, and the range is the median distance from the line, scaled to read
+-- like one standard deviation. x is the slot number, so an empty day counts on the Days view and
+-- the Scans view goes scan by scan. Pure: reads the slots only.
+-- @param slots chart slots from ChartDays or ChartScans; a slot without `low` is skipped
+-- @return nil under CHART_FIT_MIN_POINTS bars, or a table:
+--   points: bars used; first: the first slot with a bar
+--   slope, intercept, fit(x): the line at slot x
+--   spread: the normal range on each side of the line, 0 when most bars sit on it
+--   estimate: the line at the slot after the last, in whole copper, from CHART_ESTIMATE_MIN_POINTS
+--     bars and only when above 0; else nil
+function PriceLedger.ChartFit(slots)
+    if type(slots) ~= "table" then
+        return nil
+    end
+    local xs, ys = {}, {}
+    for index, slot in ipairs(slots) do
+        if type(slot.low) == "number" then
+            xs[#xs + 1], ys[#ys + 1] = index, slot.low
+        end
+    end
+    local points = #xs
+    if points < PriceLedger.CHART_FIT_MIN_POINTS then
+        return nil
+    end
+    local slopes = {}
+    for i = 1, points - 1 do
+        for j = i + 1, points do
+            slopes[#slopes + 1] = (ys[j] - ys[i]) / (xs[j] - xs[i])
+        end
+    end
+    local slope = Median(slopes)
+    local offsets = {}
+    for i = 1, points do
+        offsets[i] = ys[i] - slope * xs[i]
+    end
+    local intercept = Median(offsets)
+    local distances = {}
+    for i = 1, points do
+        distances[i] = math.abs(ys[i] - (intercept + slope * xs[i]))
+    end
+    local result = {
+        points = points,
+        first = xs[1],
+        slope = slope,
+        intercept = intercept,
+        fit = function(x)
+            return intercept + slope * x
+        end,
+        spread = PriceLedger.ROBUST_SPREAD_SCALE * Median(distances),
+    }
+    if points >= PriceLedger.CHART_ESTIMATE_MIN_POINTS then
+        local estimate = Round(intercept + slope * (#slots + 1))
+        if estimate > 0 then
+            result.estimate = estimate
+        end
+    end
+    return result
 end
 
 --- A whole number with commas between thousands, like 1,234,567.

@@ -1355,6 +1355,53 @@ end
 
 P.DAYS_KEPT = 14
 
+-- Chart line: a fit one odd listing can't tilt, its normal range and the next slot's guess
+do
+    --- Chart slots from a list of lows; false leaves a slot empty.
+    local function Slots(lows)
+        local slots = {}
+        for index, low in ipairs(lows) do
+            slots[index] = low and { low = low, high = low } or {}
+        end
+        return slots
+    end
+    local function Near(a, b)
+        return math.abs(a - b) < 1e-9
+    end
+
+    Check("chart line: none under 4 bars", P.ChartFit(Slots({ 100, false, 110, 120 })) == nil
+        and P.ChartFit({}) == nil and P.ChartFit(nil) == nil)
+
+    local fit = P.ChartFit(Slots({ 100, 110, 120, 130, 140 }))
+    Check("chart line: a straight run is fit exactly", fit and fit.points == 5 and Near(fit.slope, 10)
+        and Near(fit.intercept, 90) and Near(fit.fit(3), 120) and fit.first == 1)
+    Check("chart line: bars on the line have no band", fit.spread == 0)
+    Check("chart line: the next slot's guess carries the line on", fit.estimate == 150)
+
+    fit = P.ChartFit(Slots({ 100, 100, 100, 5, 100, 100 }))
+    Check("chart line: one odd cheap listing doesn't tilt it", Near(fit.slope, 0) and Near(fit.fit(1), 100)
+        and fit.estimate == 100)
+    Check("chart line: nor widen its band", fit.spread == 0)
+
+    fit = P.ChartFit(Slots({ false, false, 100, false, 120, 130, 140 }))
+    Check("chart line: x is the slot, so empty days count", Near(fit.slope, 10) and fit.first == 3
+        and fit.points == 4)
+    Check("chart line: 4 bars get a line but no guess", fit.estimate == nil)
+
+    fit = P.ChartFit(Slots({ 50, 40, 30, 20, 10 }))
+    Check("chart line: no guess at 0 or below", Near(fit.slope, -10) and fit.estimate == nil)
+
+    fit = P.ChartFit(Slots({ 100, 120, 100, 120, 100, 120 }))
+    Check("chart line: up-and-down prices get a flat line through their middle",
+        Near(fit.slope, 0) and Near(fit.fit(1), 110) and fit.estimate == 110)
+    Check("chart line: the band reads like one standard deviation", Near(fit.spread, 10 * P.ROBUST_SPREAD_SCALE))
+
+    local scans = P.ChartScans({ 1000, 90, 2000, 95, 3000, 100, 4000, 105 })
+    fit = P.ChartFit(scans.slots)
+    Check("chart line: on scans it starts at the first scan, after the empty slots", fit.first == 4
+        and Near(fit.slope, 5))
+end
+
 if failed > 0 then
     io.write(string.format("%d failed\n", failed))
     os.exit(1)
