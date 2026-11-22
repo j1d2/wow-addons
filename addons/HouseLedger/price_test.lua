@@ -1284,6 +1284,30 @@ do
     Check("a row without days takes the other's, counted once", #bare.items[4].days == 1
         and bare.items[4].days[1][2] == 2 and bare.items[4].days[1][4] == 1)
 end
+-- Chart view: days or scans, saved in settings
+do
+    local db = P.EnsureDB(nil)
+    Check("charts show days by default", P.ChartView(db) == "days" and P.ChartView(nil) == "days")
+    Check("scans can be picked and are saved", P.SetChartView(db, "scans") == "scans"
+        and db.settings.chartView == "scans" and P.ChartView(db) == "scans")
+    Check("an unknown view changes nothing", P.SetChartView(db, "weeks") == "scans" and P.ChartView(db) == "scans")
+    Check("days again", P.SetChartView(db, "days") == "days" and P.ChartView(db) == "days")
+    db.settings.chartView = 7
+    P.EnsureDB(db)
+    Check("a damaged view is dropped on load", db.settings.chartView == nil and P.ChartView(db) == "days")
+    db.settings.chartView = "scans"
+    P.EnsureDB(db)
+    Check("a saved view survives a load", P.ChartView(db) == "scans")
+end
+
+do
+    local chart = P.ChartScans({ At(-1), 80, At(0, 60), 90 })
+    Check("the scan span names the first and last scan", P.ScanSpanText(chart)
+        == os.date("%m/%d %H:%M", At(-1)) .. " to " .. os.date("%m/%d %H:%M", At(0, 60)))
+    Check("one scan: just its time", P.ScanSpanText(P.ChartScans({ At(0), 5 })) == os.date("%m/%d %H:%M", At(0)))
+    Check("no chart, no span", P.ScanSpanText(nil) == nil)
+end
+
 P.DAYS_KEPT = 14
 
 if failed > 0 then

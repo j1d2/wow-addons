@@ -42,6 +42,8 @@ PriceLedger.HISTORY_CHOICES = { 14, 30 }
 PriceLedger.CHART_MIN_DAYS = 7
 -- How many scans each item keeps for the scan chart, as long as they're inside the history length.
 PriceLedger.SCANS_KEPT = 30
+-- The price chart's views: one bar per day, or one per scan. The first is the default.
+PriceLedger.CHART_VIEWS = { "days", "scans" }
 -- The house overview estimates the next day only from this many days of scans.
 PriceLedger.OVERVIEW_MIN_DAYS = 5
 -- Stats windows, in days back from the latest scan's day, that day included.
@@ -332,6 +334,9 @@ function PriceLedger.EnsureDB(db)
         db.settings.historyDays = nil
     end
     PriceLedger.DAYS_KEPT = db.settings.historyDays or PriceLedger.HISTORY_CHOICES[1]
+    if db.settings.chartView ~= nil and PriceLedger.ChartView(db) ~= db.settings.chartView then
+        db.settings.chartView = nil
+    end
     -- Item names and qualities are optional, saved by scans from late 2026 on, and so are the
     -- house's daily totals.
     for _, house in pairs(db.houses) do
@@ -938,6 +943,35 @@ function PriceLedger.SetHistoryDays(db, days)
     return days
 end
 
+--- The price chart's view, saved in settings.
+-- @param db the saved table, or nil
+-- @return one of CHART_VIEWS; the first when none is saved
+function PriceLedger.ChartView(db)
+    local saved = type(db) == "table" and type(db.settings) == "table" and db.settings.chartView
+    for _, view in ipairs(PriceLedger.CHART_VIEWS) do
+        if saved == view then
+            return view
+        end
+    end
+    return PriceLedger.CHART_VIEWS[1]
+end
+
+--- Sets the price chart's view, and saves it.
+-- @param db the saved table
+-- @param view one of CHART_VIEWS; anything else changes nothing
+-- @return the view now in use
+function PriceLedger.SetChartView(db, view)
+    for _, choice in ipairs(PriceLedger.CHART_VIEWS) do
+        if view == choice and type(db) == "table" then
+            if type(db.settings) ~= "table" then
+                db.settings = {}
+            end
+            db.settings.chartView = view
+        end
+    end
+    return PriceLedger.ChartView(db)
+end
+
 --- Rounds to the nearest whole number, halves up.
 -- @param value a number
 -- @return the rounded number
@@ -1229,6 +1263,29 @@ function PriceLedger.ChartScans(scans)
         chart.top = math.max(chart.top, price)
     end
     return chart
+end
+
+--- When a scan chart's scans were, for its hover tip.
+-- @param chart from ChartScans, or nil
+-- @return "first to last" as month/day and time, just the time for one scan, or nil
+function PriceLedger.ScanSpanText(chart)
+    if type(chart) ~= "table" or type(chart.slots) ~= "table" then
+        return nil
+    end
+    local first, last
+    for _, slot in ipairs(chart.slots) do
+        if slot.time then
+            first = first or slot.time
+            last = slot.time
+        end
+    end
+    if first == nil then
+        return nil
+    end
+    if first == last then
+        return FormatStamp(first)
+    end
+    return FormatStamp(first) .. " to " .. FormatStamp(last)
 end
 
 --- A whole number with commas between thousands, like 1,234,567.
