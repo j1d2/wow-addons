@@ -769,8 +769,22 @@ function Buy.LayoutColumns(width)
     end
 end
 
---- Makes the filter row: Market's name filter, the quality dropdown and the item level range.
--- Every change filters what is already shown; none sends anything.
+--- After a pick in a Buy dropdown (quality or Show), searches right away: the pick is the
+-- player's click, so it is that click's one search. Only when a search would go out (a name, a
+-- quality or a Show choice); otherwise the pick just filters what is shown. Never on Market.
+local function SearchAfterPick()
+    if ui.buyPanel.marketMode then
+        return
+    end
+    if strtrim(ui.searchBox:GetText() or "") == "" and not state.filter.minQuality and showKey == "all" then
+        return
+    end
+    Buy.SendSearch()
+end
+
+--- Makes the filter row: Market's name filter, the quality dropdown, the item level range and
+-- Buy's Show dropdown. Item level and Market's filters only filter what is shown; on Buy, a
+-- quality or Show pick also searches again (SearchAfterPick), as the house does that filtering.
 function Buy.BuildFilterRow()
     --- A small edit box that filters as the player types.
     -- @param width the box width
@@ -810,6 +824,7 @@ function Buy.BuildFilterRow()
             end, function(picked)
                 state.filter.minQuality = picked.min
                 ApplyFilters()
+                SearchAfterPick()
             end, choice)
         end
     end)
@@ -827,7 +842,7 @@ function Buy.BuildFilterRow()
     maxBox:SetPoint("LEFT", dash, "RIGHT", 8, 0)
     ui.buyPanel.minLevelBox, ui.buyPanel.maxLevelBox = minBox, maxBox
 
-    -- Show (Buy only): what the next Search asks for. Picking one sends nothing.
+    -- Show (Buy only): what the search asks the house for. Picking one searches (SearchAfterPick).
     local show = CreateFrame("DropdownButton", nil, ui.buyPanel, "WowStyle1DropdownTemplate")
     show:SetWidth(130)
     show:SetPoint("LEFT", maxBox, "RIGHT", 14, 0)
@@ -837,10 +852,7 @@ function Buy.BuildFilterRow()
                 return showKey == picked
             end, function(picked)
                 showKey = picked
-                -- The house does this filtering, so results already shown stay until a Search.
-                if #state.results > 0 then
-                    SetStatus("Click Search to use \"" .. choice.label .. "\".")
-                end
+                SearchAfterPick()
             end, choice.key)
         end
     end)
