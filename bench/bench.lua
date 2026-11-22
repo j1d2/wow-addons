@@ -37,8 +37,8 @@ local overBudget = 0
 -- its last 30 scans); see bench/README.md before raising one.
 local BUDGETS = {
     keptPerDayRow = 470,
-    -- Share of CONSTANT_LIMIT the smoke data may use.
-    constantShare = 0.5,
+    -- Share of CONSTANT_LIMIT the smoke data may use (3.2% since version 4's rounded days).
+    constantShare = 0.05,
     ["Load saved file"] = { kb = 13000, ms = 2000 },
     EnsureDB = { kb = 1000, ms = 2000 },
     ["Stats, every item"] = { kb = 7600, ms = 2000 },
@@ -124,10 +124,12 @@ end
 --- Benchmarks HouseLedger's price module on one synthetic house.
 -- @param items how many items
 -- @param days how many days of history
-local function BenchHouseLedger(items, days)
-    print(string.format("\nHouseLedger, %d items x %d days", items, days))
+-- @param maxScans optional; most scans a day (each day has 1 to this many), 3 by default
+local function BenchHouseLedger(items, days, maxScans)
+    print(string.format("\nHouseLedger, %d items x %d days%s", items, days,
+        maxScans and string.format(", 1 to %d scans a day", maxScans) or ""))
     local base = KeptKB()
-    local db, houseKey = Synth.HouseLedgerDB(items, days, P.DayKey)
+    local db, houseKey = Synth.HouseLedgerDB(items, days, P, maxScans)
     -- Keep the history length being measured, so loading the data doesn't set it back to 14 and
     -- turn the Commit step into a mass trim. 60 days isn't a Settings choice: it stays at 14 here
     -- and is a what-if for the saved file's size only.
@@ -235,6 +237,9 @@ else
             BenchHouseLedger(items, days)
         end
     end
+    -- A heavy scanner: about 5.5 scans a day. Exact day sums (version 3) passed the constant
+    -- limit here; rounded days (version 4) keep it far under.
+    BenchHouseLedger(20000, 30, 10)
     for _, entries in ipairs({ 500, 2500, 5000, 10000 }) do
         BenchUnmaker(entries)
     end

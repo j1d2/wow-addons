@@ -2,7 +2,7 @@
 -- saved variables, never copied from a real game install. The same arguments always give the
 -- same data (a fixed-seed generator, no math.random), so memory numbers repeat exactly.
 --
--- Load with dofile after PriceLedger.lua, which supplies DayKey:
+-- Load with dofile after PriceLedger.lua, which supplies DayKey and DaySummary:
 --   local Synth = dofile("bench/synth.lua")
 
 local Synth = {}
@@ -43,17 +43,17 @@ local function SellerPrice(copper)
     return math.max(1, math.floor(copper / step + 0.5) * step)
 end
 
---- A HouseLedgerDB (version 3) with one house of synthetic items. Each item also keeps its
+--- A HouseLedgerDB (version 4) with one house of synthetic items. Each item also keeps its
 -- last `scansKept` scans as one flat list (time, price, time, price, ...), oldest first. A day's
 -- scans happen at fixed times, the last at 12:00 and the others evenly spaced before it, so every
 -- item listed in one scan shares its time, as in a real scan.
 -- @param items how many items
 -- @param days how many calendar days of history, ending on the day of Synth.NOW
--- @param dayKey PriceLedger.DayKey, to key the days the way the addon does
+-- @param ledger PriceLedger, to key and summarize the days the way the addon does
 -- @param maxScans optional; most scans a day (each day has 1 to this many), 3 by default
 -- @param scansKept optional; how many scans each item keeps, 30 by default
 -- @return the saved table and the house key
-function Synth.HouseLedgerDB(items, days, dayKey, maxScans, scansKept)
+function Synth.HouseLedgerDB(items, days, ledger, maxScans, scansKept)
     maxScans = maxScans or 3
     scansKept = scansKept or 30
     local scanGap = math.floor(12 * 60 * 60 / maxScans)
@@ -81,7 +81,8 @@ function Synth.HouseLedgerDB(items, days, dayKey, maxScans, scansKept)
                     row.scans[#row.scans + 1] = seen - (scans - scan) * scanGap
                     row.scans[#row.scans + 1] = price
                 end
-                row.days[#row.days + 1] = { dayKey(seen), low, high, scans, sum, squares }
+                local average, spread = ledger.DaySummary(low, high, scans, sum, squares)
+                row.days[#row.days + 1] = { ledger.DayKey(seen), low, high, scans, average, spread }
                 row.unit, row.qty, row.seen = price, 1 + math.floor(next() * 40), seen
             end
         end
@@ -96,7 +97,7 @@ function Synth.HouseLedgerDB(items, days, dayKey, maxScans, scansKept)
         end
         house.items[itemID] = row
     end
-    local db = { version = 3, houses = { [houseKey] = house }, lastHouseKey = houseKey, settings = {} }
+    local db = { version = 4, houses = { [houseKey] = house }, lastHouseKey = houseKey, settings = {} }
     return db, houseKey
 end
 

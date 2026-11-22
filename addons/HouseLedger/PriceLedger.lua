@@ -4,7 +4,8 @@ Price history for one auction house.
 Pure data. No frames, no queries, and no seller names. The scan
 code hands in item id, stack size, and buyout. This file keeps the
 lowest price per item, one summary per calendar day for the last
-14 or 30 days (low, high, scan count, sum and sum of squares), and works out
+14 or 30 days (low, high, scan count, rounded average and spread), each item's
+last 30 scans, and works out
 the stats the tooltip and window show: average, range and standard
 deviation over the last 1, 3, 7 and 14 days.
 
@@ -21,7 +22,14 @@ if type(ns) == "table" then
     ns.Price = PriceLedger
 end
 
-PriceLedger.DB_VERSION = 3
+-- Version 4 (0.5.0) saves each day's average and spread, rounded, where version 3 saved exact
+-- sums: see DaySummary.
+PriceLedger.DB_VERSION = 4
+-- Significant digits a day's average and spread keep. Rounded values repeat across items and
+-- days, so the saved file stays far under Lua's 262,143-constant limit (exact sums were nearly
+-- all different and could pass it on a busy house); Stats moves by a fraction of a percent.
+PriceLedger.AVERAGE_DIGITS = 4
+PriceLedger.SPREAD_DIGITS = 2
 
 -- The Settings tab, in display order: saved key, label and default. Saved per account in
 -- HouseLedgerDB.settings; an optional table, so no version change.
@@ -179,9 +187,52 @@ function PriceLedger.EmptyDB()
     }
 end
 
+--- Rounds a number to a number of significant digits: 123456 to 4 digits is 123500, and 9.16667
+-- is 9.167, so a price of a few copper keeps its fraction. Going through text gives each rounded
+-- value one exact number, so equal values save as one constant.
+-- @param value a number of 0 or more
+-- @param digits how many digits to keep
+-- @return the rounded number
+local function Significant(value, digits)
+    return tonumber(string.format("%." .. digits .. "g", value))
+end
+
+--- A day's saved average and spread, from its scans' sum and sum of squares.
+-- The average keeps AVERAGE_DIGITS significant digits (a fraction too, below 1,000 copper) and
+-- stays inside the day's range; one equal to the day's low or high is kept exact. The spread
+-- (the scans' standard deviation) keeps SPREAD_DIGITS. A steady day keeps its exact price and a
+-- spread of 0, so most days add no new number to the saved file.
+-- @param low the day's lowest price
+-- @param high the day's highest price
+-- @param scans how many scans
+-- @param sum the scans' prices added up
+-- @param squares the scans' prices squared, added up
+-- @return average, spread
+function PriceLedger.DaySummary(low, high, scans, sum, squares)
+    local mean = sum / scans
+    local average = mean
+    if average ~= low and average ~= high then
+        average = math.min(high, math.max(low, Significant(mean, PriceLedger.AVERAGE_DIGITS)))
+    end
+    local variance = squares / scans - mean * mean
+    local spread = 0
+    if scans > 1 and variance > 0 then
+        spread = Significant(math.sqrt(variance), PriceLedger.SPREAD_DIGITS)
+    end
+    return average, spread
+end
+
+--- A day's scans as a sum and a sum of squares, from its saved average and spread.
+-- @param day { dayKey, low, high, scans, average, spread }
+-- @return sum, squares
+local function DaySums(day)
+    local scans, average, spread = day[4], day[5], day[6]
+    return average * scans, scans * (spread * spread + average * average)
+end
+
 --- Adds one scan's unit price to a row's day list.
 -- Folds into the last day when it is the same day, otherwise starts a new day.
--- @param days list of { dayKey, low, high, scans, sum, sumOfSquares }, oldest first;
+-- @param days list of { dayKey, low, high, scans, average, spread }, oldest first;
 --   changed in place
 -- @param unit unit price in copper
 -- @param seconds when the scan ran
@@ -189,36 +240,40 @@ local function AddToDays(days, unit, seconds)
     local key = PriceLedger.DayKey(seconds)
     local last = days[#days]
     if type(last) == "table" and last[1] == key then
+        local sum, squares = DaySums(last)
         last[2] = math.min(last[2], unit)
         last[3] = math.max(last[3], unit)
         last[4] = last[4] + 1
-        last[5] = last[5] + unit
-        last[6] = last[6] + unit * unit
+        last[5], last[6] = PriceLedger.DaySummary(last[2], last[3], last[4], sum + unit, squares + unit * unit)
         return
     end
-    days[#days + 1] = { key, unit, unit, 1, unit, unit * unit }
+    days[#days + 1] = { key, unit, unit, 1, unit, 0 }
 end
 
---- Fills in the sums that version 2 days did not have.
--- Version 2 days had low, high and count only. Fill the sums in as if
--- half the scans were at the low and half at the high: exact for one
--- scan or a steady price, close otherwise.
--- @param days a row's day list; changed in place
-local function AddSumsFromV2(days)
-    for _, day in ipairs(days) do
-        if type(day) == "table" and day[5] == nil
-            and type(day[2]) == "number" and type(day[3]) == "number" and type(day[4]) == "number" then
-            local low, high, scans = day[2], day[3], day[4]
-            day[5] = (low + high) / 2 * scans
-            day[6] = (low * low + high * high) / 2 * scans
-        end
+--- Brings one day to the current format, in place.
+-- A day without an average (version 2 had low, high and count only) gets one as if half its
+-- scans were at the low and half at the high: exact for one scan or a steady price, close
+-- otherwise. A version 3 day saved exact sums; for 2 or more scans the sum is always above the
+-- day's high (it holds the high plus at least one more price), while an average never is, so
+-- the day itself says which it holds and converting twice changes nothing. One scan has no
+-- spread.
+-- @param day a day with numeric day key, low, high and scan count
+local function UpgradeDay(day)
+    local low, high, scans = day[2], day[3], day[4]
+    if type(day[5]) ~= "number" or type(day[6]) ~= "number" then
+        day[5], day[6] = PriceLedger.DaySummary(low, high, scans, (low + high) / 2 * scans,
+            (low * low + high * high) / 2 * scans)
+    elseif scans > 1 and day[5] > high then
+        day[5], day[6] = PriceLedger.DaySummary(low, high, scans, day[5], day[6])
+    elseif scans == 1 then
+        day[5], day[6] = low, 0
     end
 end
 
 --- Repairs a row's day list in place, on every load: a day that isn't a table with a numeric
--- day key, low, high and scan count is dropped, and a day missing its sums gets them the way
--- version 2 days did. A day list that isn't a table becomes empty. So one damaged day can't
--- break Stats for the tooltip or the whole Market list.
+-- day key, low, high and scan count is dropped, and the rest are brought to the current format
+-- (UpgradeDay). A day list that isn't a table becomes empty. So one damaged day can't break
+-- Stats for the tooltip or the whole Market list.
 -- @param row an item row, changed in place
 local function RepairDays(row)
     if type(row.days) ~= "table" then
@@ -229,13 +284,10 @@ local function RepairDays(row)
     for _, day in ipairs(row.days) do
         if type(day) == "table" and type(day[1]) == "number" and type(day[2]) == "number"
             and type(day[3]) == "number" and type(day[4]) == "number" and day[4] > 0 then
-            if type(day[5]) ~= "number" or type(day[6]) ~= "number" then
-                day[5], day[6] = nil, nil
-            end
+            UpgradeDay(day)
             kept[#kept + 1] = day
         end
     end
-    AddSumsFromV2(kept)
     row.days = kept
 end
 
@@ -298,8 +350,8 @@ local function MigrateRowFromV1(row)
 end
 
 --- Makes the saved table usable and brings it up to DB_VERSION.
--- Rows without `days` are migrated from version 1; other rows get the
--- version 3 sums from version 2. Runs the migrations only when the version differs.
+-- Rows without `days` are migrated from version 1 (a file with no version or version 1). Every load brings
+-- each day to the current format (UpgradeDay: versions 2 and 3 to 4), which is safe to repeat.
 -- @param db the saved HouseLedgerDB, or nil on a first load
 -- @return the same table updated in place, or a new empty one if db was not a table
 function PriceLedger.EnsureDB(db)
@@ -309,14 +361,12 @@ function PriceLedger.EnsureDB(db)
     if type(db.houses) ~= "table" then
         db.houses = {}
     end
-    if db.version ~= PriceLedger.DB_VERSION then
+    if type(db.version) ~= "number" or db.version < 2 then
         for _, house in pairs(db.houses) do
             if type(house) == "table" and type(house.items) == "table" then
                 for _, row in pairs(house.items) do
                     if type(row) == "table" and type(row.days) ~= "table" then
                         MigrateRowFromV1(row)
-                    elseif type(row) == "table" then
-                        AddSumsFromV2(row.days)
                     end
                 end
             end
@@ -702,7 +752,7 @@ function PriceLedger.Commit(db, houseKey, best, now, totals)
 end
 
 --- One day list from two: a day both have becomes one day (lowest low, highest high, the scans
--- and sums added up), oldest first. Neither list is changed.
+-- added up and the average and spread of all of them), oldest first. Neither list is changed.
 -- @param first a row's day list
 -- @param second another row's day list
 -- @return a new day list
@@ -715,11 +765,13 @@ local function MergeDays(first, second)
         for _, day in ipairs(type(list) == "table" and list or {}) do
             local have = byKey[day[1]]
             if have then
+                local haveSum, haveSquares = DaySums(have)
+                local daySum, daySquares = DaySums(day)
                 have[2] = math.min(have[2], day[2])
                 have[3] = math.max(have[3], day[3])
                 have[4] = have[4] + day[4]
-                have[5] = have[5] + day[5]
-                have[6] = have[6] + day[6]
+                have[5], have[6] = PriceLedger.DaySummary(have[2], have[3], have[4], haveSum + daySum,
+                    haveSquares + daySquares)
             else
                 local copy = { day[1], day[2], day[3], day[4], day[5], day[6] }
                 byKey[day[1]] = copy
@@ -1055,7 +1107,8 @@ local function AddUpWindows(days, latestKey, starts, first, last)
     for _, day in ipairs(days) do
         local key = day[1]
         if key <= latestKey then
-            local scans, low, high, sum, squares = day[4], day[2], day[3], day[5], day[6]
+            local scans, low, high = day[4], day[2], day[3]
+            local sum, squares = DaySums(day)
             for index = first, last do
                 if key >= starts[index] then
                     totalScans[index] = totalScans[index] + scans
