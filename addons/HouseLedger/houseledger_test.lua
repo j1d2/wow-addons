@@ -2012,10 +2012,8 @@ do
         panel.listMessage.text == "Type at least 2 letters, or pick a quality."
         and panel.notice.shown and panel.notice.text == "Type at least 2 letters, or pick a quality.")
     Pick(panel.qualityDropdown, "Rare & up")
-    Check("picking a quality sends nothing", #world.browseQueries == 0 and Picked(panel.qualityDropdown) == "Rare & up")
-    Click("Search")
     local query = world.browseQueries[1]
-    Check("with a quality, an empty name searches once, asking for those qualities only",
+    Check("picking a quality searches at once; with no name, once, asking for those qualities only",
         #world.browseQueries == 1 and query.searchString == ""
         and table.concat(query.filters, ",") == "9,10")
 
@@ -2045,17 +2043,18 @@ do
         and ButtonNamed("Search").highlightLocked == true
         and StatusLine():find("Click Search again to include lower qualities.", 1, true) ~= nil)
     Pick(panel.qualityDropdown, "Epic & up")
-    Check("a tighter quality just filters the page", StatusLine():find("Search again", 1, true) == nil
-        and not panel.notice.shown and ButtonNamed("Search").highlightLocked == false)
+    Check("picking another quality searches again, for that quality", #world.browseQueries == 2
+        and table.concat(world.browseQueries[2].filters, ",") == "10")
     Pick(panel.qualityDropdown, "Any quality")
+    Check("Any quality with no name has nothing to search, so the pick only filters", #world.browseQueries == 2)
     Click("Search")
     Check("an empty name with only an item level sends nothing: the house never sees item level",
-        #world.browseQueries == 1 and StatusLine() == "Type at least 2 letters, or pick a quality."
+        #world.browseQueries == 2 and StatusLine() == "Type at least 2 letters, or pick a quality."
         and panel.notice.text == "Type at least 2 letters, or pick a quality.")
     SearchBox():SetText("linen")
     Click("Search")
-    Check("a name with a level filter asks for every quality", #world.browseQueries == 2
-        and table.concat(world.browseQueries[2].filters, ",") == "6,7,8,9,10")
+    Check("a name with a level filter asks for every quality", #world.browseQueries == 3
+        and table.concat(world.browseQueries[3].filters, ",") == "6,7,8,9,10")
     Fire("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
     Check("after the new search the lower-quality note goes away", StatusLine():find("Search again", 1, true) == nil)
 
@@ -2195,8 +2194,7 @@ do
         and #MenuChoices(show) == 4 and show.shown)
     world.class, world.level = "PALADIN", 45
     Pick(show, "Gear for me")
-    Check("picking a choice sends nothing", #world.browseQueries == 0)
-    Click("Search")
+    Check("picking a choice searches at once, one search", #world.browseQueries == 1)
     local query = world.browseQueries[1]
     --- The query's class filters as text, like "2 4/4 4/0 4/1/16 4/6 4/7".
     local function Classes(sent)
@@ -2223,28 +2221,25 @@ do
         and StatusLine() == "Searching gear for this character...")
     world.class = "PALADIN"
     Pick(show, "Any gear I can use")
-    Click("Search")
     Check("Any gear I can use: every weapon and armor type the house says it can use",
         Classes(world.browseQueries[5]) == "2 4"
         and world.browseQueries[5].filters[#world.browseQueries[5].filters] == Enum.AuctionHouseFilter.UsableOnly)
-    Pick(show, "Gear for me")
     SearchBox():SetText("sword")
-    Click("Search")
+    Pick(show, "Gear for me")
     Check("a name narrows it", world.browseQueries[6].searchString == "sword"
         and world.browseQueries[6].itemClassFilters ~= nil)
 
     world.browseResults = BrowseResults(1, 3)
     Fire("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
     Pick(show, "Show everything")
-    Check("changing Show with results up says a Search applies it", StatusLine() == "Click Search to use \"Show everything\"."
-        and #world.browseQueries == 6)
+    Check("changing Show with results up searches again, now for everything", #world.browseQueries == 7
+        and world.browseQueries[7].searchString == "sword" and world.browseQueries[7].itemClassFilters == nil)
     world.professions = { { skillLine = 197, profession = Enum.Profession.Tailoring },
         { skillLine = 186, profession = Enum.Profession.Mining }, nil, nil,
         { skillLine = 185, profession = Enum.Profession.Cooking } }
-    Pick(show, "Recipes for me")
     SearchBox():SetText("")
-    Click("Search")
-    query = world.browseQueries[7]
+    Pick(show, "Recipes for me")
+    query = world.browseQueries[8]
     local subclasses = {}
     for _, class in ipairs(query.itemClassFilters) do
         subclasses[#subclasses + 1] = class.classID == Enum.ItemClass.Recipe and class.subClassID
@@ -2256,14 +2251,14 @@ do
 
     world.professions = { { skillLine = 165 }, { skillLine = 129 } }
     Click("Search")
-    query = world.browseQueries[8]
+    query = world.browseQueries[9]
     Check("without the game's profession name, the skill line still finds the recipes",
         #query.itemClassFilters == 2 and query.itemClassFilters[1].subClassID == Enum.ItemRecipeSubclass.Leatherworking
         and query.itemClassFilters[2].subClassID == Enum.ItemRecipeSubclass.FirstAid)
 
     world.professions = { { skillLine = 182, profession = Enum.Profession.Herbalism } }
     Click("Search")
-    Check("a character with no crafting profession is told so, and nothing is sent", #world.browseQueries == 8
+    Check("a character with no crafting profession is told so, and nothing is sent", #world.browseQueries == 9
         and StatusLine() == "This character has no profession with recipes.")
 
     Click("Market")
@@ -2273,7 +2268,11 @@ do
     Click("Clear")
     Check("Clear goes back to everything", Picked(show) == "Show everything")
     Click("Search")
-    Check("then an empty name needs letters or a quality again", #world.browseQueries == 8)
+    Check("then an empty name needs letters or a quality again", #world.browseQueries == 9)
+    Click("Market")
+    Pick(panel.qualityDropdown, "Rare & up")
+    Check("on Market a quality pick only filters saved prices: nothing is sent", #world.browseQueries == 9)
+    Pick(panel.qualityDropdown, "Any quality")
 end
 
 -- ---------------------------------------------------------------------
