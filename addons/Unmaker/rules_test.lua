@@ -4,9 +4,8 @@ Run: lua5.1 rules_test.lua
 ]]
 
 local folder = arg[0]:match("^(.*)/") or "."
-dofile(folder .. "/UnmakerRules.lua")
+local R = dofile(folder .. "/UnmakerRules.lua")
 
-local R = UnmakerRules
 local failed = 0
 
 --- Records one check: prints "ok  <name>", or "FAIL  <name>" and counts the failure.

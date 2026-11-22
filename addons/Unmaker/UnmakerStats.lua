@@ -10,8 +10,12 @@ Saved in UnmakerDB, shared by every character on the account, so any character c
                first
 ]]
 
+-- Unmaker.lua reads this module as ns.Stats; offline, dofile returns it (see UnmakerRules.lua).
+local _, ns = ...
 local S = {}
-_G.UnmakerStats = S
+if type(ns) == "table" then
+    ns.Stats = S
+end
 
 -- History keeps the newest entries only, so the saved file stays small. Totals count everything.
 S.HISTORY_MAX = 500
@@ -557,3 +561,5 @@ function S.SortHistory(history, key, reverse)
     end)
     return copy
 end
+
+return S

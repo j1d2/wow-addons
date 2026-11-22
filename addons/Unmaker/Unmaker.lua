@@ -1,7 +1,7 @@
 --[[
 Unmaker: a window that lists the gear in your bags you can disenchant, with a checkbox on each
 item. "Disenchant next" disenchants the first checked item; "Disenchant selected" the item you
-clicked. UnmakerRules.lua holds the logic; this file reads the bags and draws the window.
+clicked. UnmakerRules.lua (ns.Rules) and UnmakerStats.lua (ns.Stats) hold the logic; this file reads the bags and draws the window.
 
 Blizzard's rules (RULES.md, Disenchanting): every cast needs its own click or key press.
 Unmaker never casts. Its two buttons are Blizzard secure buttons: on the player's click, PreClick
@@ -12,8 +12,9 @@ The secure buttons make the window protected, so in combat it can't be shown, hi
 those wait until the fight ends, as in HouseLedger.
 ]]
 
-local R = UnmakerRules
-local S = UnmakerStats
+-- The rules and stats modules, shared through the addon's own table (never globals).
+local _, ns = ...
+local R, S = ns.Rules, ns.Stats
 
 local DISENCHANT_SPELL = 13262
 local BAGS = { 0, 1, 2, 3, 4 } -- the backpack and four bags; the reagent bag holds no gear
