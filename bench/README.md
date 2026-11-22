@@ -25,9 +25,15 @@ The game loads a saved file as one Lua function. A Lua 5.1 function holds at mos
 
 Day keys, prices that repeat and item names are shared, so a real file holds far fewer constants than values: a real 7-day file with 6,661 items had 41,351. Any change to the saved format or to how many days are kept must keep the `different values` line well under the limit, at 20,000 items too.
 
+Version 3 saved each day's exact sum and sum of squares, and those were nearly all different numbers. With about 5.5 scans a day they passed the limit at 20,000 items x 14 days or 10,000 x 30. Version 4 saves each day's average (4 significant digits, or the exact low or high when it equals one) and spread (2 digits) instead, which repeat. The `--full` run's heavy case (20,000 x 30, 1 to 10 scans a day) is now at 16%.
+
+Checked on a real 13-day file (7,246 items, about 3 scans a day): 29% of the limit as version 3, 12% after converting to version 4. One item's typical price moved more than 1% (a few-copper item, one copper at a rounding edge) and one trend verdict changed. The synthetic data now undercounts real files: it gives 7% for a similar size, because its prices are rounded to four digits and real ones aren't. Read the `different values` lines as about half of a real file's.
+
+What's left is the exact lows and highs. On a house where nearly every price is new, that part alone can still come near the limit at 20,000 items x 30 days.
+
 ## The synthetic data
 
-`bench/synth.lua` makes the same data on every run: a fixed-seed generator, never `math.random`. It's tuned against one real 7-day file. 84% of item-days are listed, prices are rounded to four significant digits, and a scan finds the same cheapest price as the scan before 85% of the time. With those settings, 6,661 items x 7 days gives about 42,000 different values (the real file: 41,351) and 225 bytes of memory per day row (the real file: about 250).
+`bench/synth.lua` makes the same data on every run: a fixed-seed generator, never `math.random`. It's tuned against one real 7-day file. 84% of item-days are listed, prices are rounded to four significant digits, and a scan finds the same cheapest price as the scan before 85% of the time. With those settings, 6,661 items x 7 days gives about 42,000 different values (the real file: 41,351) and 225 bytes of memory per day row (the real file: about 250). Those numbers are from before scan lists. Each item now also keeps its last 30 scans; synth.lua spaces a day's 1 to 3 scans evenly up to 12:00, so every item in one scan shares its time, as in a real scan. That adds about 90 bytes per day row and almost no different values: a scan's time is shared by every item in it, and its price is nearly always that day's low or high.
 
 ## Budgets
 

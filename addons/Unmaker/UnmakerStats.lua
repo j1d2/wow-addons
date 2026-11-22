@@ -48,6 +48,68 @@ function S.CharacterKey(name, realm)
     return nil
 end
 
+-- The realm a character is filed under when the game never named one.
+S.UNKNOWN_REALM = "Forever"
+
+--- True for a realm name or surname the game really gave: a string that isn't empty.
+-- @param text a value
+-- @return true or false
+local function IsName(text)
+    return type(text) == "string" and text ~= ""
+end
+
+--- A character's full name. Forever characters have a first name and a surname, and
+-- UnitName("player") gives the surname as its second value; other clients give nothing there.
+-- @param name the first name
+-- @param surname the surname, or nil
+-- @param separator what goes between them; a space when not given
+-- @return "Name Surname", or the name alone without a surname
+function S.FullName(name, surname, separator)
+    if IsName(name) and IsName(surname) then
+        return name .. (IsName(separator) and separator or " ") .. surname
+    end
+    return name
+end
+
+--- The realm a character is filed under. Since the Forever client update of 2026-11-20 the game
+-- can give a blank realm name; a blank one means the last realm the game did name. Before that
+-- was remembered, the realm the history names, when it names just one.
+-- @param db the UnmakerDB table; its homeRealm is set from a real name or the history
+-- @param name what GetRealmName() returned
+-- @return the realm name, or UNKNOWN_REALM when none is known
+function S.RealmFor(db, name)
+    if IsName(name) then
+        db.homeRealm = name
+        return name
+    end
+    if not IsName(db.homeRealm) then
+        db.homeRealm = nil
+        local only
+        for _, entry in ipairs(type(db.history) == "table" and db.history or {}) do
+            local realm = type(entry) == "table" and entry.realm
+            if IsName(realm) then
+                if only ~= nil and only ~= realm then
+                    return S.UNKNOWN_REALM
+                end
+                only = realm
+            end
+        end
+        db.homeRealm = only
+    end
+    return db.homeRealm or S.UNKNOWN_REALM
+end
+
+--- An entry's realm: its own, or this character's when it was saved without one or blank.
+-- @param entry a history entry
+-- @param realm this character's realm
+-- @return the realm
+local function EntryRealm(entry, realm)
+    if IsName(entry.realm) then
+        return entry.realm
+    end
+    return realm
+end
+
 --- How a character is shown: by name on this realm, as "Name-Realm" on another.
 -- @param key the character's key
 -- @param realm this character's realm
@@ -188,7 +250,7 @@ end
 function S.CharactersFromHistory(history, realm)
     local characters = {}
     for _, entry in ipairs(history) do
-        local key = S.CharacterKey(entry.character, entry.realm or realm)
+        local key = S.CharacterKey(entry.character, EntryRealm(entry, realm))
         if key then
             characters[key] = characters[key] or EnsureTotals(nil)
             CountItem(characters[key], entry)
@@ -198,6 +260,43 @@ function S.CharactersFromHistory(history, realm)
         end
     end
     return characters
+end
+
+--- Brings this character's old saved data up to its full name and realm, on each load:
+-- - history entries saved under its first name alone get its full name, as long as they are
+--   from this realm or have none;
+-- - entries saved with a blank realm (the game gave none) get this realm, and, since a blank
+--   realm kept them out of every character's totals, are counted in this character's now;
+-- - totals saved under "First-Realm" move to "Full Name-Realm" when that has none yet.
+-- With two characters sharing a first name, the first to log in takes the old entries.
+-- @param db the saved data, from S.EnsureStats; changed in place
+-- @param firstName this character's first name
+-- @param fullName its full name, from S.FullName
+-- @param realm its realm, from S.RealmFor
+function S.Adopt(db, firstName, fullName, realm)
+    if not IsName(firstName) or not IsName(fullName) or not IsName(realm) then
+        return
+    end
+    local newKey = S.CharacterKey(fullName, realm)
+    local oldKey = S.CharacterKey(firstName, realm)
+    if oldKey ~= newKey and type(db.characters[oldKey]) == "table" and db.characters[newKey] == nil then
+        db.characters[newKey] = db.characters[oldKey]
+        db.characters[oldKey] = nil
+    end
+    for _, entry in ipairs(db.history) do
+        local mine = entry.character == fullName or entry.character == firstName
+        if mine and (entry.realm == nil or entry.realm == "" or entry.realm == realm) then
+            entry.character = fullName
+            if entry.realm == "" then
+                entry.realm = realm
+                local totals = CharacterTotals(db, entry)
+                CountItem(totals, entry)
+                if type(entry.mats) == "table" then
+                    CountMats(totals, entry.mats)
+                end
+            end
+        end
+    end
 end
 
 --- Record one disenchant. Its loot comes later, through S.AddLoot.
@@ -401,7 +500,7 @@ local SORTS = {
 function S.FilterHistory(history, key, realm)
     local kept = {}
     for _, entry in ipairs(history) do
-        if key == nil or S.CharacterKey(entry.character, entry.realm or realm) == key then
+        if key == nil or S.CharacterKey(entry.character, EntryRealm(entry, realm)) == key then
             kept[#kept + 1] = entry
         end
     end
@@ -414,7 +513,7 @@ end
 -- @param realm this character's realm
 -- @return the text
 function S.WhoText(entry, realm)
-    local key = S.CharacterKey(entry.character, entry.realm or realm)
+    local key = S.CharacterKey(entry.character, EntryRealm(entry, realm))
     return key and S.CharacterLabel(key, realm) or "?"
 end
 

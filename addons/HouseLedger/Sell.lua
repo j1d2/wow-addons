@@ -76,7 +76,7 @@ local function ShowSellResults(summary, complete)
         end
         values.based:SetText(Price.CountText(stats))
         values.typical:SetText(stats.typical and U.CopperToText(stats.typical) or "-")
-        Chart.Show(ui.sellPanel.chart, Price.Lookup(HouseLedgerDB, pendingSell.itemID, U.PlayerHouseKey()))
+        Chart.Show(ui.sellPanel.chart, Price.Lookup(HouseLedgerDB, pendingSell.itemID, U.ViewHouseKey()))
     else
         values.based:SetText("No saved prices yet")
     end

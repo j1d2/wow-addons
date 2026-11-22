@@ -72,7 +72,7 @@ function Scan.RefreshIdleLine()
         return
     end
     local wait = Price.SecondsUntil(HouseLedgerDB.replicateAt, time())
-    local key = U.PlayerHouseKey()
+    local key = U.ViewHouseKey()
     local house = HouseLedgerDB.houses and HouseLedgerDB.houses[key]
     local priced = 0
     if type(house) == "table" and type(house.items) == "table" then

@@ -98,7 +98,7 @@ do
     local today = row.days[1]
     Check("day keeps its low, high and scan count",
         today[1] == P.DayKey(At(0)) and today[2] == 10 and today[3] == 12 and today[4] == 2)
-    Check("day keeps the sum and sum of squares", today[5] == 22 and today[6] == 244)
+    Check("day keeps its average and spread", today[5] == 11 and today[6] == 1)
     Check("latest price is kept", row.unit == 12 and row.seen == At(0, 60))
     row = ScanOn(db, 1, 9)
     Check("a new day adds a day", #row.days == 2 and row.days[2][2] == 9)
@@ -172,13 +172,13 @@ do
     local db = P.EnsureDB(old)
     local items = db.houses["Horde|Test"].items
     local row = items[4306]
-    Check("migration moves saved data to version 3", db.version == 3)
+    Check("migration moves saved data to the current version", db.version == P.DB_VERSION and P.DB_VERSION == 4)
     Check("migration drops the old change list", row.history == nil)
     Check("migration keeps the price, stack and seen time",
         row.unit == 60 and row.qty == 3 and row.seen == At(2))
     Check("migration folds changes into days",
         #row.days == 2 and row.days[1][2] == 50 and row.days[1][3] == 70 and row.days[1][4] == 2)
-    Check("migration sums the changes", row.days[1][5] == 120 and row.days[1][6] == 7400)
+    Check("migration keeps the changes' average and spread", row.days[1][5] == 60 and row.days[1][6] == 10)
     Check("migration keeps an item with an empty change list",
         #items[2589].days == 1 and items[2589].days[1][2] == 9)
     Check("migration keeps an item with no change list",
@@ -186,13 +186,13 @@ do
     Check("migration keeps the house fields", db.lastHouseKey == "Horde|Test"
         and db.houses["Horde|Test"].scannedAt == At(2))
     local again = P.EnsureDB(db)
-    Check("version 3 data is left alone", #again.houses["Horde|Test"].items[4306].days == 2
-        and again.houses["Horde|Test"].items[4306].days[1][5] == 120)
+    Check("current data is left alone", #again.houses["Horde|Test"].items[4306].days == 2
+        and again.houses["Horde|Test"].items[4306].days[1][5] == 60 and again.houses["Horde|Test"].items[4306].days[1][6] == 10)
 end
 
 do
-    -- Version 2 days had low, high and count only. The sums are filled in
-    -- from the low and high: exact for one scan, close for more.
+    -- Version 2 days had low, high and count only. The average and spread are filled in
+    -- as if half the scans were at the low and half at the high: exact for one scan, close for more.
     local old = {
         version = 2,
         houses = { ["Horde|Test"] = { items = {
@@ -201,8 +201,9 @@ do
         } } },
     }
     local items = P.EnsureDB(old).houses["Horde|Test"].items
-    Check("version 2 days get sums from low and high", items[4306].days[1][5] == 22 and items[4306].days[1][6] == 244)
-    Check("version 2 single scans convert exactly", items[2589].days[1][5] == 9 and items[2589].days[1][6] == 81)
+    Check("version 2 days get an average and spread from low and high", items[4306].days[1][5] == 11
+        and items[4306].days[1][6] == 1)
+    Check("version 2 single scans convert exactly", items[2589].days[1][5] == 9 and items[2589].days[1][6] == 0)
 end
 
 do
@@ -350,7 +351,8 @@ end
 
 do
     Check("house label is the side only, so the realm stays off screen", P.HouseLabel("Horde|Some Realm") == "Horde")
-    Check("house label keeps a key with no realm", P.HouseLabel("Neutral") == "Neutral")
+    Check("house label keeps a key with no realm", P.HouseLabel("Odd key") == "Odd key")
+    Check("a goblin house reads as Goblin", P.HouseLabel("Neutral|Some Realm") == "Goblin")
     Check("house label handles nil", P.HouseLabel(nil) == "")
 end
 
@@ -383,13 +385,13 @@ do
     local neutral = {}
     P.Consider(neutral, 4306, 1, 50)
     P.Commit(db, "Neutral|Test", neutral, 1000)
-    local info = P.Lookup(db, 4306, "Alliance|Test")
-    Check("other house is labeled", info ~= nil and info.side == "Neutral" and info.unit == 50)
+    Check("another house's price is never used, even the last one scanned",
+        P.Lookup(db, 4306, "Alliance|Test") == nil and P.Lookup(db, 4306, "Neutral|Test").unit == 50)
     local home = {}
     P.Consider(home, 4306, 1, 20)
     P.Commit(db, "Alliance|Test", home, 2000)
     local preferred = P.Lookup(db, 4306, "Alliance|Test")
-    Check("own house wins over the last scan", preferred.unit == 20 and preferred.side == nil)
+    Check("each house reads its own price", preferred.unit == 20 and P.Lookup(db, 4306, "Neutral|Test").unit == 50)
     Check("unknown item has no tooltip", P.Lookup(db, 999999, "Alliance|Test") == nil)
     Check("tooltip helper rejects a missing price", P.TooltipLines(nil, Coins, false) == nil)
 end
@@ -493,7 +495,7 @@ end
 
 do
     local db = P.EnsureDB({})
-    Check("empty saved data grows a house table", type(db.houses) == "table" and db.version == 3)
+    Check("empty saved data grows a house table", type(db.houses) == "table" and db.version == P.DB_VERSION)
     local key = P.HouseKey("", "")
     Check("blank side and realm get a stable key", key == "Unknown|Forever")
 end
@@ -866,10 +868,10 @@ do
     local items = db.houses["Alliance|Test"].items
     local days = items[1].days
     Check("a day that isn't a table of numbers is dropped", #days == 2 and days[1] == good)
-    Check("a day missing its sums gets them, as version 2 days did", days[2][5] == 17 and days[2][6] == 145)
+    Check("a day missing its average gets one, as version 2 days did", days[2][5] == 8.5 and days[2][6] == 0.5)
     local fixed = P.EnsureDB({ version = 3, houses = { h = { items = { [1] = { unit = 1, seen = 1,
         days = { { 20261101, 8, 9, 2, "x", 145 } } } } } } }).houses.h.items[1].days[1]
-    Check("a day with a damaged sum gets it worked out again", fixed[5] == 17 and fixed[6] == 145)
+    Check("a day with a damaged average gets it worked out again", fixed[5] == 8.5 and fixed[6] == 0.5)
     Check("a broken day list becomes empty", type(items[2].days) == "table" and #items[2].days == 0
         and type(items[3].days) == "table")
     local market = P.Market(db.houses["Alliance|Test"])
@@ -896,8 +898,8 @@ local function ReferenceStats(row)
             if day[1] >= fromKey and day[1] <= toKey then
                 totals.scans = totals.scans + day[4]
                 totals.days = totals.days + 1
-                totals.sum = totals.sum + day[5]
-                totals.sumOfSquares = totals.sumOfSquares + day[6]
+                totals.sum = totals.sum + day[5] * day[4]
+                totals.sumOfSquares = totals.sumOfSquares + day[4] * (day[6] * day[6] + day[5] * day[5])
                 totals.low = math.min(totals.low or day[2], day[2])
                 totals.high = math.max(totals.high or day[3], day[3])
             end
@@ -971,8 +973,8 @@ local function MixedRows(count)
             if Next(4) > 0 then
                 local scans = 1 + Next(3)
                 local low, high = 40 + Next(100), 150 + Next(150)
-                local sum = scans * (low + high) / 2
-                row.days[#row.days + 1] = { P.DayKey(latest - back * DAY), low, high, scans, sum, sum * sum / scans + Next(900) }
+                row.days[#row.days + 1] = { P.DayKey(latest - back * DAY), low, high, scans,
+                    math.floor((low + high) / 2), Next(30) }
             end
         end
         if index % 3 == 0 then
@@ -1039,6 +1041,366 @@ do
     end
     Check("each Market entry has the slower Stats' numbers",
         EntriesMatch(market.deals) and EntriesMatch(market.drops) and EntriesMatch(market.rises))
+end
+
+-- A blank realm name (the Forever client since 2026-11-20) files prices under the realm the
+-- game last named, and the houses saved under the unknown realm join that realm's house.
+do
+    local db = P.EnsureDB(nil)
+    Check("a blank realm with none seen is the unknown realm", P.RealmFor(db, "") == P.UNKNOWN_REALM
+        and P.RealmFor(db, nil) == P.UNKNOWN_REALM and db.homeRealm == nil)
+    Check("a real realm name is used and remembered", P.RealmFor(db, "Realm Five") == "Realm Five"
+        and db.homeRealm == "Realm Five")
+    Check("a blank realm name then means the remembered realm", P.RealmFor(db, "") == "Realm Five"
+        and P.RealmFor(db, nil) == "Realm Five" and P.RealmFor(db, 7) == "Realm Five")
+end
+
+--- A day row as half its scans at the low and half at the high.
+-- @param key the day key
+-- @param low the low
+-- @param high the high
+-- @param scans how many scans
+-- @return { key, low, high, scans, average, spread }
+local function Day(key, low, high, scans)
+    local average, spread = P.DaySummary(low, high, scans, (low + high) / 2 * scans, (low * low + high * high) / 2 * scans)
+    return { key, low, high, scans, average, spread }
+end
+
+do
+    P.DAYS_KEPT = 14
+    local nov20 = os.time({ year = 2026, month = 11, day = 20, hour = 7 })
+    local nov21 = os.time({ year = 2026, month = 11, day = 21, hour = 2 })
+    local into = {
+        scannedAt = nov20,
+        items = {
+            [1] = { unit = 50, qty = 2, seen = nov20, name = "Old name", quality = 1,
+                days = { Day(20261119, 40, 60, 2), Day(20261120, 50, 50, 1) } },
+            [3] = { unit = 7, qty = 1, seen = nov20, name = "Only old", days = { Day(20261120, 7, 7, 1) } },
+        },
+        daily = { { 20261119, 10, 20, 300 }, { 20261120, 11, 21, 310 } },
+    }
+    local from = {
+        scannedAt = nov21,
+        replicateAt = nov21,
+        items = {
+            [1] = { unit = 45, qty = 4, seen = nov21, days = { Day(20261120, 30, 55, 1), Day(20261121, 45, 45, 1) } },
+            [2] = { unit = 9, qty = 1, seen = nov21, name = "Only new", days = { Day(20261121, 9, 9, 1) } },
+        },
+        daily = { { 20261120, 12, 22, 320 }, { 20261121, 13, 23, 330 } },
+    }
+    local merged = P.MergeHouse(into, from)
+    local one = merged.items[1]
+    Check("merge keeps the house it merged into", merged == into)
+    Check("an item in both gets every day once, oldest first", #one.days == 3
+        and one.days[1][1] == 20261119 and one.days[2][1] == 20261120 and one.days[3][1] == 20261121)
+    local shared = one.days[2]
+    -- One scan at 50 and one day of one scan saved as 30 to 55 (average 42.5, no spread): 2 scans,
+    -- average 46.25, spread sqrt((2500 + 42.5^2) / 2 - 46.25^2) = 3.75 -> 3.8.
+    Check("a day in both adds up: lowest low, highest high, scans, average and spread",
+        shared[2] == 30 and shared[3] == 55 and shared[4] == 2 and shared[5] == 46.25 and shared[6] == 3.8)
+    Check("the latest price comes from the house that saw it last",
+        one.unit == 45 and one.qty == 4 and one.seen == nov21)
+    Check("a name the newer row lacks comes from the older", one.name == "Old name" and one.quality == 1)
+    Check("an item only in one house is kept", merged.items[2].name == "Only new"
+        and merged.items[3].name == "Only old")
+    Check("daily totals: every day once, the later scan's on a shared day", #merged.daily == 3
+        and merged.daily[2][1] == 20261120 and merged.daily[2][2] == 12 and merged.daily[3][1] == 20261121)
+    Check("scan times are the later ones", merged.scannedAt == nov21 and merged.replicateAt == nov21)
+    local stats = P.Stats(one)
+    Check("Stats works on a merged row", stats ~= nil)
+end
+
+do
+    P.DAYS_KEPT = 14
+    local now = os.time({ year = 2026, month = 11, day = 30, hour = 12 })
+    local oldDays, newDays = {}, {}
+    for day = 1, 14 do
+        oldDays[#oldDays + 1] = Day(20261100 + day, 10, 10, 1)
+    end
+    for day = 17, 30 do
+        newDays[#newDays + 1] = Day(20261100 + day, 10, 10, 1)
+    end
+    local merged = P.MergeHouse({ scannedAt = now - 86400 * 3, items = { [5] = { seen = 1, days = oldDays } } },
+        { scannedAt = now, items = { [5] = { seen = now, days = newDays } } })
+    local days = merged.items[5].days
+    Check("a merged row is pruned to the history length", #days == 14 and days[1][1] == 20261117
+        and days[14][1] == 20261130)
+end
+
+do
+    local nov20 = os.time({ year = 2026, month = 11, day = 20, hour = 7 })
+    local nov21 = os.time({ year = 2026, month = 11, day = 21, hour = 2 })
+    local db = P.EnsureDB({
+        version = P.DB_VERSION,
+        lastHouseKey = "Horde|Forever",
+        settings = { historyDays = 30 },
+        houses = {
+            ["Horde|Realm Five"] = { scannedAt = nov20, items = {
+                [1] = { unit = 5, qty = 1, seen = nov20, days = { Day(20261109, 5, 5, 1), Day(20261120, 5, 5, 1) } } } },
+            ["Horde|Forever"] = { scannedAt = nov21, items = {
+                [1] = { unit = 6, qty = 1, seen = nov21, days = { Day(20261121, 6, 6, 1) } } } },
+            ["Neutral|Forever"] = { scannedAt = nov21, items = {
+                [8] = { unit = 6, qty = 1, seen = nov21, days = { Day(20261121, 6, 6, 1) } } } },
+        },
+    })
+    Check("a load joins the unknown realm's houses into the only named realm",
+        db.houses["Horde|Forever"] == nil and db.houses["Neutral|Forever"] == nil
+        and #db.houses["Horde|Realm Five"].items[1].days == 3 and db.houses["Neutral|Realm Five"].items[8] ~= nil)
+    Check("the joined house keeps the old days of a 30-day history",
+        db.houses["Horde|Realm Five"].items[1].days[1][1] == 20261109)
+    Check("the last house key follows the join", db.lastHouseKey == "Horde|Realm Five")
+    Check("the named realm becomes the remembered realm", db.homeRealm == "Realm Five")
+    Check("the join is listed once, for the addon to say", #P.joined == 2)
+    P.EnsureDB(db)
+    Check("a second load joins nothing", #P.joined == 0 and #db.houses["Horde|Realm Five"].items[1].days == 3)
+end
+
+do
+    local db = P.EnsureDB({ version = P.DB_VERSION, houses = {
+        ["Horde|Realm A"] = { items = {} }, ["Horde|Realm B"] = { items = {} }, ["Horde|Forever"] = { items = {} } } })
+    Check("two named realms and none remembered: the unknown realm stays apart",
+        db.houses["Horde|Forever"] ~= nil and db.homeRealm == nil and #P.joined == 0)
+    db.homeRealm = "Realm B"
+    P.EnsureDB(db)
+    Check("with a remembered realm it joins that one", db.houses["Horde|Forever"] == nil
+        and db.houses["Horde|Realm B"] ~= nil and db.houses["Horde|Realm A"] ~= nil)
+end
+
+do
+    local db = P.EnsureDB({ version = P.DB_VERSION, houses = { ["Horde|Forever"] = { items = { [1] = {
+        unit = 1, qty = 1, seen = 1, days = { Day(20261121, 1, 1, 1) } } } } } })
+    Check("only the unknown realm saved: left as it is", db.houses["Horde|Forever"] ~= nil and db.homeRealm == nil)
+    db.homeRealm = ""
+    P.EnsureDB(db)
+    Check("a blank remembered realm is dropped", db.homeRealm == nil and db.houses["Horde|Forever"] ~= nil)
+end
+P.DAYS_KEPT = 14
+
+-- Each scan: every item keeps its last SCANS_KEPT scans as time, price pairs, oldest first
+do
+    P.DAYS_KEPT = 14
+    local db = P.EmptyDB()
+    ScanOn(db, -1, 80)
+    ScanOn(db, 0, 90)
+    local row = ScanOn(db, 0, 70, 60)
+    Check("each scan saves its time and price, oldest first", row.scans and #row.scans == 6
+        and row.scans[1] == At(-1) and row.scans[2] == 80 and row.scans[3] == At(0) and row.scans[4] == 90
+        and row.scans[5] == At(0, 60) and row.scans[6] == 70)
+
+    db = P.EmptyDB()
+    for scan = 1, P.SCANS_KEPT + 5 do
+        row = ScanOn(db, 0, 100 + scan, scan * 60)
+    end
+    Check("only the last SCANS_KEPT scans are kept", P.SCANS_KEPT == 30 and #row.scans == 2 * P.SCANS_KEPT
+        and row.scans[1] == At(0, 6 * 60) and row.scans[2] == 106
+        and row.scans[#row.scans] == 100 + P.SCANS_KEPT + 5)
+
+    db = P.EmptyDB()
+    ScanOn(db, -20, 50)
+    row = ScanOn(db, 0, 60)
+    Check("a scan older than the history length is dropped", #row.scans == 2 and row.scans[1] == At(0))
+
+    db = P.EmptyDB()
+    local best = {}
+    P.Consider(best, 2589, 1, 40)
+    P.Commit(db, "Alliance|Test", best, At(-13))
+    ScanOn(db, 0, 10)
+    local unseen = db.houses["Alliance|Test"].items[2589]
+    Check("an item still in the history keeps its scans", #unseen.scans == 2)
+    ScanOn(db, 1, 10)
+    Check("an item missing from scans has old scans dropped too", type(unseen.scans) == "table"
+        and #unseen.scans == 0)
+end
+
+do
+    P.DAYS_KEPT = 14
+    local db = P.EmptyDB()
+    P.SetHistoryDays(db, 30)
+    ScanOn(db, -20, 50)
+    local row = ScanOn(db, 0, 60)
+    Check("30 days keeps a 20-day-old scan", #row.scans == 4)
+    P.SetHistoryDays(db, 14)
+    Check("going back to 14 days trims the scans right away", #row.scans == 2 and row.scans[1] == At(0))
+end
+
+do
+    P.DAYS_KEPT = 14
+    local db = P.EmptyDB()
+    ScanOn(db, -1, 80)
+    ScanOn(db, 0, 120)
+    ScanOn(db, 0, 90, 60)
+    local info = P.Lookup(db, 4306, "Alliance|Test")
+    Check("Lookup hands out the scans", info and info.scans == db.houses["Alliance|Test"].items[4306].scans)
+    local chart = P.ChartScans(info.scans)
+    Check("the scan chart has one slot per scan, oldest first, at the right", chart and chart.count == 3
+        and #chart.slots == P.CHART_MIN_DAYS and chart.slots[5].time == At(-1) and chart.slots[5].low == 80
+        and chart.slots[5].high == 80 and chart.slots[7].time == At(0, 60) and chart.slots[7].low == 90)
+    Check("a few scans leave the first slots empty", chart.slots[1].low == nil and chart.slots[4].low == nil)
+    Check("each scan slot knows its day", chart.slots[5].dayKey == P.DayKey(At(-1))
+        and chart.slots[6].dayKey == P.DayKey(At(0)) and chart.slots[7].dayKey == P.DayKey(At(0)))
+    local many = P.EmptyDB()
+    for scan = 1, 12 do
+        ScanOn(many, 0, scan, scan * 60)
+    end
+    local full = P.ChartScans(P.Lookup(many, 4306, "Alliance|Test").scans)
+    Check("more scans than the minimum: one slot each", full.count == 12 and #full.slots == 12
+        and full.slots[12].low == 12 and full.top == 12)
+    Check("the scan chart's top is the highest price", chart.top == 120)
+    Check("no scans, no scan chart", P.ChartScans(nil) == nil and P.ChartScans({}) == nil)
+end
+
+do
+    local db = P.EnsureDB({ version = P.DB_VERSION, houses = { ["Alliance|Test"] = { items = {
+        [1] = { unit = 5, qty = 1, seen = 100, days = {}, scans = 5 },
+        [2] = { unit = 5, qty = 1, seen = 100, days = {}, scans = { 10, 20, "x", 4, 30, 40, 50 } },
+        [3] = { unit = 5, qty = 1, seen = 100, days = {} },
+    } } } })
+    local items = db.houses["Alliance|Test"].items
+    Check("a scan list that isn't a table is dropped", items[1].scans == nil)
+    Check("a damaged scan pair is dropped, the rest kept", #items[2].scans == 4 and items[2].scans[1] == 10
+        and items[2].scans[2] == 20 and items[2].scans[3] == 30 and items[2].scans[4] == 40)
+    Check("a row saved before scan lists stays without one", items[3].scans == nil)
+end
+
+do
+    P.DAYS_KEPT = 14
+    local into = { scannedAt = At(0), items = { [1] = { unit = 5, qty = 1, seen = At(0), days = {},
+        scans = { At(-2), 50, At(0), 70 } } } }
+    local from = { scannedAt = At(-1), items = {
+        [1] = { unit = 6, qty = 1, seen = At(-1), days = {}, scans = { At(-1), 60, At(0), 70 } },
+        [2] = { unit = 9, qty = 1, seen = At(-1), days = {}, scans = { At(-1), 90 } } } }
+    P.MergeHouse(into, from)
+    local scans = into.items[1].scans
+    Check("joining houses joins the scans by time, once each", #scans == 6 and scans[1] == At(-2)
+        and scans[3] == At(-1) and scans[4] == 60 and scans[5] == At(0) and scans[6] == 70)
+    Check("an item only in the joined house keeps its scans", #into.items[2].scans == 2)
+    into.items[3] = { unit = 1, qty = 1, seen = At(0), days = {} }
+    P.MergeHouse(into, { items = { [3] = { unit = 2, qty = 1, seen = At(-1), days = {}, scans = { At(-1), 2 } } } })
+    Check("a row without scans takes the other's, once", #into.items[3].scans == 2)
+
+    local bare = { scannedAt = At(-1), items = { [4] = { unit = 1, qty = 1, seen = At(-1) } } }
+    P.MergeHouse(bare, { scannedAt = At(0), daily = { { P.DayKey(At(0)), 10, 20, 300 } },
+        items = { [4] = { unit = 2, qty = 1, seen = At(0), days = { Day(P.DayKey(At(0)), 2, 2, 1) } } } })
+    Check("a house saved before daily totals takes the other's", #bare.daily == 1 and bare.daily[1][2] == 10)
+    Check("a row without days takes the other's, counted once", #bare.items[4].days == 1
+        and bare.items[4].days[1][2] == 2 and bare.items[4].days[1][4] == 1)
+end
+-- Chart view: days or scans, saved in settings
+do
+    local db = P.EnsureDB(nil)
+    Check("charts show days by default", P.ChartView(db) == "days" and P.ChartView(nil) == "days")
+    Check("scans can be picked and are saved", P.SetChartView(db, "scans") == "scans"
+        and db.settings.chartView == "scans" and P.ChartView(db) == "scans")
+    Check("an unknown view changes nothing", P.SetChartView(db, "weeks") == "scans" and P.ChartView(db) == "scans")
+    Check("days again", P.SetChartView(db, "days") == "days" and P.ChartView(db) == "days")
+    db.settings.chartView = 7
+    P.EnsureDB(db)
+    Check("a damaged view is dropped on load", db.settings.chartView == nil and P.ChartView(db) == "days")
+    db.settings.chartView = "scans"
+    P.EnsureDB(db)
+    Check("a saved view survives a load", P.ChartView(db) == "scans")
+end
+
+do
+    local chart = P.ChartScans({ At(-1), 80, At(0, 60), 90 })
+    Check("the scan span names the first and last scan", P.ScanSpanText(chart)
+        == os.date("%m/%d %H:%M", At(-1)) .. " to " .. os.date("%m/%d %H:%M", At(0, 60)))
+    Check("one scan: just its time", P.ScanSpanText(P.ChartScans({ At(0), 5 })) == os.date("%m/%d %H:%M", At(0)))
+    Check("no chart, no span", P.ScanSpanText(nil) == nil)
+end
+
+-- Each day saves its average and spread rounded (average to 4 digits, spread to 2), so a busy
+-- house's saved file stays far under Lua's constant limit.
+do
+    Check("a steady day keeps its exact price", select(1, P.DaySummary(123456, 123456, 3, 370368, 3 * 123456 ^ 2)) == 123456
+        and select(2, P.DaySummary(123456, 123456, 3, 370368, 3 * 123456 ^ 2)) == 0)
+    local average, spread = P.DaySummary(100000, 130000, 2, 223456, 100000 ^ 2 + 123456 ^ 2)
+    Check("an average between low and high keeps 4 digits", average == 111700)
+    Check("the spread keeps 2 digits", spread == 12000)
+    average = P.DaySummary(12346, 12349, 2, 24697, 12346 ^ 2 + 12351 ^ 2)
+    Check("rounding never leaves the day's range", average >= 12346 and average <= 12349)
+    Check("a few copper keep their fraction", P.DaySummary(10, 12, 3, 31, 100 + 100 + 144) == 10.33)
+    Check("an average equal to the low stays exact", P.DaySummary(10, 12, 2, 20, 200) == 10)
+
+    -- A version 3 day saved sums; a sum of 2 or more scans is always above the day's high.
+    local db = P.EnsureDB({ version = 3, houses = { h = { scannedAt = 1, items = {
+        [1] = { unit = 70, seen = 1, days = { { 20261101, 50, 70, 2, 120, 7400 }, { 20261102, 40, 40, 1, 40, 1600 } } },
+    } } } })
+    local days = db.houses.h.items[1].days
+    Check("version 3 sums become an average and spread", db.version == 4 and days[1][5] == 60 and days[1][6] == 10)
+    Check("a version 3 single scan keeps its price and no spread", days[2][5] == 40 and days[2][6] == 0)
+    db.version = 3
+    P.EnsureDB(db)
+    Check("converting again changes nothing", days[1][5] == 60 and days[1][6] == 10 and days[2][5] == 40)
+end
+
+do
+    -- Stats from rounded days stay within a fraction of a percent of exact sums.
+    local db = P.EmptyDB()
+    local prices = { 101234, 99876, 104321, 97654, 100500, 102222, 98765, 103333, 99999, 101010 }
+    local exactSum, exactSquares = 0, 0
+    for index, price in ipairs(prices) do
+        ScanOn(db, math.floor((index - 1) / 2) - 5, price, (index - 1) % 2 * 3600)
+    end
+    for index = 1, #prices - 1 do
+        exactSum, exactSquares = exactSum + prices[index], exactSquares + prices[index] ^ 2
+    end
+    local count = #prices - 1
+    local mean = exactSum / count
+    local exactSpread = math.sqrt((exactSquares - count * mean * mean) / (count - 1))
+    local stats = P.Stats(db.houses["Alliance|Test"].items[4306])
+    Check("typical price within 0.1% of exact", math.abs(stats.typical - mean) / mean < 0.001)
+    Check("spread within 1% of the price of exact", math.abs(stats.spread - exactSpread) / mean < 0.01)
+end
+
+P.DAYS_KEPT = 14
+
+-- Chart line: a fit one odd listing can't tilt, its normal range and the next slot's guess
+do
+    --- Chart slots from a list of lows; false leaves a slot empty.
+    local function Slots(lows)
+        local slots = {}
+        for index, low in ipairs(lows) do
+            slots[index] = low and { low = low, high = low } or {}
+        end
+        return slots
+    end
+    local function Near(a, b)
+        return math.abs(a - b) < 1e-9
+    end
+
+    Check("chart line: none under 5 bars", P.ChartFit(Slots({ 100, false, 110, 120, 130 })) == nil
+        and P.ChartFit({}) == nil and P.ChartFit(nil) == nil)
+
+    local fit = P.ChartFit(Slots({ 100, 110, 120, 130, 140 }))
+    Check("chart line: a straight run is fit exactly", fit and fit.points == 5 and Near(fit.slope, 10)
+        and Near(fit.intercept, 90) and Near(fit.fit(3), 120) and fit.first == 1)
+    Check("chart line: bars on the line have no band", fit.spread == 0)
+    Check("chart line: the next slot's guess carries the line on", fit.estimate == 150)
+
+    fit = P.ChartFit(Slots({ 100, 100, 100, 5, 100, 100 }))
+    Check("chart line: one odd cheap listing doesn't tilt it", Near(fit.slope, 0) and Near(fit.fit(1), 100)
+        and fit.estimate == 100)
+    Check("chart line: nor widen its band", fit.spread == 0)
+
+    fit = P.ChartFit(Slots({ false, 90, 100, false, 120, 130, 140 }))
+    Check("chart line: x is the slot, so empty days count", Near(fit.slope, 10) and fit.first == 2
+        and fit.points == 5 and fit.estimate == 150)
+    fit = P.ChartFit(Slots({ 100, 100, 100, 100, 50 }))
+    Check("chart line: 5 bars hold back one odd latest listing", Near(fit.slope, 0) and fit.spread == 0)
+
+    fit = P.ChartFit(Slots({ 50, 40, 30, 20, 10 }))
+    Check("chart line: no guess at 0 or below", Near(fit.slope, -10) and fit.estimate == nil)
+
+    fit = P.ChartFit(Slots({ 100, 120, 100, 120, 100, 120 }))
+    Check("chart line: up-and-down prices get a flat line through their middle",
+        Near(fit.slope, 0) and Near(fit.fit(1), 110) and fit.estimate == 110)
+    Check("chart line: the band reads like one standard deviation", Near(fit.spread, 10 * P.ROBUST_SPREAD_SCALE))
+
+    local scans = P.ChartScans({ 1000, 90, 2000, 95, 3000, 100, 4000, 105, 5000, 110 })
+    fit = P.ChartFit(scans.slots)
+    Check("chart line: on scans it starts at the first scan, after the empty slots", fit.first == 3
+        and Near(fit.slope, 5))
 end
 
 if failed > 0 then

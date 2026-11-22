@@ -4,7 +4,8 @@ Price history for one auction house.
 Pure data. No frames, no queries, and no seller names. The scan
 code hands in item id, stack size, and buyout. This file keeps the
 lowest price per item, one summary per calendar day for the last
-14 or 30 days (low, high, scan count, sum and sum of squares), and works out
+14 or 30 days (low, high, scan count, rounded average and spread), each item's
+last 30 scans, and works out
 the stats the tooltip and window show: average, range and standard
 deviation over the last 1, 3, 7 and 14 days.
 
@@ -21,7 +22,14 @@ if type(ns) == "table" then
     ns.Price = PriceLedger
 end
 
-PriceLedger.DB_VERSION = 3
+-- Version 4 (0.5.0) saves each day's average and spread, rounded, where version 3 saved exact
+-- sums: see DaySummary.
+PriceLedger.DB_VERSION = 4
+-- Significant digits a day's average and spread keep. Rounded values repeat across items and
+-- days, so the saved file stays far under Lua's 262,143-constant limit (exact sums were nearly
+-- all different and could pass it on a busy house); Stats moves by a fraction of a percent.
+PriceLedger.AVERAGE_DIGITS = 4
+PriceLedger.SPREAD_DIGITS = 2
 
 -- The Settings tab, in display order: saved key, label and default. Saved per account in
 -- HouseLedgerDB.settings; an optional table, so no version change.
@@ -40,8 +48,18 @@ PriceLedger.DAYS_KEPT = 14
 PriceLedger.HISTORY_CHOICES = { 14, 30 }
 -- The chart shows at least this many days, so a new item's few bars aren't stretched wide.
 PriceLedger.CHART_MIN_DAYS = 7
+-- How many scans each item keeps for the scan chart, as long as they're inside the history length.
+PriceLedger.SCANS_KEPT = 30
+-- The price chart's views: one bar per day, or one per scan. The first is the default.
+PriceLedger.CHART_VIEWS = { "days", "scans" }
 -- The house overview estimates the next day only from this many days of scans.
 PriceLedger.OVERVIEW_MIN_DAYS = 5
+-- A price chart draws its line, normal range and guess at the next day or scan from this many
+-- bars. Fewer can't hold one odd listing back: of 4 bars' 6 slope pairs, 3 include it.
+PriceLedger.CHART_FIT_MIN_POINTS = 5
+-- Turns the median distance from the line into a standard deviation, for prices that scatter
+-- the usual way; unlike a standard deviation, one odd listing can't stretch it.
+PriceLedger.ROBUST_SPREAD_SCALE = 1.4826
 -- Stats windows, in days back from the latest scan's day, that day included.
 PriceLedger.WINDOWS = { 1, 3, 7, 14 }
 -- Trend and deal compare the latest price with the average of the
@@ -156,6 +174,16 @@ function PriceLedger.DayKey(seconds)
     return tonumber(FormatTime("%Y%m%d", seconds))
 end
 
+-- The realm part of a house key when the realm isn't known.
+PriceLedger.UNKNOWN_REALM = "Forever"
+
+--- True for a realm name the game really gave: a string that isn't empty.
+-- @param name a value
+-- @return true or false
+local function IsRealmName(name)
+    return type(name) == "string" and name ~= ""
+end
+
 --- A new saved-variables table with no houses.
 -- @return { version, houses }
 function PriceLedger.EmptyDB()
@@ -165,9 +193,52 @@ function PriceLedger.EmptyDB()
     }
 end
 
+--- Rounds a number to a number of significant digits: 123456 to 4 digits is 123500, and 9.16667
+-- is 9.167, so a price of a few copper keeps its fraction. Going through text gives each rounded
+-- value one exact number, so equal values save as one constant.
+-- @param value a number of 0 or more
+-- @param digits how many digits to keep
+-- @return the rounded number
+local function Significant(value, digits)
+    return tonumber(string.format("%." .. digits .. "g", value))
+end
+
+--- A day's saved average and spread, from its scans' sum and sum of squares.
+-- The average keeps AVERAGE_DIGITS significant digits (a fraction too, below 1,000 copper) and
+-- stays inside the day's range; one equal to the day's low or high is kept exact. The spread
+-- (the scans' standard deviation) keeps SPREAD_DIGITS. A steady day keeps its exact price and a
+-- spread of 0, so most days add no new number to the saved file.
+-- @param low the day's lowest price
+-- @param high the day's highest price
+-- @param scans how many scans
+-- @param sum the scans' prices added up
+-- @param squares the scans' prices squared, added up
+-- @return average, spread
+function PriceLedger.DaySummary(low, high, scans, sum, squares)
+    local mean = sum / scans
+    local average = mean
+    if average ~= low and average ~= high then
+        average = math.min(high, math.max(low, Significant(mean, PriceLedger.AVERAGE_DIGITS)))
+    end
+    local variance = squares / scans - mean * mean
+    local spread = 0
+    if scans > 1 and variance > 0 then
+        spread = Significant(math.sqrt(variance), PriceLedger.SPREAD_DIGITS)
+    end
+    return average, spread
+end
+
+--- A day's scans as a sum and a sum of squares, from its saved average and spread.
+-- @param day { dayKey, low, high, scans, average, spread }
+-- @return sum, squares
+local function DaySums(day)
+    local scans, average, spread = day[4], day[5], day[6]
+    return average * scans, scans * (spread * spread + average * average)
+end
+
 --- Adds one scan's unit price to a row's day list.
 -- Folds into the last day when it is the same day, otherwise starts a new day.
--- @param days list of { dayKey, low, high, scans, sum, sumOfSquares }, oldest first;
+-- @param days list of { dayKey, low, high, scans, average, spread }, oldest first;
 --   changed in place
 -- @param unit unit price in copper
 -- @param seconds when the scan ran
@@ -175,36 +246,40 @@ local function AddToDays(days, unit, seconds)
     local key = PriceLedger.DayKey(seconds)
     local last = days[#days]
     if type(last) == "table" and last[1] == key then
+        local sum, squares = DaySums(last)
         last[2] = math.min(last[2], unit)
         last[3] = math.max(last[3], unit)
         last[4] = last[4] + 1
-        last[5] = last[5] + unit
-        last[6] = last[6] + unit * unit
+        last[5], last[6] = PriceLedger.DaySummary(last[2], last[3], last[4], sum + unit, squares + unit * unit)
         return
     end
-    days[#days + 1] = { key, unit, unit, 1, unit, unit * unit }
+    days[#days + 1] = { key, unit, unit, 1, unit, 0 }
 end
 
---- Fills in the sums that version 2 days did not have.
--- Version 2 days had low, high and count only. Fill the sums in as if
--- half the scans were at the low and half at the high: exact for one
--- scan or a steady price, close otherwise.
--- @param days a row's day list; changed in place
-local function AddSumsFromV2(days)
-    for _, day in ipairs(days) do
-        if type(day) == "table" and day[5] == nil
-            and type(day[2]) == "number" and type(day[3]) == "number" and type(day[4]) == "number" then
-            local low, high, scans = day[2], day[3], day[4]
-            day[5] = (low + high) / 2 * scans
-            day[6] = (low * low + high * high) / 2 * scans
-        end
+--- Brings one day to the current format, in place.
+-- A day without an average (version 2 had low, high and count only) gets one as if half its
+-- scans were at the low and half at the high: exact for one scan or a steady price, close
+-- otherwise. A version 3 day saved exact sums; for 2 or more scans the sum is always above the
+-- day's high (it holds the high plus at least one more price), while an average never is, so
+-- the day itself says which it holds and converting twice changes nothing. One scan has no
+-- spread. Older versions read the averages as sums, so going back after this isn't supported.
+-- @param day a day with numeric day key, low, high and scan count
+local function UpgradeDay(day)
+    local low, high, scans = day[2], day[3], day[4]
+    if type(day[5]) ~= "number" or type(day[6]) ~= "number" then
+        day[5], day[6] = PriceLedger.DaySummary(low, high, scans, (low + high) / 2 * scans,
+            (low * low + high * high) / 2 * scans)
+    elseif scans > 1 and day[5] > high then
+        day[5], day[6] = PriceLedger.DaySummary(low, high, scans, day[5], day[6])
+    elseif scans == 1 then
+        day[5], day[6] = low, 0
     end
 end
 
 --- Repairs a row's day list in place, on every load: a day that isn't a table with a numeric
--- day key, low, high and scan count is dropped, and a day missing its sums gets them the way
--- version 2 days did. A day list that isn't a table becomes empty. So one damaged day can't
--- break Stats for the tooltip or the whole Market list.
+-- day key, low, high and scan count is dropped, and the rest are brought to the current format
+-- (UpgradeDay). A day list that isn't a table becomes empty. So one damaged day can't break
+-- Stats for the tooltip or the whole Market list.
 -- @param row an item row, changed in place
 local function RepairDays(row)
     if type(row.days) ~= "table" then
@@ -215,14 +290,44 @@ local function RepairDays(row)
     for _, day in ipairs(row.days) do
         if type(day) == "table" and type(day[1]) == "number" and type(day[2]) == "number"
             and type(day[3]) == "number" and type(day[4]) == "number" and day[4] > 0 then
-            if type(day[5]) ~= "number" or type(day[6]) ~= "number" then
-                day[5], day[6] = nil, nil
-            end
+            UpgradeDay(day)
             kept[#kept + 1] = day
         end
     end
-    AddSumsFromV2(kept)
     row.days = kept
+end
+
+--- Repairs a row's scan list in place, on every load: one that isn't a table is dropped, and a
+-- pair without a numeric time and price is left out. A list with nothing wrong isn't copied.
+-- @param row an item row, changed in place
+local function RepairScans(row)
+    local scans = row.scans
+    if scans == nil then
+        return
+    end
+    if type(scans) ~= "table" then
+        row.scans = nil
+        return
+    end
+    local count = #scans
+    local damaged = count % 2 == 1
+    for index = 1, count do
+        if type(scans[index]) ~= "number" then
+            damaged = true
+            break
+        end
+    end
+    if not damaged then
+        return
+    end
+    local kept = {}
+    for index = 1, count - 1, 2 do
+        if type(scans[index]) == "number" and type(scans[index + 1]) == "number" then
+            kept[#kept + 1] = scans[index]
+            kept[#kept + 1] = scans[index + 1]
+        end
+    end
+    row.scans = kept
 end
 
 --- Turns a version 1 row's list of price changes into day summaries.
@@ -251,8 +356,8 @@ local function MigrateRowFromV1(row)
 end
 
 --- Makes the saved table usable and brings it up to DB_VERSION.
--- Rows without `days` are migrated from version 1; other rows get the
--- version 3 sums from version 2. Runs the migrations only when the version differs.
+-- Rows without `days` are migrated from version 1 (a file with no version or version 1). Every load brings
+-- each day to the current format (UpgradeDay: versions 2 and 3 to 4), which is safe to repeat.
 -- @param db the saved HouseLedgerDB, or nil on a first load
 -- @return the same table updated in place, or a new empty one if db was not a table
 function PriceLedger.EnsureDB(db)
@@ -262,14 +367,12 @@ function PriceLedger.EnsureDB(db)
     if type(db.houses) ~= "table" then
         db.houses = {}
     end
-    if db.version ~= PriceLedger.DB_VERSION then
+    if type(db.version) ~= "number" or db.version < 2 then
         for _, house in pairs(db.houses) do
             if type(house) == "table" and type(house.items) == "table" then
                 for _, row in pairs(house.items) do
                     if type(row) == "table" and type(row.days) ~= "table" then
                         MigrateRowFromV1(row)
-                    elseif type(row) == "table" then
-                        AddSumsFromV2(row.days)
                     end
                 end
             end
@@ -287,6 +390,9 @@ function PriceLedger.EnsureDB(db)
         db.settings.historyDays = nil
     end
     PriceLedger.DAYS_KEPT = db.settings.historyDays or PriceLedger.HISTORY_CHOICES[1]
+    if db.settings.chartView ~= nil and PriceLedger.ChartView(db) ~= db.settings.chartView then
+        db.settings.chartView = nil
+    end
     -- Item names and qualities are optional, saved by scans from late 2026 on, and so are the
     -- house's daily totals.
     for _, house in pairs(db.houses) do
@@ -308,6 +414,7 @@ function PriceLedger.EnsureDB(db)
             for _, row in pairs(house.items) do
                 if type(row) == "table" then
                     RepairDays(row)
+                    RepairScans(row)
                     if row.name ~= nil and type(row.name) ~= "string" then
                         row.name = nil
                     end
@@ -318,22 +425,40 @@ function PriceLedger.EnsureDB(db)
             end
         end
     end
+    if not IsRealmName(db.homeRealm) then
+        db.homeRealm = nil
+    end
+    PriceLedger.JoinUnknownRealm(db)
     db.version = PriceLedger.DB_VERSION
     return db
 end
 
 --- The key one house is saved under.
 -- @param side "Alliance", "Horde" or "Neutral"; "Unknown" when missing
--- @param realm the realm name; "Forever" when missing
+-- @param realm the realm name; UNKNOWN_REALM when missing
 -- @return the key, "<side>|<realm>"
 function PriceLedger.HouseKey(side, realm)
     if type(side) ~= "string" or side == "" then
         side = "Unknown"
     end
-    if type(realm) ~= "string" or realm == "" then
-        realm = "Forever"
+    if not IsRealmName(realm) then
+        realm = PriceLedger.UNKNOWN_REALM
     end
     return side .. "|" .. realm
+end
+
+--- The realm to file prices under. Since the Forever client update of 2026-11-20 the game can
+-- give a blank realm name; a blank one means the last realm the game did name, so a character's
+-- scans keep going into the same history. A real name is remembered as that realm.
+-- @param db the saved table; its homeRealm is set from a real name
+-- @param name what GetRealmName() returned
+-- @return the realm name, or UNKNOWN_REALM when no name was ever seen
+function PriceLedger.RealmFor(db, name)
+    if IsRealmName(name) then
+        db.homeRealm = name
+        return name
+    end
+    return db.homeRealm or PriceLedger.UNKNOWN_REALM
 end
 
 --- Finds a house in the db, adding it (with an empty item list) when missing.
@@ -436,6 +561,22 @@ function PriceLedger.CoinText(copper)
     return table.concat(parts, " ")
 end
 
+--- Removes the first `drop` values of a list, moving the rest down.
+-- @param list an array; changed in place
+-- @param drop how many to remove from the front
+local function DropFirst(list, drop)
+    if drop <= 0 then
+        return
+    end
+    local count = #list
+    for index = 1, count - drop do
+        list[index] = list[index + drop]
+    end
+    for index = count - drop + 1, count do
+        list[index] = nil
+    end
+end
+
 --- Drops days before `oldest`, and the oldest days past DAYS_KEPT.
 -- @param days a row's day list, oldest first; changed in place
 -- @param oldest the first day key to keep
@@ -444,15 +585,33 @@ local function PruneDays(days, oldest)
     while drop < #days and (days[drop + 1][1] < oldest or #days - drop > PriceLedger.DAYS_KEPT) do
         drop = drop + 1
     end
-    if drop > 0 then
-        local count = #days
-        for index = 1, count - drop do
-            days[index] = days[index + drop]
+    DropFirst(days, drop)
+end
+
+--- Drops a row's scans from days before `oldest`, and the oldest scans past SCANS_KEPT. One scan
+-- saves every item with the same time, so the day key of each time is worked out once and kept
+-- in `dayKeys`, not once per item.
+-- @param scans a row's scan list (time, price, time, price, ...), oldest first; changed in place
+-- @param oldest the first day key to keep
+-- @param dayKeys time -> day key, shared by the caller across rows; filled in as needed
+local function PruneScans(scans, oldest, dayKeys)
+    local count = math.floor(#scans / 2)
+    local drop = 0
+    while drop < count do
+        if count - drop <= PriceLedger.SCANS_KEPT then
+            local time = scans[2 * drop + 1]
+            local key = dayKeys[time]
+            if key == nil then
+                key = PriceLedger.DayKey(time)
+                dayKeys[time] = key
+            end
+            if key >= oldest then
+                break
+            end
         end
-        for index = count - drop + 1, count do
-            days[index] = nil
-        end
+        drop = drop + 1
     end
+    DropFirst(scans, 2 * drop)
 end
 
 --- The first day key a scan at `now` keeps.
@@ -506,8 +665,9 @@ end
 -- @param qty how many were listed at that price
 -- @param now when the scan ran
 -- @param oldest the first day key to keep
+-- @param dayKeys the time -> day key cache for PruneScans
 -- @return the item's row
-local function RememberFrom(house, itemID, unit, qty, now, oldest)
+local function RememberFrom(house, itemID, unit, qty, now, oldest, dayKeys)
     local row = house.items[itemID]
     if type(row) ~= "table" then
         row = {}
@@ -519,6 +679,12 @@ local function RememberFrom(house, itemID, unit, qty, now, oldest)
 
     AddToDays(row.days, unit, now)
     PruneDays(row.days, oldest)
+    if type(row.scans) ~= "table" then
+        row.scans = {}
+    end
+    row.scans[#row.scans + 1] = now
+    row.scans[#row.scans + 1] = unit
+    PruneScans(row.scans, oldest, dayKeys)
 
     row.unit = unit
     row.qty = qty
@@ -526,8 +692,8 @@ local function RememberFrom(house, itemID, unit, qty, now, oldest)
     return row
 end
 
---- Saves one item's price from a scan: the latest price, and the day summary.
--- Days older than DAYS_KEPT are dropped.
+--- Saves one item's price from a scan: the latest price, the day summary and the scan.
+-- Days older than DAYS_KEPT are dropped, and scans past SCANS_KEPT or that old.
 -- @param house the house table
 -- @param itemID the item's id
 -- @param unit unit price in copper
@@ -535,13 +701,13 @@ end
 -- @param now when the scan ran
 -- @return the item's row
 function PriceLedger.Remember(house, itemID, unit, qty, now)
-    return RememberFrom(house, itemID, unit, qty, now, OldestKept(now))
+    return RememberFrom(house, itemID, unit, qty, now, OldestKept(now), {})
 end
 
 --- Saves one finished scan.
 -- Items missing from `best` stay in the house with their old price, seen
 -- time and name, so a later mouseover can still show the last known price,
--- but their days older than DAYS_KEPT are dropped like everyone else's.
+-- but their days and scans older than DAYS_KEPT are dropped like everyone else's.
 -- Also sets the house's scannedAt and the db's lastHouseKey.
 -- @param db the saved table
 -- @param houseKey key of the house that was scanned
@@ -554,11 +720,12 @@ function PriceLedger.Commit(db, houseKey, best, now, totals)
     local house = PriceLedger.EnsureHouse(db, houseKey)
     house.scannedAt = now
     local oldest = OldestKept(now)
+    local dayKeys = {}
     local saved = 0
     for itemID, listing in pairs(best) do
         local unit = PriceLedger.UnitCopper(listing.buyout, listing.count)
         if unit > 0 then
-            local row = RememberFrom(house, itemID, unit, listing.qty, now, oldest)
+            local row = RememberFrom(house, itemID, unit, listing.qty, now, oldest, dayKeys)
             -- A scan that didn't get the name keeps the one saved before.
             row.name = listing.name or row.name
             row.quality = listing.quality or row.quality
@@ -566,8 +733,13 @@ function PriceLedger.Commit(db, houseKey, best, now, totals)
         end
     end
     for _, row in pairs(house.items) do
-        if type(row) == "table" and type(row.days) == "table" and row.seen ~= now then
-            PruneDays(row.days, oldest)
+        if type(row) == "table" and row.seen ~= now then
+            if type(row.days) == "table" then
+                PruneDays(row.days, oldest)
+            end
+            if type(row.scans) == "table" then
+                PruneScans(row.scans, oldest, dayKeys)
+            end
         end
     end
     if type(totals) == "table" then
@@ -585,6 +757,204 @@ function PriceLedger.Commit(db, houseKey, best, now, totals)
     return saved
 end
 
+--- One day list from two: a day both have becomes one day (lowest low, highest high, the scans
+-- added up and the average and spread of all of them), oldest first. Neither list is changed.
+-- @param first a row's day list
+-- @param second another row's day list
+-- @return a new day list
+local function MergeDays(first, second)
+    local byKey, merged = {}, {}
+    -- Not ipairs: it would stop at a nil first list.
+    local lists = { first, second }
+    for which = 1, 2 do
+        local list = lists[which]
+        for _, day in ipairs(type(list) == "table" and list or {}) do
+            local have = byKey[day[1]]
+            if have then
+                local haveSum, haveSquares = DaySums(have)
+                local daySum, daySquares = DaySums(day)
+                have[2] = math.min(have[2], day[2])
+                have[3] = math.max(have[3], day[3])
+                have[4] = have[4] + day[4]
+                have[5], have[6] = PriceLedger.DaySummary(have[2], have[3], have[4], haveSum + daySum,
+                    haveSquares + daySquares)
+            else
+                local copy = { day[1], day[2], day[3], day[4], day[5], day[6] }
+                byKey[day[1]] = copy
+                merged[#merged + 1] = copy
+            end
+        end
+    end
+    table.sort(merged, function(a, b)
+        return a[1] < b[1]
+    end)
+    return merged
+end
+
+--- One scan list from two: each scan time once, oldest first. Neither list is changed.
+-- @param first a row's scan list (time, price, ...), or nil
+-- @param second another row's scan list, or nil
+-- @return a new scan list, or nil when neither row has one
+local function MergeScans(first, second)
+    if type(first) ~= "table" and type(second) ~= "table" then
+        return nil
+    end
+    local byTime, scans = {}, {}
+    -- Not ipairs: it would stop at a nil first list.
+    local lists = { first, second }
+    for which = 1, 2 do
+        local list = lists[which]
+        if type(list) == "table" then
+            for index = 1, #list - 1, 2 do
+                if not byTime[list[index]] then
+                    byTime[list[index]] = true
+                    scans[#scans + 1] = { list[index], list[index + 1] }
+                end
+            end
+        end
+    end
+    table.sort(scans, function(a, b)
+        return a[1] < b[1]
+    end)
+    local merged = {}
+    for _, scan in ipairs(scans) do
+        merged[#merged + 1] = scan[1]
+        merged[#merged + 1] = scan[2]
+    end
+    return merged
+end
+
+--- Moves one house's items and daily totals into another, for two houses that are the same
+-- auction house saved under two keys. An item in both gets one day list (see MergeDays), one
+-- scan list (see MergeScans) and its latest price, count and seen time from whichever saw it last; its name and quality from
+-- there too, or from the other when that has none. A day in both daily lists keeps the totals
+-- of the house scanned last. Then both lists are pruned to the history length.
+-- @param into the house that stays; changed in place
+-- @param from the house that goes; its rows are moved, not copied
+-- @return into
+function PriceLedger.MergeHouse(into, from)
+    if type(into.items) ~= "table" then
+        into.items = {}
+    end
+    for itemID, row in pairs(type(from.items) == "table" and from.items or {}) do
+        local have = into.items[itemID]
+        if type(have) ~= "table" then
+            into.items[itemID] = row
+        elseif type(row) == "table" then
+            local newer, older = row, have
+            if (have.seen or 0) >= (row.seen or 0) then
+                newer, older = have, row
+            end
+            have.days = MergeDays(have.days, row.days)
+            have.scans = MergeScans(have.scans, row.scans)
+            have.unit, have.qty, have.seen = newer.unit, newer.qty, newer.seen
+            have.name = newer.name or older.name
+            have.quality = newer.quality or older.quality
+        end
+    end
+
+    local fromLater = (from.scannedAt or 0) >= (into.scannedAt or 0)
+    local dailyByKey, daily = {}, {}
+    local lists = fromLater and { into.daily, from.daily } or { from.daily, into.daily }
+    -- Not ipairs: it would stop at a nil first list.
+    for which = 1, 2 do
+        local list = lists[which]
+        for _, day in ipairs(type(list) == "table" and list or {}) do
+            if dailyByKey[day[1]] then
+                -- The later list wins the day.
+                daily[dailyByKey[day[1]]] = day
+            else
+                daily[#daily + 1] = day
+                dailyByKey[day[1]] = #daily
+            end
+        end
+    end
+    table.sort(daily, function(a, b)
+        return a[1] < b[1]
+    end)
+    into.daily = daily
+
+    into.scannedAt = math.max(into.scannedAt or 0, from.scannedAt or 0)
+    if into.scannedAt == 0 then
+        into.scannedAt = nil
+    end
+    if from.replicateAt and (into.replicateAt == nil or from.replicateAt > into.replicateAt) then
+        into.replicateAt = from.replicateAt
+    end
+    if into.scannedAt then
+        local oldest = OldestKept(into.scannedAt)
+        local dayKeys = {}
+        for _, row in pairs(into.items) do
+            if type(row) == "table" and type(row.days) == "table" then
+                PruneDays(row.days, oldest)
+            end
+            if type(row) == "table" and type(row.scans) == "table" then
+                PruneScans(row.scans, oldest, dayKeys)
+            end
+        end
+        PruneDays(into.daily, oldest)
+    end
+    return into
+end
+
+-- The house keys JoinUnknownRealm joined on the last load, so the addon can say so once.
+PriceLedger.joined = {}
+
+--- Joins each house saved under the unknown realm into the same side's house on the realm the
+-- game last named, so scans saved while the game gave a blank realm name aren't a separate,
+-- nearly empty history. The realm comes from homeRealm, or, before that was saved, from the
+-- house keys when they name just one realm. With two or more named realms and no homeRealm the
+-- houses are left apart: which realm they belong to can't be told.
+-- @param db the saved table; changed in place
+-- @return the list of keys houses were joined into (also kept in PriceLedger.joined)
+function PriceLedger.JoinUnknownRealm(db)
+    PriceLedger.joined = {}
+    if db.homeRealm == nil then
+        local only
+        for key in pairs(db.houses) do
+            local realm = string.match(key, "^[^|]*|(.*)$")
+            if IsRealmName(realm) and realm ~= PriceLedger.UNKNOWN_REALM then
+                if only ~= nil and only ~= realm then
+                    return PriceLedger.joined
+                end
+                only = realm
+            end
+        end
+        if only == nil then
+            return PriceLedger.joined
+        end
+        db.homeRealm = only
+    end
+    if db.homeRealm == PriceLedger.UNKNOWN_REALM then
+        return PriceLedger.joined
+    end
+    local moves = {}
+    for key, house in pairs(db.houses) do
+        local side, realm = string.match(key, "^([^|]*)|(.*)$")
+        if realm == PriceLedger.UNKNOWN_REALM and type(house) == "table" then
+            moves[#moves + 1] = { from = key, into = side .. "|" .. db.homeRealm }
+        end
+    end
+    table.sort(moves, function(a, b)
+        return a.from < b.from
+    end)
+    for _, move in ipairs(moves) do
+        local from = db.houses[move.from]
+        local into = db.houses[move.into]
+        if type(into) == "table" then
+            PriceLedger.MergeHouse(into, from)
+        else
+            db.houses[move.into] = from
+        end
+        db.houses[move.from] = nil
+        if db.lastHouseKey == move.from then
+            db.lastHouseKey = move.into
+        end
+        PriceLedger.joined[#PriceLedger.joined + 1] = move.into
+    end
+    return PriceLedger.joined
+end
+
 --- True for a history length the Settings tab offers.
 -- @param days a value
 -- @return true or false
@@ -598,7 +968,7 @@ function PriceLedger.IsHistoryChoice(days)
 end
 
 --- Sets how many days of prices each item keeps, and saves it. A shorter length trims every
--- item in every house right away, each house back from its own last scan.
+-- item's days and scans in every house right away, each house back from its own last scan.
 -- @param db the saved table
 -- @param days one of HISTORY_CHOICES; anything else changes nothing
 -- @return the history length now in use
@@ -614,9 +984,13 @@ function PriceLedger.SetHistoryDays(db, days)
     for _, house in pairs(type(db.houses) == "table" and db.houses or {}) do
         if type(house) == "table" and type(house.items) == "table" and type(house.scannedAt) == "number" then
             local oldest = OldestKept(house.scannedAt)
+            local dayKeys = {}
             for _, row in pairs(house.items) do
                 if type(row) == "table" and type(row.days) == "table" then
                     PruneDays(row.days, oldest)
+                end
+                if type(row) == "table" and type(row.scans) == "table" then
+                    PruneScans(row.scans, oldest, dayKeys)
                 end
             end
             if type(house.daily) == "table" then
@@ -625,6 +999,35 @@ function PriceLedger.SetHistoryDays(db, days)
         end
     end
     return days
+end
+
+--- The price chart's view, saved in settings.
+-- @param db the saved table, or nil
+-- @return one of CHART_VIEWS; the first when none is saved
+function PriceLedger.ChartView(db)
+    local saved = type(db) == "table" and type(db.settings) == "table" and db.settings.chartView
+    for _, view in ipairs(PriceLedger.CHART_VIEWS) do
+        if saved == view then
+            return view
+        end
+    end
+    return PriceLedger.CHART_VIEWS[1]
+end
+
+--- Sets the price chart's view, and saves it.
+-- @param db the saved table
+-- @param view one of CHART_VIEWS; anything else changes nothing
+-- @return the view now in use
+function PriceLedger.SetChartView(db, view)
+    for _, choice in ipairs(PriceLedger.CHART_VIEWS) do
+        if view == choice and type(db) == "table" then
+            if type(db.settings) ~= "table" then
+                db.settings = {}
+            end
+            db.settings.chartView = view
+        end
+    end
+    return PriceLedger.ChartView(db)
 end
 
 --- Rounds to the nearest whole number, halves up.
@@ -710,7 +1113,8 @@ local function AddUpWindows(days, latestKey, starts, first, last)
     for _, day in ipairs(days) do
         local key = day[1]
         if key <= latestKey then
-            local scans, low, high, sum, squares = day[4], day[2], day[3], day[5], day[6]
+            local scans, low, high = day[4], day[2], day[3]
+            local sum, squares = DaySums(day)
             for index = first, last do
                 if key >= starts[index] then
                     totalScans[index] = totalScans[index] + scans
@@ -894,6 +1298,126 @@ function PriceLedger.ChartDays(days, seen)
         end
     end
     return chart
+end
+
+--- An item's saved scans as chart slots: one per scan, oldest first, with at least
+-- CHART_MIN_DAYS slots (empty ones first) so a new item's few bars aren't drawn full width.
+-- Reads the row's scan list only.
+-- @param scans a row's scan list (time, price, time, price, ...), or nil
+-- @return nil without scans, or { slots, top, count }: a filled slot is { time, dayKey, low, high }
+--   with low and high both the scan's price, an empty one is {}; top is the highest price and
+--   count how many scans there are
+function PriceLedger.ChartScans(scans)
+    if type(scans) ~= "table" or #scans < 2 then
+        return nil
+    end
+    local count = math.floor(#scans / 2)
+    local chart = { slots = {}, top = 0, count = count }
+    for _ = count + 1, PriceLedger.CHART_MIN_DAYS do
+        chart.slots[#chart.slots + 1] = {}
+    end
+    for index = 1, 2 * count - 1, 2 do
+        local time, price = scans[index], scans[index + 1]
+        chart.slots[#chart.slots + 1] = { time = time, dayKey = PriceLedger.DayKey(time), low = price, high = price }
+        chart.top = math.max(chart.top, price)
+    end
+    return chart
+end
+
+--- When a scan chart's scans were, for its hover tip.
+-- @param chart from ChartScans, or nil
+-- @return "first to last" as month/day and time, just the time for one scan, or nil
+function PriceLedger.ScanSpanText(chart)
+    if type(chart) ~= "table" or type(chart.slots) ~= "table" then
+        return nil
+    end
+    local first, last
+    for _, slot in ipairs(chart.slots) do
+        if slot.time then
+            first = first or slot.time
+            last = slot.time
+        end
+    end
+    if first == nil then
+        return nil
+    end
+    if first == last then
+        return FormatStamp(first)
+    end
+    return FormatStamp(first) .. " to " .. FormatStamp(last)
+end
+
+--- The middle value of a list (the mean of the two middle ones for an even count).
+-- Sorts the list in place, so pass one made for the purpose.
+-- @param list numbers, at least one
+-- @return the median
+local function Median(list)
+    table.sort(list)
+    local count = #list
+    if count % 2 == 1 then
+        return list[(count + 1) / 2]
+    end
+    return (list[count / 2] + list[count / 2 + 1]) / 2
+end
+
+--- A straight line through a price chart's bars, its normal range and a guess at the next slot,
+-- like the house overview's, but fit so one odd listing can't tilt it: cheapest prices jump
+-- whenever one seller lists low, which pulls a least-squares line a long way. The slope is the
+-- median of the slopes between every two bars (the Theil-Sen line), the line goes through the
+-- median of what is left, and the range is the median distance from the line, scaled to read
+-- like one standard deviation. x is the slot number, so an empty day counts on the Days view and
+-- the Scans view goes scan by scan. Pure: reads the slots only.
+-- @param slots chart slots from ChartDays or ChartScans; a slot without `low` is skipped
+-- @return nil under CHART_FIT_MIN_POINTS bars, or a table:
+--   points: bars used; first: the first slot with a bar
+--   slope, intercept, fit(x): the line at slot x
+--   spread: the normal range on each side of the line, 0 when most bars sit on it
+--   estimate: the line at the slot after the last, in whole copper, when above 0; else nil
+function PriceLedger.ChartFit(slots)
+    if type(slots) ~= "table" then
+        return nil
+    end
+    local xs, ys = {}, {}
+    for index, slot in ipairs(slots) do
+        if type(slot.low) == "number" then
+            xs[#xs + 1], ys[#ys + 1] = index, slot.low
+        end
+    end
+    local points = #xs
+    if points < PriceLedger.CHART_FIT_MIN_POINTS then
+        return nil
+    end
+    local slopes = {}
+    for i = 1, points - 1 do
+        for j = i + 1, points do
+            slopes[#slopes + 1] = (ys[j] - ys[i]) / (xs[j] - xs[i])
+        end
+    end
+    local slope = Median(slopes)
+    local offsets = {}
+    for i = 1, points do
+        offsets[i] = ys[i] - slope * xs[i]
+    end
+    local intercept = Median(offsets)
+    local distances = {}
+    for i = 1, points do
+        distances[i] = math.abs(ys[i] - (intercept + slope * xs[i]))
+    end
+    local result = {
+        points = points,
+        first = xs[1],
+        slope = slope,
+        intercept = intercept,
+        fit = function(x)
+            return intercept + slope * x
+        end,
+        spread = PriceLedger.ROBUST_SPREAD_SCALE * Median(distances),
+    }
+    local estimate = Round(intercept + slope * (#slots + 1))
+    if estimate > 0 then
+        result.estimate = estimate
+    end
+    return result
 end
 
 --- A whole number with commas between thousands, like 1,234,567.
@@ -1140,15 +1664,20 @@ function PriceLedger.Market(house)
     return market
 end
 
---- A house key as people read it: its side, "Horde|Realm" becomes "Horde". The realm is left
--- out: the player knows it, and it would show in every screenshot of the window.
+--- A house key as people read it: its side, "Horde|Realm" becomes "Horde", and a goblin
+-- house (saved as "Neutral") is "Goblin". The realm is left out: the player knows it, and it
+-- would show in every screenshot of the window.
 -- @param key a house key
 -- @return the label; "" for a non-string, the key itself when it has no "|"
 function PriceLedger.HouseLabel(key)
     if type(key) ~= "string" then
         return ""
     end
-    return string.match(key, "^([^|]*)|") or key
+    local side = string.match(key, "^([^|]*)|") or key
+    if side == "Neutral" then
+        return "Goblin"
+    end
+    return side
 end
 
 --- The Scan button's text: "Scan" when a scan is allowed, otherwise the wait, like
@@ -1181,15 +1710,14 @@ function PriceLedger.SecondsUntil(replicateAt, now)
     return left
 end
 
---- Price for a mouseover.
--- The player's own house wins. If that house has never seen the item, the
--- last scanned house is used and its side is returned so the tooltip can say
--- where the price came from.
+--- An item's saved price at one house.
+-- Only that house is read: tooltips show the player's own faction's prices, and the window
+-- the house that is open, never another side's.
 -- @param db the saved table
 -- @param itemID the item's id
--- @param homeKey the player's own house key
--- @return nil when no house has a price, or
---   { unit, qty, seen, scannedAt, stats, side }; side is nil for the own house
+-- @param homeKey the house to read
+-- @return nil when that house has no price for it, or { unit, qty, seen, scannedAt, stats, days,
+--   scans }
 function PriceLedger.Lookup(db, itemID, homeKey)
     if type(db) ~= "table" or type(db.houses) ~= "table" then
         return nil
@@ -1223,24 +1751,8 @@ function PriceLedger.Lookup(db, itemID, homeKey)
             scannedAt = house.scannedAt,
             stats = PriceLedger.Stats(row),
             days = row.days,
-            side = nil,
+            scans = row.scans,
         }
-    end
-
-    local lastKey = db.lastHouseKey
-    if lastKey ~= homeKey then
-        house, row = RowFrom(lastKey)
-        if row then
-            return {
-                unit = row.unit,
-                qty = row.qty,
-                seen = row.seen,
-                scannedAt = house.scannedAt,
-                stats = PriceLedger.Stats(row),
-            days = row.days,
-                side = string.match(lastKey, "^([^|]+)"),
-            }
-        end
     end
     return nil
 end
@@ -1408,13 +1920,8 @@ function PriceLedger.TooltipLines(info, coinText, showDetails)
         return nil
     end
 
-    local label = "HouseLedger"
-    if type(info.side) == "string" and info.side ~= "" then
-        label = label .. " (" .. info.side .. ")"
-    end
-
     local stats = info.stats
-    local text = label .. "  " .. coinText(info.unit)
+    local text = "HouseLedger  " .. coinText(info.unit)
     local trend = PriceLedger.TrendText(stats, "buyer")
     if trend ~= "" then
         text = text .. "  " .. trend

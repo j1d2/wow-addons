@@ -418,7 +418,7 @@ local function ShowRowDetails(row)
     end
     ui.buyPanel.detailTitle:SetText(name .. ", " .. Price.CountText(stats))
     if ui.buyPanel.chartRoom then
-        Chart.Show(ui.buyPanel.chart, Price.Lookup(HouseLedgerDB, row.result.itemKey.itemID, U.PlayerHouseKey()))
+        Chart.Show(ui.buyPanel.chart, Price.Lookup(HouseLedgerDB, row.result.itemKey.itemID, U.ViewHouseKey()))
     end
     local lines = Price.WindowLines(stats, U.CopperToText) or {}
     for index, line in ipairs(ui.buyPanel.detailLines) do

@@ -11,6 +11,11 @@ All notable changes to Unmaker. The format follows [Keep a Changelog](https://ke
 ### Changed
 
 - "Open with my bags" is now "Open and close with my bags": when the bags opened Unmaker, closing the bags closes it too. A window you opened yourself, with `/um` or the bag button, stays open.
+- Characters show with their full Forever name, first name and surname ("Mira Stone"), in the History tab and the Stats character list, so two characters with the same first name are counted apart. Your older disenchants move to the full name the next time each character logs in.
+
+### Fixed
+
+- Since the game update of November 20, the game can give a blank realm name: disenchants then had no realm, and that character's own totals in the Stats tab skipped them. Unmaker now uses the realm the game last named, and fills in those disenchants and their character's totals the next time that character logs in.
 
 ## [0.4.1] - 2026-11-15
 

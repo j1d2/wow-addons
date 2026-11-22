@@ -12,13 +12,21 @@ All notable changes to HouseLedger. The format follows [Keep a Changelog](https:
 - **Price Check** scrolls with the mouse wheel through every match, and the bottom line says which ones show and how many there are ("13-24 of 57 items").
 - Click **Item**, **Price** or **Trend** in Price Check to sort; click again to reverse.
 - With Price Check open, shift-click an item in your bags or a chat link to look it up.
-- The price chart grows with your history. It starts at the first day an item was scanned, with at least 7 bars and up to 14 or 30, and its caption says how many days it shows.
+- The price chart grows with your history. It starts at the first day an item was scanned, with at least 7 bars and up to 14 or 30. Hover it to see how many days it shows.
+- **Days | Scans** in the corner of every price chart. Scans shows one bar per scan (an item's last 30, within your history length) with a little space between days, so you can see a price move during a day. Your choice is saved for every chart. Scans are saved from your first scan after updating.
+- Every price chart gets a **trend line**, a faint band for its normal range, and a purple **guess** at the next day or scan, like the house overview, once it has 5 bars. The line is fit so one odd cheap listing can't tilt it. The guess is only the line carried on one more step, not a promise. Hover the chart for what each part means.
 
 ### Changed
 
+- Each day's prices are now saved as an average and spread rounded to a few digits, instead of exact running totals. On a very busy auction house with many scans a day, the exact totals could make the saved file too big for the game to load, which can lose your saved prices. Typical prices and spreads may change by a fraction of a percent; your saved history converts by itself the first time it loads. Going back to an older HouseLedger after that isn't supported: it would show wrong averages.
 - HouseLedger's code is now split into smaller files. Nothing looks or works differently, but restart the game once after updating: a `/reload` doesn't pick up new files.
 - The Market tab opens about 6 times faster, and price tooltips and details take about 5 times less work. The numbers are the same as before.
 - Items that stop showing up in scans now drop their days older than 14 days too, so the saved file stays smaller. Their tooltip still shows the last price and when it was seen.
+
+### Fixed
+
+- Since the game update of November 20, the game can give a blank realm name, and HouseLedger then started a new, empty price history for every scan after it. Your history wasn't lost: HouseLedger now joins those scans back into your saved history the first time it loads, and a blank realm name keeps using the realm the game last named. The auction house window says so once when it has joined them.
+- At a goblin auction house, the window (Market, the house overview, Buy and Sell details, and the scan line) now shows that goblin house's prices instead of your faction's, and calls it "Goblin". Tooltips and Price Check always show your own faction's prices, and no longer fall back to another house's.
 
 ## [0.4.1] - 2026-11-15
 

@@ -50,7 +50,8 @@ local CHART_BAR_COLOR = { 0.35, 0.6, 1, 0.9 }
 local CHART_TODAY_COLOR = { 1, 0.82, 0, 1 }
 
 local db
-local playerRealm -- this character's realm, from GetRealmName() once loaded
+local playerRealm -- this character's realm, from S.RealmFor once loaded
+local playerName -- this character's full name (with its Forever surname), once loaded
 local statsView -- the character the Stats tab shows (its key), or nil for all characters
 local charDB -- this character's own saved data: the window's position
 local session = R.NewSession()
@@ -1079,15 +1080,27 @@ local function IsDisenchant(unit, spellID)
     return unit == "player" and spellID == DISENCHANT_SPELL
 end
 
+--- What the game puts between a Forever character's first name and surname, or nil when the
+-- client has no such constant (then S.FullName uses a space).
+-- @return the separator, or nil
+local function SurnameSeparator()
+    local consts = type(Constants) == "table" and Constants.CharacterNameSeparatorConsts
+    return type(consts) == "table" and consts.CHARACTERNAME_SURNAME_SEPARATOR or nil
+end
+
 local handlers = {}
 
 function handlers.ADDON_LOADED(name)
     if name ~= "Unmaker" then
         return
     end
-    playerRealm = GetRealmName()
-    session.key = S.CharacterKey(UnitName("player"), playerRealm)
-    db = S.EnsureStats(R.EnsureDB(UnmakerDB), playerRealm)
+    db = R.EnsureDB(UnmakerDB)
+    playerRealm = S.RealmFor(db, GetRealmName())
+    local firstName, surname = UnitName("player")
+    playerName = S.FullName(firstName, surname, SurnameSeparator())
+    db = S.EnsureStats(db, playerRealm)
+    S.Adopt(db, firstName, playerName, playerRealm)
+    session.key = S.CharacterKey(playerName, playerRealm)
     UnmakerDB = db
     charDB = R.EnsureCharDB(UnmakerCharDB)
     UnmakerCharDB = charDB
@@ -1163,7 +1176,7 @@ function handlers.UNIT_SPELLCAST_SUCCEEDED(unit, _, spellID)
         if pending and built then
             currentEntry = S.Record(db, session, {
                 itemID = pending.itemID, name = pending.name, link = pending.link,
-                quality = pending.quality, level = pending.level, character = UnitName("player"),
+                quality = pending.quality, level = pending.level, character = playerName,
                 realm = playerRealm,
             }, time())
             if earlyLoot then
