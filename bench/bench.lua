@@ -48,6 +48,8 @@ local BUDGETS = {
     HouseOverview = { kb = 10, ms = 2000 },
     ["ChartDays, every item"] = { kb = 13000, ms = 2000 },
     ["ChartScans, every item"] = { kb = 18000, ms = 2000 },
+    -- 2026-11-21: about 9 KB per item, for one chart click.
+    ["ChartFit, every item"] = { kb = 26600, ms = 2000 },
     ["Commit, same day"] = { kb = 410, ms = 2000 },
     ["Commit, full scan"] = { kb = 870, ms = 2000 },
     SortHistory = { kb = 200, ms = 2000 },
@@ -206,6 +208,18 @@ local function BenchHouseLedger(items, days, maxScans)
             P.ChartScans(row.scans)
         end
     end)
+    -- ChartFit runs on one item per click; every item's 30 scans (435 slope pairs each) is its worst case.
+    local scanSlots = {}
+    for _, row in pairs(house.items) do
+        local chart = P.ChartScans(row.scans)
+        scanSlots[#scanSlots + 1] = chart and chart.slots
+    end
+    Step("ChartFit, every item", function()
+        for _, slots in ipairs(scanSlots) do
+            P.ChartFit(slots)
+        end
+    end)
+    scanSlots = nil
     local best = Synth.FullScan(house)
     -- A second scan the same day re-rounds every item's day (DaySummary); the next day's starts new days.
     Step("Commit, same day", function() P.Commit(db, houseKey, best, Synth.NOW + 60 * 60) end)

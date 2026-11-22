@@ -2297,13 +2297,14 @@ do
     row:GetScript("OnClick")(row)
     local chart = panel.chart
     local heights = BarHeights(chart)
-    Check("a row click shows its chart, 7 days for a young item", chart.shown and chart.slotCount == 7
-        and chart.caption.text == "Daily low, 7 days" and #chart.bars == 30)
+    Check("a row click shows its chart, 7 days for a young item, and the next day's guess",
+        chart.shown and chart.slotCount == 8 and chart.caption.text == "Daily low, 7 days" and #chart.bars == 31)
     Check("days with scans have bars, the rest none", heights[7] and heights[3] and not heights[2] and not heights[1]
-        and not heights[8] and not heights[30])
+        and heights[8] and not heights[9] and not heights[31])
     Check("bars scale to the chart's top price", heights[7] == chart.barArea and heights[3] == chart.barArea)
     Check("the latest day is gold", chart.bars[7].colorTexture[1] == 1 and chart.bars[6].colorTexture[1] < 1)
-    Check("7 slots share the chart's width", chart.bars[2].points[1][4] == math.floor(chart.chartWidth / 7) + 1)
+    Check("7 days and the guess share the chart's width, the guess a gap apart",
+        chart.bars[2].points[1][4] == math.floor((chart.chartWidth - 3) / 8) + 1)
     Check("the chart says its top price", chart.topText.text == "<money 100>")
     Check("the chart sends nothing", #world.browseQueries == queries)
     Click("Clear")
@@ -2351,16 +2352,18 @@ do
     row:GetScript("OnClick")(row)
     local chart = MainFrame().buyPanel.chart
     local heights = BarHeights(chart)
-    Check("with 30 days kept, the chart grows to the oldest saved day", chart.slotCount == 20
-        and chart.caption.text == "Daily low, 20 days" and heights[1] and heights[20] and not heights[21])
+    Check("with 30 days kept, the chart grows to the oldest saved day", chart.slotCount == 21
+        and chart.caption.text == "Daily low, 20 days" and heights[1] and heights[20] and heights[21]
+        and not heights[22])
     Click("Settings")
     Pick(MainFrame().settingsPanel.historyDropdown, "14 days")
     Click("Buy")
     row = ResultRows()[1]
     row:GetScript("OnClick")(row)
     heights = BarHeights(chart)
-    Check("14 days trims the history at once, and the chart with it", chart.slotCount == 14
-        and #HouseLedgerDB.houses["Alliance|TestRealm"].items[4306].days == 14 and heights[14] and not heights[15])
+    Check("14 days trims the history at once, and the chart with it", chart.slotCount == 15
+        and #HouseLedgerDB.houses["Alliance|TestRealm"].items[4306].days == 14 and heights[14] and heights[15]
+        and not heights[16])
     HouseLedgerPrice.SetHistoryDays(HouseLedgerDB, 14)
 end
 
@@ -2390,7 +2393,7 @@ do
         and chart.caption.text == "Each scan, 4 scans" and heights[4] and heights[7] and not heights[3])
     Check("the scan view is saved and its word bright", HouseLedgerDB.settings.chartView == "scans"
         and chart.viewWords.scans.label.color[1] == 1 and chart.viewWords.days.label.color[1] < 1)
-    Check("the cheaper scan has the shorter bar", heights[7] < heights[6] and heights[6] == chart.barArea)
+    Check("the cheaper scan has the shorter bar", heights[7] < heights[6])
     local x = {}
     for index = 5, 7 do
         x[index] = chart.bars[index].points[1][4]
@@ -2416,6 +2419,139 @@ do
     sellChart.viewWords.days:GetScript("OnClick")(sellChart.viewWords.days)
     Check("Days brings its daily bars back", sellChart.shown and not sellChart.emptyText.shown
         and sellChart.caption.text == "Daily low, 7 days" and HouseLedgerDB.settings.chartView == "days")
+end
+
+--- Saves one scan a day for item 4306 at these prices, oldest first, the last one yesterday.
+-- @param prices copper per unit, one per day
+local function SaveDailyPrices(prices)
+    local P = HouseLedgerPrice
+    for index, price in ipairs(prices) do
+        local best = {}
+        P.Consider(best, 4306, 1, price)
+        P.Commit(HouseLedgerDB, "Alliance|TestRealm", best, world.now - (#prices - index + 1) * 24 * 60 * 60)
+    end
+end
+
+--- Opens the house, shows item 4306 on Buy and clicks its row.
+-- @return the Buy chart
+local function ShowBuyChart()
+    OpenHouse()
+    world.browseResults = BrowseResults(4306, 4306, 70)
+    Fire("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
+    local row = ResultRows()[1]
+    row:GetScript("OnClick")(row)
+    return MainFrame().buyPanel.chart
+end
+
+--- Hovers a chart and returns the lines its tip added.
+-- @param chart a price chart
+-- @return the lines, in order
+local function ChartTipLines(chart)
+    local lines = {}
+    _G.GameTooltip.AddLine = function(_, text) lines[#lines + 1] = text end
+    chart:GetScript("OnEnter")(chart)
+    _G.GameTooltip.AddLine = nil
+    return lines
+end
+
+--- Whether any tip line holds the text.
+-- @param lines from ChartTipLines
+-- @param text plain text to find
+-- @return true when one line holds it
+local function TipHas(lines, text)
+    for _, line in ipairs(lines) do
+        if line:find(text, 1, true) then
+            return true
+        end
+    end
+    return false
+end
+
+do
+    -- Trend line, normal range and guess on a price chart, like the house overview's.
+    Setup({ screenRight = 1400 })
+    Load()
+    -- Rising 10 a day, with one odd cheap day that mustn't tilt the line.
+    SaveDailyPrices({ 100, 110, 120, 5, 140, 150, 160 })
+    local chart = ShowBuyChart()
+    local queries = #world.browseQueries
+    local slotWidth = (chart.chartWidth - 3) / 8
+    local middle = 1 + math.max(2, math.floor(slotWidth) - 2) / 2
+    Check("a price chart gets a trend line from its first bar to the guess", chart.line and chart.line.shown
+        and chart.line.startPoint[3] == middle and chart.line.endPoint[3] > chart.bars[8].points[1][4])
+    Check("the odd cheap day doesn't tilt it: it runs 100 to 170",
+        chart.line.startPoint[4] == 2 + 100 / 170 * chart.barArea and chart.line.endPoint[4] == 2 + chart.barArea)
+    Check("the guess is the line at the next day, in purple", chart.slotCount == 8 and chart.bars[8].shown
+        and chart.bars[8].height == chart.barArea and chart.bars[8].colorTexture[1] == 0.72)
+    Check("the latest real day stays gold", chart.bars[7].colorTexture[1] == 1)
+    Check("the axis grows to fit the guess", chart.topText.text == "<money 170>")
+    local bands = 0
+    for _, band in ipairs(chart.trendBands) do
+        bands = bands + (band.shown and 1 or 0)
+    end
+    Check("prices on the line get no normal-range band", bands == 0)
+    local lines = ChartTipLines(chart)
+    Check("the hover tip says what the line and the purple bar are", TipHas(lines, "White line")
+        and TipHas(lines, "Purple: a guess at the next day, <money 170>.") and not TipHas(lines, "Faint band"))
+    Check("drawing it sends nothing", #world.browseQueries == queries)
+
+    chart.viewWords.scans:GetScript("OnClick")(chart.viewWords.scans)
+    lines = ChartTipLines(chart)
+    Check("Scans draws them per scan, the guess for the next scan", chart.line.shown and chart.slotCount == 8
+        and TipHas(lines, "Purple: a guess at the next scan"))
+
+    HouseLedgerDB.houses["Alliance|TestRealm"].items[4306].scans = nil
+    local row = ResultRows()[1]
+    row:GetScript("OnClick")(row)
+    Check("an item without scans hides the line and the guess", chart.emptyText.shown and not chart.line.shown
+        and not chart.bars[8].shown and not TipHas(ChartTipLines(chart), "White line"))
+    chart.viewWords.days:GetScript("OnClick")(chart.viewWords.days)
+end
+
+do
+    -- Up and down: a flat line through the middle, with its normal range behind the bars.
+    Setup({ screenRight = 1400 })
+    Load()
+    SaveDailyPrices({ 100, 120, 100, 120, 100, 120 })
+    local chart = ShowBuyChart()
+    local shown = {}
+    for index, band in ipairs(chart.trendBands) do
+        shown[index] = band.shown
+    end
+    Check("prices that go up and down get the normal-range band, first bar to the guess",
+        shown[2] and shown[8] and not shown[1] and not shown[9] and chart.line.startPoint[4] == chart.line.endPoint[4])
+    Check("the tip names the band", TipHas(ChartTipLines(chart), "Faint band: its normal range."))
+    Check("the axis grows to the band's top, in whole copper", chart.topText.text == "<money 125>")
+end
+
+do
+    -- A steep rise: the line would start under 0, so it starts where it crosses 0.
+    Setup({ screenRight = 1400 })
+    Load()
+    SaveDailyPrices({ 1, 2, 3, 200, 400, 600, 800 })
+    local chart = ShowBuyChart()
+    Check("a line that would start under 0 starts at 0, a little way in", chart.line.startPoint[4] == 2
+        and chart.line.startPoint[3] > chart.bars[2].points[1][4]
+        and chart.line.startPoint[3] < chart.bars[3].points[1][4])
+
+    -- A steep fall: the line stops where it reaches 0, and there's no guess under 0.
+    Setup({ screenRight = 1400 })
+    Load()
+    SaveDailyPrices({ 800, 600, 400, 200, 3, 2, 1 })
+    chart = ShowBuyChart()
+    Check("a line that would end under 0 stops at 0, with no guess", chart.line.endPoint[4] == 2
+        and chart.line.endPoint[3] > chart.bars[5].points[1][4] and chart.line.endPoint[3] < chart.bars[7].points[1][4]
+        and chart.slotCount == 7 and not chart.bars[8].shown)
+end
+
+do
+    -- Too few bars: no line, band or guess.
+    Setup({ screenRight = 1400 })
+    Load()
+    SaveDailyPrices({ 100, 110, 120, 130 })
+    local chart = ShowBuyChart()
+    Check("4 days: no line or guess yet", chart.shown and not chart.line.shown and chart.slotCount == 7
+        and not chart.bars[8].shown and not TipHas(ChartTipLines(chart), "White line"))
 end
 
 -- ---------------------------------------------------------------------
