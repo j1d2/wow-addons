@@ -775,7 +775,7 @@ do
     Check("30 days keeps 30 days", #row.days == 30)
     local chart = P.ChartDays(row.days, row.seen)
     Check("the chart grows to 30 slots", #chart.slots == 30 and chart.slots[1].low == 71)
-    Check("an unknown length is ignored", P.SetHistoryDays(db, 60) == 30 and P.SetHistoryDays(db, "x") == 30
+    Check("an unknown length is ignored", P.SetHistoryDays(db, 45) == 30 and P.SetHistoryDays(db, "x") == 30
         and P.DAYS_KEPT == 30 and db.settings.historyDays == 30)
     Check("14 days again", P.SetHistoryDays(db, 14) == 14 and P.DAYS_KEPT == 14 and db.settings.historyDays == 14)
     Check("going back to 14 days trims every item at once", #row.days == 14
@@ -791,6 +791,48 @@ do
     P.SetHistoryDays(P.EmptyDB(), 30)
     P.EnsureDB({ version = 3, houses = {} })
     Check("saved data with no length loads as 14 days", P.DAYS_KEPT == 14)
+end
+
+-- 60 days: kept in full, charted 2 days per bar so a chart never passes CHART_MAX_BARS
+do
+    local db = P.EmptyDB()
+    Check("60 days can be picked", P.SetHistoryDays(db, 60) == 60 and P.DAYS_KEPT == 60)
+    local row
+    for dayOffset = -59, -1 do
+        row = ScanOn(db, dayOffset, 200 + dayOffset)
+    end
+    -- Day -1 has a second, cheaper scan and a dearer one, so its bar's low and high come from it.
+    ScanOn(db, -1, 50, 600)
+    ScanOn(db, -1, 900, 1200)
+    ScanOn(db, 0, 200)
+    row = ScanOn(db, 0, 140, 1800)
+    Check("60 days keeps 60 days", #row.days == 60)
+    local chart = P.ChartDays(row.days, row.seen)
+    Check("60 days chart as 30 bars of 2 days", #chart.slots == P.CHART_MAX_BARS and chart.perBar == 2
+        and chart.days == 60)
+    Check("the newest bar is today and yesterday: the lower low, the higher high",
+        chart.slots[30].low == 50 and chart.slots[30].high == 900 and chart.slots[30].dayKey == P.DayKey(At(0)))
+    Check("the oldest bar is the 2 oldest days", chart.slots[1].low == 141 and chart.slots[1].high == 142
+        and chart.slots[1].dayKey == P.DayKey(At(-58)))
+    Check("the chart's top is the highest price", chart.top == 900)
+
+    -- 45 days of history: 23 bars, the oldest holding only the oldest day.
+    local young = P.EmptyDB()
+    P.SetHistoryDays(young, 60)
+    for dayOffset = -44, 0 do
+        row = ScanOn(young, dayOffset, 100)
+    end
+    chart = P.ChartDays(row.days, row.seen)
+    Check("45 days chart as 23 bars, the oldest holding 1 day", #chart.slots == 23 and chart.days == 45
+        and chart.slots[1].low == 100 and chart.slots[1].dayKey == P.DayKey(At(-44)))
+    local short = P.ChartDays(ScanOn(P.EmptyDB(), 0, 50).days, At(0))
+    Check("30 days or fewer stay 1 day per bar", short.perBar == 1 and #short.slots == 7)
+
+    -- The house overview stays at 1 day per bar: it shows the last CHART_MAX_BARS days.
+    local overview = P.HouseOverview(db.houses["Alliance|Test"])
+    Check("the house overview shows the last 30 days of a 60-day history", #overview.slots == P.CHART_MAX_BARS
+        and overview.slots[30].dayKey == P.DayKey(At(0)) and overview.scanDays == 30)
+    P.SetHistoryDays(db, 14)
 end
 
 -- Sell advice in plain words

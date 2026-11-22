@@ -135,8 +135,7 @@ local function BenchHouseLedger(items, days, maxScans)
     local base = KeptKB()
     local db, houseKey = Synth.HouseLedgerDB(items, days, P, maxScans)
     -- Keep the history length being measured, so loading the data doesn't set it back to 14 and
-    -- turn the Commit step into a mass trim. 60 days isn't a Settings choice: it stays at 14 here
-    -- and is a what-if for the saved file's size only.
+    -- turn the Commit step into a mass trim.
     if P.IsHistoryChoice(days) then
         db.settings.historyDays = days
     end
@@ -266,6 +265,7 @@ else
     -- A heavy scanner: about 5.5 scans a day. Exact day sums (version 3) passed the constant
     -- limit here; rounded days (version 4) keep it far under.
     BenchHouseLedger(20000, 30, 10)
+    BenchHouseLedger(20000, 60, 10)
     for _, entries in ipairs({ 500, 2500, 5000, 10000 }) do
         BenchUnmaker(entries)
     end

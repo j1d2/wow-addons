@@ -50,6 +50,7 @@ function Settings.BuildPanel()
     local historyHint = U.Cell(ui.settingsPanel, "GameFontDisableSmall", "LEFT")
     historyHint:SetPoint("TOPLEFT", historyLabel, "BOTTOMLEFT", 0, -14)
     historyHint:SetPoint("RIGHT", ui.settingsPanel, "RIGHT", -16, 0)
-    historyHint:SetText("Longer history makes a bigger saved file. A shorter one drops older days right away.")
-    ui.settingsPanel.historyDropdown = history
+    historyHint:SetText("Longer history uses more memory and makes a bigger saved file: 60 days takes about"
+        .. " three times as much as 14. A shorter one drops older days right away.")
+    ui.settingsPanel.historyDropdown, ui.settingsPanel.historyHint = history, historyHint
 end

@@ -4,7 +4,7 @@ Price history for one auction house.
 Pure data. No frames, no queries, and no seller names. The scan
 code hands in item id, stack size, and buyout. This file keeps the
 lowest price per item, one summary per calendar day for the last
-14 or 30 days (low, high, scan count, rounded average and spread), each item's
+14, 30 or 60 days (low, high, scan count, rounded average and spread), each item's
 last 30 scans, and works out
 the stats the tooltip and window show: average, range and standard
 deviation over the last 1, 3, 7 and 14 days.
@@ -43,11 +43,15 @@ PriceLedger.SCAN_INTERVAL = 15 * 60
 -- Days of summaries kept per item, today included. Set from the saved history length by EnsureDB
 -- and SetHistoryDays; 14 until then.
 PriceLedger.DAYS_KEPT = 14
--- History lengths the Settings tab offers, in days; the first is the default. 60 waits for a
--- smaller saved format: on a busy realm it could pass the saved file's constant limit.
-PriceLedger.HISTORY_CHOICES = { 14, 30 }
+-- History lengths the Settings tab offers, in days; the first is the default. 60 became possible
+-- with version 4's rounded days (bench: 20,000 items x 60 days is 15% of the saved file's constant
+-- limit) and costs memory: about 70 MB on a 6,600-item house against 24 MB at 14 days.
+PriceLedger.HISTORY_CHOICES = { 14, 30, 60 }
 -- The chart shows at least this many days, so a new item's few bars aren't stretched wide.
 PriceLedger.CHART_MIN_DAYS = 7
+-- A price chart draws at most this many day bars (the Buy chart is 170 px wide); a longer
+-- history shows 2 days per bar. The house overview shows the last this many days.
+PriceLedger.CHART_MAX_BARS = 30
 -- How many scans each item keeps for the scan chart, as long as they're inside the history length.
 PriceLedger.SCANS_KEPT = 30
 -- The price chart's views: one bar per day, or one per scan. The first is the default.
@@ -1260,11 +1264,14 @@ end
 
 --- The price chart's data: one slot per calendar day, oldest first, ending on the day of the
 -- latest scan. It starts at the oldest saved day, so it grows with the history: at least
--- CHART_MIN_DAYS slots, at most DAYS_KEPT. Reads the row's saved day summaries only.
+-- CHART_MIN_DAYS days, at most DAYS_KEPT. Past CHART_MAX_BARS days, each slot holds 2 days (the
+-- lower low and the higher high), counted back from the latest day, so the oldest slot may hold
+-- only one. Reads the row's saved day summaries only.
 -- @param days a row's day list ({ dayKey, low, high, ... } per day)
 -- @param seen when the row's latest scan was
--- @return nil without days, or { slots, top, days }: slots[i] is { dayKey, low, high }, with low
---   and high nil on a day with no scan; top is the highest price in the slots; days is #slots
+-- @return nil without days, or { slots, top, days, perBar }: slots[i] is { dayKey, low, high },
+--   dayKey the newest day in the slot, low and high nil when none of its days had a scan; top is
+--   the highest price in the slots; days is how many days the chart covers; perBar is 1 or 2
 function PriceLedger.ChartDays(days, seen)
     if type(days) ~= "table" or #days == 0 or type(seen) ~= "number" then
         return nil
@@ -1288,14 +1295,19 @@ function PriceLedger.ChartDays(days, seen)
         end
     end
     count = math.min(count, #keys)
-    local chart = { slots = {}, top = 0, days = count }
-    for back = count - 1, 0, -1 do
-        local key = keys[back + 1]
-        local day = byKey[key]
-        chart.slots[#chart.slots + 1] = { dayKey = key, low = day and day[2], high = day and day[3] }
-        if day then
-            chart.top = math.max(chart.top, day[3])
+    local perBar = math.ceil(count / PriceLedger.CHART_MAX_BARS)
+    local chart = { slots = {}, top = 0, days = count, perBar = perBar }
+    for bar = math.ceil(count / perBar) - 1, 0, -1 do
+        local slot = { dayKey = keys[bar * perBar + 1] }
+        for back = bar * perBar, math.min(count, (bar + 1) * perBar) - 1 do
+            local day = byKey[keys[back + 1]]
+            if day then
+                slot.low = math.min(slot.low or day[2], day[2])
+                slot.high = math.max(slot.high or day[3], day[3])
+                chart.top = math.max(chart.top, day[3])
+            end
         end
+        chart.slots[#chart.slots + 1] = slot
     end
     return chart
 end
@@ -1433,7 +1445,8 @@ end
 --- The house overview: how many items each day's scans saw, with the day's totals, and a
 -- straight-line fit through the days that had scans. Reads saved data only.
 -- One slot per calendar day, oldest first, ending on the day of the house's last scan; it starts
--- at the oldest day with a scan, with at least CHART_MIN_DAYS slots and at most DAYS_KEPT.
+-- at the oldest day with a scan, with at least CHART_MIN_DAYS slots and at most DAYS_KEPT or
+-- CHART_MAX_BARS, whichever is fewer (a 60-day history shows its last 30 days here).
 -- @param house a house table, or nil
 -- @return nil before any scan, or a table:
 --   slots[i] = { dayKey, items, listings, units, value }; items is nil on a day with no scan,
@@ -1461,7 +1474,7 @@ function PriceLedger.HouseOverview(house)
     end
 
     local keys = {}
-    for back = 0, PriceLedger.DAYS_KEPT - 1 do
+    for back = 0, math.min(PriceLedger.DAYS_KEPT, PriceLedger.CHART_MAX_BARS) - 1 do
         keys[back + 1] = PriceLedger.DayKey(house.scannedAt - back * SECONDS_PER_DAY)
     end
     local count = PriceLedger.CHART_MIN_DAYS
