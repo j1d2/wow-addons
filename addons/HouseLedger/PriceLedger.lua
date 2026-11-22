@@ -256,7 +256,7 @@ end
 -- otherwise. A version 3 day saved exact sums; for 2 or more scans the sum is always above the
 -- day's high (it holds the high plus at least one more price), while an average never is, so
 -- the day itself says which it holds and converting twice changes nothing. One scan has no
--- spread.
+-- spread. Older versions read the averages as sums, so going back after this isn't supported.
 -- @param day a day with numeric day key, low, high and scan count
 local function UpgradeDay(day)
     local low, high, scans = day[2], day[3], day[4]
