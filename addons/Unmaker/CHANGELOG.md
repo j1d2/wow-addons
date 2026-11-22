@@ -7,6 +7,7 @@ All notable changes to Unmaker. The format follows [Keep a Changelog](https://ke
 ### Added
 
 - `/um`, a short way to type `/unmaker`.
+- A **Kept** tab: every item you've unchecked so Unmaker keeps it, whether it's in your bags or not. **Forget** puts one back, checked again unless a setting keeps it. Items you kept before this update show once the game has loaded them.
 - **History length** on the Settings tab: keep 500, 1,000, 5,000 or 10,000 disenchants in the History tab. A shorter one drops the oldest right away. The Stats totals count every disenchant either way.
 
 ### Changed

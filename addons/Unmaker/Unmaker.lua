@@ -94,6 +94,11 @@ local historyReverse = false -- a second click on the same heading reverses its 
 local historyWho -- the character the History tab shows (its key), or nil for all characters
 local historyHeadings = {}
 local historyList = {}
+-- The Kept tab: its panel, title, empty text and row frames, the rows it lists, the scroll offset,
+-- and whether a row still waits for the game to load its item.
+local kept = { rowFrames = {}, list = {}, offset = 0, pending = false }
+-- The game's question-mark icon, for a kept item it hasn't loaded yet.
+local UNKNOWN_ICON = 134400
 local selectedButton, nextButton
 local rowFrames = {}
 local settingBoxes = {}
@@ -344,6 +349,39 @@ local function RenderHistory()
     end
 end
 
+--- Fill the Kept tab: every kept item, A to Z, whether it's in the bags now, each with Forget.
+-- Items kept before their looks were saved ask the game, which may still be loading them.
+local function RenderKept()
+    if not built then
+        return
+    end
+    local inBags = {}
+    for _, item in ipairs(ScanBags()) do
+        inBags[item.itemID] = true
+    end
+    kept.list = R.KeptRows(db, inBags, function(itemID)
+        local name, link, quality, level, _, _, _, _, _, icon = C_Item.GetItemInfo(itemID)
+        return name, link, quality, level, icon
+    end)
+    kept.offset = math.max(0, math.min(kept.offset, #kept.list - ROW_COUNT))
+    kept.pending = false
+    for index, rowFrame in ipairs(kept.rowFrames) do
+        local row = kept.list[kept.offset + index]
+        rowFrame.row = row
+        if row then
+            kept.pending = kept.pending or row.pending == true
+            rowFrame.icon:SetTexture(row.icon or UNKNOWN_ICON)
+            rowFrame.itemText:SetText(row.link or row.name)
+            rowFrame.bagText:SetText(row.inBags and "In bags" or "")
+            rowFrame:Show()
+        else
+            rowFrame:Hide()
+        end
+    end
+    kept.title:SetText("Kept items (" .. #kept.list .. ")")
+    kept.empty:SetShown(#kept.list == 0)
+end
+
 --- Read the bags again and redraw. The selection survives if its item is still in its slot.
 local function Refresh()
     if not db then
@@ -360,6 +398,9 @@ local function Refresh()
     selected = keep
     offset = math.max(0, math.min(offset, #rows - ROW_COUNT))
     Render()
+    if currentTab == 4 then
+        RenderKept()
+    end
 end
 
 --- Clear a cast button, so a later click can't fire on an old slot. Out of combat only.
@@ -453,7 +494,7 @@ local function Toggle()
     SetShown(not (built and frame:IsShown()))
 end
 
---- Switch between the Items tab (1) and the Settings tab (2).
+--- Switch tabs: Items (1), Stats (2), History (3), Kept (4) or Settings (5).
 -- @param id tab number
 local function SelectTab(id)
     if Locked(itemsPanel) then
@@ -464,11 +505,14 @@ local function SelectTab(id)
     itemsPanel:SetShown(id == 1)
     statsPanel:SetShown(id == 2)
     historyPanel:SetShown(id == 3)
-    settingsPanel:SetShown(id == 4)
+    kept.panel:SetShown(id == 4)
+    settingsPanel:SetShown(id == 5)
     if id == 2 then
         RenderStats()
     elseif id == 3 then
         RenderHistory()
+    elseif id == 4 then
+        RenderKept()
     end
 end
 
@@ -736,6 +780,80 @@ local function BuildHistory()
     historyEmpty:SetPoint("TOPLEFT", historyPanel, "TOPLEFT", 0, -(FILTER_HEIGHT + 24))
     historyEmpty:SetText("Nothing unmade yet. Disenchant something on the Items tab.")
     historyPanel:Hide()
+end
+
+--- Build the Kept tab: a title with the count, one row per kept item (icon, name, "In bags",
+-- Forget), scrolled with the mouse wheel, and what Forget does.
+local function BuildKept()
+    kept.panel = CreateFrame("Frame", nil, frame)
+    kept.panel:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -LIST_TOP)
+    kept.panel:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -16, BUTTON_AREA)
+    kept.panel:EnableMouseWheel(true)
+    kept.panel:SetScript("OnMouseWheel", function(_, delta)
+        kept.offset = math.max(0, math.min(kept.offset - delta, #kept.list - ROW_COUNT))
+        RenderKept()
+    end)
+    kept.title = kept.panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    kept.title:SetPoint("TOPLEFT", kept.panel, "TOPLEFT", 4, -4)
+    kept.title:SetText("Kept items (0)")
+    for index = 1, ROW_COUNT do
+        local rowFrame = CreateFrame("Button", nil, kept.panel)
+        rowFrame.keptRow = true
+        rowFrame:SetSize(WIDTH - 40, ROW_HEIGHT)
+        rowFrame:SetPoint("TOPLEFT", kept.panel, "TOPLEFT", 4, -(FILTER_HEIGHT + (index - 1) * ROW_HEIGHT))
+        rowFrame.icon = rowFrame:CreateTexture(nil, "ARTWORK")
+        rowFrame.icon:SetSize(ROW_HEIGHT - 4, ROW_HEIGHT - 4)
+        rowFrame.icon:SetPoint("LEFT", rowFrame, "LEFT", 0, 0)
+        rowFrame.itemText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+        rowFrame.itemText:SetPoint("LEFT", rowFrame.icon, "RIGHT", 6, 0)
+        rowFrame.itemText:SetPoint("RIGHT", rowFrame, "RIGHT", -160, 0)
+        rowFrame.itemText:SetJustifyH("LEFT")
+        rowFrame.itemText:SetWordWrap(false)
+        rowFrame.bagText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        rowFrame.bagText:SetPoint("RIGHT", rowFrame, "RIGHT", -84, 0)
+        rowFrame.bagText:SetWidth(70)
+        rowFrame.bagText:SetJustifyH("RIGHT")
+        rowFrame.forget = CreateFrame("Button", nil, rowFrame, "UIPanelButtonTemplate")
+        rowFrame.forget:SetSize(72, ROW_HEIGHT - 2)
+        rowFrame.forget:SetPoint("RIGHT", rowFrame, "RIGHT", 0, 0)
+        rowFrame.forget:SetText("Forget")
+        rowFrame.forget:SetScript("OnClick", function()
+            if rowFrame.row then
+                R.Forget(db, session, rowFrame.row.itemID)
+                Refresh()
+                RenderKept()
+            end
+        end)
+        rowFrame:SetScript("OnEnter", function()
+            local row = rowFrame.row
+            if row then
+                GameTooltip:SetOwner(rowFrame, "ANCHOR_RIGHT")
+                if row.link then
+                    GameTooltip:SetHyperlink(row.link)
+                elseif GameTooltip.SetItemByID then
+                    GameTooltip:SetItemByID(row.itemID)
+                end
+                GameTooltip:Show()
+            end
+        end)
+        rowFrame:SetScript("OnLeave", function()
+            GameTooltip:Hide()
+        end)
+        kept.rowFrames[index] = rowFrame
+    end
+    kept.empty = kept.panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    kept.empty:SetPoint("TOPLEFT", kept.panel, "TOPLEFT", 4, -(FILTER_HEIGHT + 4))
+    kept.empty:SetPoint("RIGHT", kept.panel, "RIGHT", -4, 0)
+    kept.empty:SetJustifyH("LEFT")
+    kept.empty:SetText("Nothing kept. Uncheck an item on the Items tab and Unmaker keeps it: it starts"
+        .. " unchecked from then on.")
+    kept.empty:Hide()
+    local hint = kept.panel:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    hint:SetPoint("BOTTOMLEFT", kept.panel, "BOTTOMLEFT", 4, 4)
+    hint:SetPoint("RIGHT", kept.panel, "RIGHT", -4, 0)
+    hint:SetJustifyH("LEFT")
+    hint:SetText("Forget puts an item back: it starts checked again, unless a setting keeps it (like Keep epics).")
+    kept.panel:Hide()
 end
 
 --- Shows or hides the Unmaker buttons above the bags, as the "bagButton" setting says.
@@ -1036,12 +1154,14 @@ local function BuildFrame()
 
     BuildStats()
     BuildHistory()
+    BuildKept()
     BuildSettings()
     BuildTab(1, "Items"):SetPoint("TOPLEFT", frame, "BOTTOMLEFT", 12, 2)
     BuildTab(2, "Stats"):SetPoint("LEFT", _G.UnmakerFrameTab1, "RIGHT", -14, 0)
     BuildTab(3, "History"):SetPoint("LEFT", _G.UnmakerFrameTab2, "RIGHT", -14, 0)
-    BuildTab(4, "Settings"):SetPoint("LEFT", _G.UnmakerFrameTab3, "RIGHT", -14, 0)
-    PanelTemplates_SetNumTabs(frame, 4)
+    BuildTab(4, "Kept"):SetPoint("LEFT", _G.UnmakerFrameTab3, "RIGHT", -14, 0)
+    BuildTab(5, "Settings"):SetPoint("LEFT", _G.UnmakerFrameTab4, "RIGHT", -14, 0)
+    PanelTemplates_SetNumTabs(frame, 5)
     PanelTemplates_SetTab(frame, 1)
 
     AddBagButton(_G.ContainerFrameCombinedBags)
@@ -1153,6 +1273,14 @@ function handlers.ADDON_LOADED(name)
     if type(combined) == "table" and type(combined.HookScript) == "function" then
         combined:HookScript("OnShow", OnBagOpened)
         combined:HookScript("OnHide", OnBagClosed)
+    end
+end
+
+--- The game loaded an item's data: a Kept row still showing "Item <id>" can show its name now.
+-- Only while the Kept tab waits on one, as this event comes often.
+function handlers.GET_ITEM_INFO_RECEIVED()
+    if currentTab == 4 and kept.pending then
+        RenderKept()
     end
 end
 

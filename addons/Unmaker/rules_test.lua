@@ -234,6 +234,54 @@ do
         and not R.ViewFiltered({ sortKey = "name" }) and R.ViewFiltered({ maxQuality = 2 }) and R.ViewFiltered({ minLevel = 1 }))
 end
 
+-- The Kept tab: what was unchecked, its saved look, and forgetting it
+do
+    local db = R.EnsureDB(nil)
+    local session = R.NewSession()
+    local vest = Item({ itemID = 100, name = "Green Vest", quality = 2, level = 20, icon = 7 })
+    R.SetChecked(db, session, vest, false)
+    Check("unchecking keeps the item and saves how it looks", db.kept[100] == true and db.keptInfo[100].name == "Green Vest"
+        and db.keptInfo[100].quality == 2 and db.keptInfo[100].level == 20 and db.keptInfo[100].icon == 7
+        and db.keptInfo[100].link == vest.link)
+    R.SetChecked(db, session, vest, true)
+    Check("checking it again forgets both", db.kept[100] == nil and db.keptInfo[100] == nil)
+
+    R.SetChecked(db, session, vest, false)
+    R.SetChecked(db, session, Item({ itemID = 200, name = "Amber Ring", link = "|Hitem:200|h[Amber Ring]|h" }), false)
+    db.kept[300] = true -- kept before looks were saved
+    db.kept[400] = true -- and the game hasn't loaded it yet
+    local lookups = {}
+    local function Lookup(itemID)
+        lookups[#lookups + 1] = itemID
+        if itemID == 300 then
+            return "Old Cloak", "|Hitem:300|h[Old Cloak]|h", 3, 25, 9
+        end
+    end
+    local rows = R.KeptRows(db, { [200] = true }, Lookup)
+    Check("the Kept tab lists every kept item, A to Z, unknown ones last", #rows == 4 and rows[1].name == "Amber Ring"
+        and rows[2].name == "Green Vest" and rows[3].name == "Old Cloak" and rows[4].itemID == 400)
+    Check("it says which are in the bags now", rows[1].inBags == true and rows[2].inBags == false)
+    Check("an item kept before looks were saved asks the game", rows[3].quality == 3 and rows[3].level == 25
+        and rows[3].icon == 9 and rows[3].link == "|Hitem:300|h[Old Cloak]|h" and not rows[3].pending)
+    Check("only the items without saved looks are asked about", #lookups == 2)
+    Check("one the game hasn't loaded shows its number until it has", rows[4].name == "Item 400" and rows[4].pending)
+    Check("nothing kept, no rows", #R.KeptRows(R.EnsureDB(nil), {}, Lookup) == 0)
+
+    session.choice[100] = false
+    R.Forget(db, session, 100)
+    Check("Forget takes an item off the keep list and drops this session's choice", db.kept[100] == nil
+        and db.keptInfo[100] == nil and session.choice[100] == nil and R.IsChecked(vest, db, session))
+    Check("so it starts checked again, unless a setting keeps it", not R.IsChecked(Item({ itemID = 100, quality = 4 }), db, session))
+
+    db = R.EnsureDB({ kept = { [100] = true }, keptInfo = { [100] = { name = "Vest" }, [200] = { name = "Gone" },
+        [300] = "broken", bad = { name = "x" } } })
+    Check("saved looks stay only for kept items", db.keptInfo[100].name == "Vest" and db.keptInfo[200] == nil
+        and db.keptInfo.bad == nil)
+    db = R.EnsureDB({ kept = { [100] = true }, keptInfo = { [100] = { name = 5 } } })
+    Check("a damaged look is dropped", db.keptInfo[100] == nil)
+    Check("damaged saved looks become an empty list", type(R.EnsureDB({ keptInfo = "broken" }).keptInfo) == "table")
+end
+
 if failed > 0 then
     io.write(string.format("%d failed\n", failed))
     os.exit(1)

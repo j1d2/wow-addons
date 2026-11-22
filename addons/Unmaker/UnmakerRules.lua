@@ -96,6 +96,16 @@ function R.EnsureDB(db)
             db.kept[itemID] = nil
         end
     end
+    -- How each kept item looked when it was unchecked, for the Kept tab (since 0.5.0; items kept
+    -- before that ask the game). A separate table, so db.kept stays plain true flags.
+    if type(db.keptInfo) ~= "table" then
+        db.keptInfo = {}
+    end
+    for itemID, info in pairs(db.keptInfo) do
+        if not db.kept[itemID] or type(info) ~= "table" or type(info.name) ~= "string" then
+            db.keptInfo[itemID] = nil
+        end
+    end
     return db
 end
 
@@ -174,8 +184,8 @@ function R.IsChecked(item, db, session)
 end
 
 --- Check or uncheck an item. Unchecking also saves it as kept, so it starts unchecked next
--- time; checking takes it off that list. Checking an item the settings keep (an Epic, say)
--- lasts this session only.
+-- time, with how it looks (name, link, quality, level, icon) for the Kept tab; checking takes it
+-- off that list. Checking an item the settings keep (an Epic, say) lasts this session only.
 -- @param db the saved data, changed in place
 -- @param session the session table, changed in place
 -- @param item the item table
@@ -184,9 +194,59 @@ function R.SetChecked(db, session, item, checked)
     session.choice[item.itemID] = checked
     if checked then
         db.kept[item.itemID] = nil
+        db.keptInfo[item.itemID] = nil
     else
         db.kept[item.itemID] = true
+        db.keptInfo[item.itemID] = { name = item.name, link = item.link, quality = item.quality,
+            level = item.level, icon = item.icon }
     end
+end
+
+--- Take an item off the keep list from the Kept tab, and drop this session's choice for it, so
+-- it starts checked again the next time it's in the bags (unless a setting keeps it, like
+-- Keep epics).
+-- @param db the saved data, changed in place
+-- @param session the session table, changed in place
+-- @param itemID the item's ID
+function R.Forget(db, session, itemID)
+    db.kept[itemID] = nil
+    db.keptInfo[itemID] = nil
+    session.choice[itemID] = nil
+end
+
+--- The Kept tab's rows: every kept item, A to Z by name, the ones the game hasn't loaded last.
+-- An item kept before looks were saved asks `lookup` (the game's item data).
+-- @param db the saved data
+-- @param inBags set of item IDs in the bags now, { [itemID] = true }
+-- @param lookup function(itemID) returning name, link, quality, level, icon, or nil if not loaded
+-- @return list of { itemID, name, link, quality, level, icon, inBags, pending }; pending is true
+--   while the name is only "Item <id>"
+function R.KeptRows(db, inBags, lookup)
+    local rows = {}
+    for itemID in pairs(db.kept) do
+        local row = { itemID = itemID, inBags = inBags[itemID] == true }
+        local info = db.keptInfo[itemID]
+        if info then
+            row.name, row.link, row.quality, row.level, row.icon = info.name, info.link, info.quality,
+                info.level, info.icon
+        else
+            row.name, row.link, row.quality, row.level, row.icon = lookup(itemID)
+        end
+        if type(row.name) ~= "string" then
+            row.name, row.pending = "Item " .. itemID, true
+        end
+        rows[#rows + 1] = row
+    end
+    table.sort(rows, function(a, b)
+        if (a.pending == true) ~= (b.pending == true) then
+            return not a.pending
+        end
+        if a.name ~= b.name then
+            return a.name < b.name
+        end
+        return a.itemID < b.itemID
+    end)
+    return rows
 end
 
 --- Turn the bag items into the window's rows: only items that can be disenchanted, without

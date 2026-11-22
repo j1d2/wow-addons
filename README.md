@@ -177,7 +177,7 @@ Its Buy and Sell tabs switch Blizzard's tabs too, and the reverse.
 4. **Checkboxes:** uncheck what you want to keep. Unmaker remembers.
 5. **Disenchant next:** one click disenchants the next checked item shown in the list (filters and sorting change which one is next). You can bind it to a key.
 6. **Disenchant selected:** disenchants only the row you clicked, if it's checked.
-7. **Tabs:** Items, Stats, History and Settings.
+7. **Tabs:** Items, Stats, History, Kept and Settings.
 
 **Bag window** (right):
 1. The **Unmaker** button above your bags opens and closes the window.
@@ -229,6 +229,7 @@ Its Buy and Sell tabs switch Blizzard's tabs too, and the reverse.
 - With a fast-loot addon the button may stay locked a little longer. It unlocks by itself after 10 seconds.
 - **Stats tab:** items unmade this session, today, lifetime and in your best session; counts by quality; your most-unmade item, best item and busiest day; and lifetime materials. Pick all your characters together or one of them from the dropdown at the top. A 14-day chart shows how many you unmade each day.
 - **History tab:** your last 500 disenchants (up to 10,000 from Settings), newest first, and who unmade each. Pick a character from the dropdown to see only theirs. Click **Item**, **ilvl**, **Who** or **When** to sort, and again to reverse.
+- **Kept tab:** every item you've unchecked, so Unmaker keeps it, in or out of your bags. Click **Forget** to put one back: it starts checked again, unless a setting keeps it (like Keep epics).
 - Every character can see every character's stats and the shared history. They only count disenchants done with Unmaker's buttons.
 
 ### What it does not do
