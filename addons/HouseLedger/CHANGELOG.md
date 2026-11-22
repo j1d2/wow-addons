@@ -11,7 +11,8 @@ All notable changes to HouseLedger. The format follows [Keep a Changelog](https:
 - **Price Check** scrolls with the mouse wheel through every match, and the bottom line says which ones show and how many there are ("13-24 of 57 items").
 - Click **Item**, **Price** or **Trend** in Price Check to sort; click again to reverse.
 - With Price Check open, shift-click an item in your bags or a chat link to look it up.
-- The price chart grows with your history. It starts at the first day an item was scanned, with at least 7 bars and up to 14 or 30, and its caption says how many days it shows.
+- The price chart grows with your history. It starts at the first day an item was scanned, with at least 7 bars and up to 14 or 30. Hover it to see how many days it shows.
+- **Days | Scans** in the corner of every price chart. Scans shows one bar per scan (an item's last 30, within your history length) with a little space between days, so you can see a price move during a day. Your choice is saved for every chart. Scans are saved from your first scan after updating.
 
 ### Changed
 

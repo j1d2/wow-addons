@@ -1175,6 +1175,141 @@ do
 end
 P.DAYS_KEPT = 14
 
+-- Each scan: every item keeps its last SCANS_KEPT scans as time, price pairs, oldest first
+do
+    P.DAYS_KEPT = 14
+    local db = P.EmptyDB()
+    ScanOn(db, -1, 80)
+    ScanOn(db, 0, 90)
+    local row = ScanOn(db, 0, 70, 60)
+    Check("each scan saves its time and price, oldest first", row.scans and #row.scans == 6
+        and row.scans[1] == At(-1) and row.scans[2] == 80 and row.scans[3] == At(0) and row.scans[4] == 90
+        and row.scans[5] == At(0, 60) and row.scans[6] == 70)
+
+    db = P.EmptyDB()
+    for scan = 1, P.SCANS_KEPT + 5 do
+        row = ScanOn(db, 0, 100 + scan, scan * 60)
+    end
+    Check("only the last SCANS_KEPT scans are kept", P.SCANS_KEPT == 30 and #row.scans == 2 * P.SCANS_KEPT
+        and row.scans[1] == At(0, 6 * 60) and row.scans[2] == 106
+        and row.scans[#row.scans] == 100 + P.SCANS_KEPT + 5)
+
+    db = P.EmptyDB()
+    ScanOn(db, -20, 50)
+    row = ScanOn(db, 0, 60)
+    Check("a scan older than the history length is dropped", #row.scans == 2 and row.scans[1] == At(0))
+
+    db = P.EmptyDB()
+    local best = {}
+    P.Consider(best, 2589, 1, 40)
+    P.Commit(db, "Alliance|Test", best, At(-13))
+    ScanOn(db, 0, 10)
+    local unseen = db.houses["Alliance|Test"].items[2589]
+    Check("an item still in the history keeps its scans", #unseen.scans == 2)
+    ScanOn(db, 1, 10)
+    Check("an item missing from scans has old scans dropped too", type(unseen.scans) == "table"
+        and #unseen.scans == 0)
+end
+
+do
+    P.DAYS_KEPT = 14
+    local db = P.EmptyDB()
+    P.SetHistoryDays(db, 30)
+    ScanOn(db, -20, 50)
+    local row = ScanOn(db, 0, 60)
+    Check("30 days keeps a 20-day-old scan", #row.scans == 4)
+    P.SetHistoryDays(db, 14)
+    Check("going back to 14 days trims the scans right away", #row.scans == 2 and row.scans[1] == At(0))
+end
+
+do
+    P.DAYS_KEPT = 14
+    local db = P.EmptyDB()
+    ScanOn(db, -1, 80)
+    ScanOn(db, 0, 120)
+    ScanOn(db, 0, 90, 60)
+    local info = P.Lookup(db, 4306, "Alliance|Test")
+    Check("Lookup hands out the scans", info and info.scans == db.houses["Alliance|Test"].items[4306].scans)
+    local chart = P.ChartScans(info.scans)
+    Check("the scan chart has one slot per scan, oldest first, at the right", chart and chart.count == 3
+        and #chart.slots == P.CHART_MIN_DAYS and chart.slots[5].time == At(-1) and chart.slots[5].low == 80
+        and chart.slots[5].high == 80 and chart.slots[7].time == At(0, 60) and chart.slots[7].low == 90)
+    Check("a few scans leave the first slots empty", chart.slots[1].low == nil and chart.slots[4].low == nil)
+    Check("each scan slot knows its day", chart.slots[5].dayKey == P.DayKey(At(-1))
+        and chart.slots[6].dayKey == P.DayKey(At(0)) and chart.slots[7].dayKey == P.DayKey(At(0)))
+    local many = P.EmptyDB()
+    for scan = 1, 12 do
+        ScanOn(many, 0, scan, scan * 60)
+    end
+    local full = P.ChartScans(P.Lookup(many, 4306, "Alliance|Test").scans)
+    Check("more scans than the minimum: one slot each", full.count == 12 and #full.slots == 12
+        and full.slots[12].low == 12 and full.top == 12)
+    Check("the scan chart's top is the highest price", chart.top == 120)
+    Check("no scans, no scan chart", P.ChartScans(nil) == nil and P.ChartScans({}) == nil)
+end
+
+do
+    local db = P.EnsureDB({ version = P.DB_VERSION, houses = { ["Alliance|Test"] = { items = {
+        [1] = { unit = 5, qty = 1, seen = 100, days = {}, scans = 5 },
+        [2] = { unit = 5, qty = 1, seen = 100, days = {}, scans = { 10, 20, "x", 4, 30, 40, 50 } },
+        [3] = { unit = 5, qty = 1, seen = 100, days = {} },
+    } } } })
+    local items = db.houses["Alliance|Test"].items
+    Check("a scan list that isn't a table is dropped", items[1].scans == nil)
+    Check("a damaged scan pair is dropped, the rest kept", #items[2].scans == 4 and items[2].scans[1] == 10
+        and items[2].scans[2] == 20 and items[2].scans[3] == 30 and items[2].scans[4] == 40)
+    Check("a row saved before scan lists stays without one", items[3].scans == nil)
+end
+
+do
+    P.DAYS_KEPT = 14
+    local into = { scannedAt = At(0), items = { [1] = { unit = 5, qty = 1, seen = At(0), days = {},
+        scans = { At(-2), 50, At(0), 70 } } } }
+    local from = { scannedAt = At(-1), items = {
+        [1] = { unit = 6, qty = 1, seen = At(-1), days = {}, scans = { At(-1), 60, At(0), 70 } },
+        [2] = { unit = 9, qty = 1, seen = At(-1), days = {}, scans = { At(-1), 90 } } } }
+    P.MergeHouse(into, from)
+    local scans = into.items[1].scans
+    Check("joining houses joins the scans by time, once each", #scans == 6 and scans[1] == At(-2)
+        and scans[3] == At(-1) and scans[4] == 60 and scans[5] == At(0) and scans[6] == 70)
+    Check("an item only in the joined house keeps its scans", #into.items[2].scans == 2)
+    into.items[3] = { unit = 1, qty = 1, seen = At(0), days = {} }
+    P.MergeHouse(into, { items = { [3] = { unit = 2, qty = 1, seen = At(-1), days = {}, scans = { At(-1), 2 } } } })
+    Check("a row without scans takes the other's, once", #into.items[3].scans == 2)
+
+    local bare = { scannedAt = At(-1), items = { [4] = { unit = 1, qty = 1, seen = At(-1) } } }
+    P.MergeHouse(bare, { scannedAt = At(0), daily = { { P.DayKey(At(0)), 10, 20, 300 } },
+        items = { [4] = { unit = 2, qty = 1, seen = At(0), days = { Day(P.DayKey(At(0)), 2, 2, 1) } } } })
+    Check("a house saved before daily totals takes the other's", #bare.daily == 1 and bare.daily[1][2] == 10)
+    Check("a row without days takes the other's, counted once", #bare.items[4].days == 1
+        and bare.items[4].days[1][2] == 2 and bare.items[4].days[1][4] == 1)
+end
+-- Chart view: days or scans, saved in settings
+do
+    local db = P.EnsureDB(nil)
+    Check("charts show days by default", P.ChartView(db) == "days" and P.ChartView(nil) == "days")
+    Check("scans can be picked and are saved", P.SetChartView(db, "scans") == "scans"
+        and db.settings.chartView == "scans" and P.ChartView(db) == "scans")
+    Check("an unknown view changes nothing", P.SetChartView(db, "weeks") == "scans" and P.ChartView(db) == "scans")
+    Check("days again", P.SetChartView(db, "days") == "days" and P.ChartView(db) == "days")
+    db.settings.chartView = 7
+    P.EnsureDB(db)
+    Check("a damaged view is dropped on load", db.settings.chartView == nil and P.ChartView(db) == "days")
+    db.settings.chartView = "scans"
+    P.EnsureDB(db)
+    Check("a saved view survives a load", P.ChartView(db) == "scans")
+end
+
+do
+    local chart = P.ChartScans({ At(-1), 80, At(0, 60), 90 })
+    Check("the scan span names the first and last scan", P.ScanSpanText(chart)
+        == os.date("%m/%d %H:%M", At(-1)) .. " to " .. os.date("%m/%d %H:%M", At(0, 60)))
+    Check("one scan: just its time", P.ScanSpanText(P.ChartScans({ At(0), 5 })) == os.date("%m/%d %H:%M", At(0)))
+    Check("no chart, no span", P.ScanSpanText(nil) == nil)
+end
+
+P.DAYS_KEPT = 14
+
 if failed > 0 then
     io.write(string.format("%d failed\n", failed))
     os.exit(1)

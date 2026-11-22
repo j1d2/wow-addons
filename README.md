@@ -80,7 +80,7 @@ Open the addon's CurseForge page, [HouseLedger](https://www.curseforge.com/wow/a
 3. **Columns:** click a heading to sort by it, and again to reverse. **Price** is the cheapest up right now, **Avg 7d** your saved 7-day average, and **Trend** a green arrow for cheaper than usual, red for pricier, grey "steady" about the same, ⭐ for a deal.
 4. **Scan:** saves today's prices for the whole auction house. The button counts down the 15 minutes until you can scan again.
 5. **Click a row** for its saved prices over 1, 3, 7 and 14 days.
-6. **Its chart:** each day's lowest price, today in gold, with a faint band up to that day's highest. It starts at the first day you scanned the item and grows to 14 or 30 days.
+6. **Its chart:** each day's lowest price, today in gold, with a faint band up to that day's highest. It starts at the first day you scanned the item and grows to 14 or 30 days. Click **Scans** in its corner for one bar per scan instead (the item's last 30), or **Days** to go back. Every chart remembers your choice.
 
 **House overview:** until you click a row, the space under the Buy list shows your whole auction house. It lists how many items your scans saw at the last scan and on average, the trend per day, an estimate for the next day (after 5 days of scans), and the last scan's listings, units and value. The value counts each item's units at its cheapest price, so a few listings at joke prices don't inflate it. Its chart has one bar per day (the last scan's day in gold), a white trend line, a faint band for the normal range around it, and a purple bar for the next-day estimate. Items listed per day come from the scans you've already saved; listings, units and value start with your next scan. All of it reads saved data only.
 

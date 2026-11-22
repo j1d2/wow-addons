@@ -40,6 +40,10 @@ PriceLedger.DAYS_KEPT = 14
 PriceLedger.HISTORY_CHOICES = { 14, 30 }
 -- The chart shows at least this many days, so a new item's few bars aren't stretched wide.
 PriceLedger.CHART_MIN_DAYS = 7
+-- How many scans each item keeps for the scan chart, as long as they're inside the history length.
+PriceLedger.SCANS_KEPT = 30
+-- The price chart's views: one bar per day, or one per scan. The first is the default.
+PriceLedger.CHART_VIEWS = { "days", "scans" }
 -- The house overview estimates the next day only from this many days of scans.
 PriceLedger.OVERVIEW_MIN_DAYS = 5
 -- Stats windows, in days back from the latest scan's day, that day included.
@@ -235,6 +239,39 @@ local function RepairDays(row)
     row.days = kept
 end
 
+--- Repairs a row's scan list in place, on every load: one that isn't a table is dropped, and a
+-- pair without a numeric time and price is left out. A list with nothing wrong isn't copied.
+-- @param row an item row, changed in place
+local function RepairScans(row)
+    local scans = row.scans
+    if scans == nil then
+        return
+    end
+    if type(scans) ~= "table" then
+        row.scans = nil
+        return
+    end
+    local count = #scans
+    local damaged = count % 2 == 1
+    for index = 1, count do
+        if type(scans[index]) ~= "number" then
+            damaged = true
+            break
+        end
+    end
+    if not damaged then
+        return
+    end
+    local kept = {}
+    for index = 1, count - 1, 2 do
+        if type(scans[index]) == "number" and type(scans[index + 1]) == "number" then
+            kept[#kept + 1] = scans[index]
+            kept[#kept + 1] = scans[index + 1]
+        end
+    end
+    row.scans = kept
+end
+
 --- Turns a version 1 row's list of price changes into day summaries.
 -- Version 1 moved `seen` on every scan but listed a price
 -- only when it changed, so the latest scan's day is added from the last
@@ -297,6 +334,9 @@ function PriceLedger.EnsureDB(db)
         db.settings.historyDays = nil
     end
     PriceLedger.DAYS_KEPT = db.settings.historyDays or PriceLedger.HISTORY_CHOICES[1]
+    if db.settings.chartView ~= nil and PriceLedger.ChartView(db) ~= db.settings.chartView then
+        db.settings.chartView = nil
+    end
     -- Item names and qualities are optional, saved by scans from late 2026 on, and so are the
     -- house's daily totals.
     for _, house in pairs(db.houses) do
@@ -318,6 +358,7 @@ function PriceLedger.EnsureDB(db)
             for _, row in pairs(house.items) do
                 if type(row) == "table" then
                     RepairDays(row)
+                    RepairScans(row)
                     if row.name ~= nil and type(row.name) ~= "string" then
                         row.name = nil
                     end
@@ -464,6 +505,22 @@ function PriceLedger.CoinText(copper)
     return table.concat(parts, " ")
 end
 
+--- Removes the first `drop` values of a list, moving the rest down.
+-- @param list an array; changed in place
+-- @param drop how many to remove from the front
+local function DropFirst(list, drop)
+    if drop <= 0 then
+        return
+    end
+    local count = #list
+    for index = 1, count - drop do
+        list[index] = list[index + drop]
+    end
+    for index = count - drop + 1, count do
+        list[index] = nil
+    end
+end
+
 --- Drops days before `oldest`, and the oldest days past DAYS_KEPT.
 -- @param days a row's day list, oldest first; changed in place
 -- @param oldest the first day key to keep
@@ -472,15 +529,33 @@ local function PruneDays(days, oldest)
     while drop < #days and (days[drop + 1][1] < oldest or #days - drop > PriceLedger.DAYS_KEPT) do
         drop = drop + 1
     end
-    if drop > 0 then
-        local count = #days
-        for index = 1, count - drop do
-            days[index] = days[index + drop]
+    DropFirst(days, drop)
+end
+
+--- Drops a row's scans from days before `oldest`, and the oldest scans past SCANS_KEPT. One scan
+-- saves every item with the same time, so the day key of each time is worked out once and kept
+-- in `dayKeys`, not once per item.
+-- @param scans a row's scan list (time, price, time, price, ...), oldest first; changed in place
+-- @param oldest the first day key to keep
+-- @param dayKeys time -> day key, shared by the caller across rows; filled in as needed
+local function PruneScans(scans, oldest, dayKeys)
+    local count = math.floor(#scans / 2)
+    local drop = 0
+    while drop < count do
+        if count - drop <= PriceLedger.SCANS_KEPT then
+            local time = scans[2 * drop + 1]
+            local key = dayKeys[time]
+            if key == nil then
+                key = PriceLedger.DayKey(time)
+                dayKeys[time] = key
+            end
+            if key >= oldest then
+                break
+            end
         end
-        for index = count - drop + 1, count do
-            days[index] = nil
-        end
+        drop = drop + 1
     end
+    DropFirst(scans, 2 * drop)
 end
 
 --- The first day key a scan at `now` keeps.
@@ -534,8 +609,9 @@ end
 -- @param qty how many were listed at that price
 -- @param now when the scan ran
 -- @param oldest the first day key to keep
+-- @param dayKeys the time -> day key cache for PruneScans
 -- @return the item's row
-local function RememberFrom(house, itemID, unit, qty, now, oldest)
+local function RememberFrom(house, itemID, unit, qty, now, oldest, dayKeys)
     local row = house.items[itemID]
     if type(row) ~= "table" then
         row = {}
@@ -547,6 +623,12 @@ local function RememberFrom(house, itemID, unit, qty, now, oldest)
 
     AddToDays(row.days, unit, now)
     PruneDays(row.days, oldest)
+    if type(row.scans) ~= "table" then
+        row.scans = {}
+    end
+    row.scans[#row.scans + 1] = now
+    row.scans[#row.scans + 1] = unit
+    PruneScans(row.scans, oldest, dayKeys)
 
     row.unit = unit
     row.qty = qty
@@ -554,8 +636,8 @@ local function RememberFrom(house, itemID, unit, qty, now, oldest)
     return row
 end
 
---- Saves one item's price from a scan: the latest price, and the day summary.
--- Days older than DAYS_KEPT are dropped.
+--- Saves one item's price from a scan: the latest price, the day summary and the scan.
+-- Days older than DAYS_KEPT are dropped, and scans past SCANS_KEPT or that old.
 -- @param house the house table
 -- @param itemID the item's id
 -- @param unit unit price in copper
@@ -563,13 +645,13 @@ end
 -- @param now when the scan ran
 -- @return the item's row
 function PriceLedger.Remember(house, itemID, unit, qty, now)
-    return RememberFrom(house, itemID, unit, qty, now, OldestKept(now))
+    return RememberFrom(house, itemID, unit, qty, now, OldestKept(now), {})
 end
 
 --- Saves one finished scan.
 -- Items missing from `best` stay in the house with their old price, seen
 -- time and name, so a later mouseover can still show the last known price,
--- but their days older than DAYS_KEPT are dropped like everyone else's.
+-- but their days and scans older than DAYS_KEPT are dropped like everyone else's.
 -- Also sets the house's scannedAt and the db's lastHouseKey.
 -- @param db the saved table
 -- @param houseKey key of the house that was scanned
@@ -582,11 +664,12 @@ function PriceLedger.Commit(db, houseKey, best, now, totals)
     local house = PriceLedger.EnsureHouse(db, houseKey)
     house.scannedAt = now
     local oldest = OldestKept(now)
+    local dayKeys = {}
     local saved = 0
     for itemID, listing in pairs(best) do
         local unit = PriceLedger.UnitCopper(listing.buyout, listing.count)
         if unit > 0 then
-            local row = RememberFrom(house, itemID, unit, listing.qty, now, oldest)
+            local row = RememberFrom(house, itemID, unit, listing.qty, now, oldest, dayKeys)
             -- A scan that didn't get the name keeps the one saved before.
             row.name = listing.name or row.name
             row.quality = listing.quality or row.quality
@@ -594,8 +677,13 @@ function PriceLedger.Commit(db, houseKey, best, now, totals)
         end
     end
     for _, row in pairs(house.items) do
-        if type(row) == "table" and type(row.days) == "table" and row.seen ~= now then
-            PruneDays(row.days, oldest)
+        if type(row) == "table" and row.seen ~= now then
+            if type(row.days) == "table" then
+                PruneDays(row.days, oldest)
+            end
+            if type(row.scans) == "table" then
+                PruneScans(row.scans, oldest, dayKeys)
+            end
         end
     end
     if type(totals) == "table" then
@@ -620,7 +708,10 @@ end
 -- @return a new day list
 local function MergeDays(first, second)
     local byKey, merged = {}, {}
-    for _, list in ipairs({ first, second }) do
+    -- Not ipairs: it would stop at a nil first list.
+    local lists = { first, second }
+    for which = 1, 2 do
+        local list = lists[which]
         for _, day in ipairs(type(list) == "table" and list or {}) do
             local have = byKey[day[1]]
             if have then
@@ -642,9 +733,42 @@ local function MergeDays(first, second)
     return merged
 end
 
+--- One scan list from two: each scan time once, oldest first. Neither list is changed.
+-- @param first a row's scan list (time, price, ...), or nil
+-- @param second another row's scan list, or nil
+-- @return a new scan list, or nil when neither row has one
+local function MergeScans(first, second)
+    if type(first) ~= "table" and type(second) ~= "table" then
+        return nil
+    end
+    local byTime, scans = {}, {}
+    -- Not ipairs: it would stop at a nil first list.
+    local lists = { first, second }
+    for which = 1, 2 do
+        local list = lists[which]
+        if type(list) == "table" then
+            for index = 1, #list - 1, 2 do
+                if not byTime[list[index]] then
+                    byTime[list[index]] = true
+                    scans[#scans + 1] = { list[index], list[index + 1] }
+                end
+            end
+        end
+    end
+    table.sort(scans, function(a, b)
+        return a[1] < b[1]
+    end)
+    local merged = {}
+    for _, scan in ipairs(scans) do
+        merged[#merged + 1] = scan[1]
+        merged[#merged + 1] = scan[2]
+    end
+    return merged
+end
+
 --- Moves one house's items and daily totals into another, for two houses that are the same
--- auction house saved under two keys. An item in both gets one day list (see MergeDays) and
--- its latest price, count and seen time from whichever saw it last; its name and quality from
+-- auction house saved under two keys. An item in both gets one day list (see MergeDays), one
+-- scan list (see MergeScans) and its latest price, count and seen time from whichever saw it last; its name and quality from
 -- there too, or from the other when that has none. A day in both daily lists keeps the totals
 -- of the house scanned last. Then both lists are pruned to the history length.
 -- @param into the house that stays; changed in place
@@ -664,6 +788,7 @@ function PriceLedger.MergeHouse(into, from)
                 newer, older = have, row
             end
             have.days = MergeDays(have.days, row.days)
+            have.scans = MergeScans(have.scans, row.scans)
             have.unit, have.qty, have.seen = newer.unit, newer.qty, newer.seen
             have.name = newer.name or older.name
             have.quality = newer.quality or older.quality
@@ -673,7 +798,9 @@ function PriceLedger.MergeHouse(into, from)
     local fromLater = (from.scannedAt or 0) >= (into.scannedAt or 0)
     local dailyByKey, daily = {}, {}
     local lists = fromLater and { into.daily, from.daily } or { from.daily, into.daily }
-    for _, list in ipairs(lists) do
+    -- Not ipairs: it would stop at a nil first list.
+    for which = 1, 2 do
+        local list = lists[which]
         for _, day in ipairs(type(list) == "table" and list or {}) do
             if dailyByKey[day[1]] then
                 -- The later list wins the day.
@@ -698,9 +825,13 @@ function PriceLedger.MergeHouse(into, from)
     end
     if into.scannedAt then
         local oldest = OldestKept(into.scannedAt)
+        local dayKeys = {}
         for _, row in pairs(into.items) do
             if type(row) == "table" and type(row.days) == "table" then
                 PruneDays(row.days, oldest)
+            end
+            if type(row) == "table" and type(row.scans) == "table" then
+                PruneScans(row.scans, oldest, dayKeys)
             end
         end
         PruneDays(into.daily, oldest)
@@ -779,7 +910,7 @@ function PriceLedger.IsHistoryChoice(days)
 end
 
 --- Sets how many days of prices each item keeps, and saves it. A shorter length trims every
--- item in every house right away, each house back from its own last scan.
+-- item's days and scans in every house right away, each house back from its own last scan.
 -- @param db the saved table
 -- @param days one of HISTORY_CHOICES; anything else changes nothing
 -- @return the history length now in use
@@ -795,9 +926,13 @@ function PriceLedger.SetHistoryDays(db, days)
     for _, house in pairs(type(db.houses) == "table" and db.houses or {}) do
         if type(house) == "table" and type(house.items) == "table" and type(house.scannedAt) == "number" then
             local oldest = OldestKept(house.scannedAt)
+            local dayKeys = {}
             for _, row in pairs(house.items) do
                 if type(row) == "table" and type(row.days) == "table" then
                     PruneDays(row.days, oldest)
+                end
+                if type(row) == "table" and type(row.scans) == "table" then
+                    PruneScans(row.scans, oldest, dayKeys)
                 end
             end
             if type(house.daily) == "table" then
@@ -806,6 +941,35 @@ function PriceLedger.SetHistoryDays(db, days)
         end
     end
     return days
+end
+
+--- The price chart's view, saved in settings.
+-- @param db the saved table, or nil
+-- @return one of CHART_VIEWS; the first when none is saved
+function PriceLedger.ChartView(db)
+    local saved = type(db) == "table" and type(db.settings) == "table" and db.settings.chartView
+    for _, view in ipairs(PriceLedger.CHART_VIEWS) do
+        if saved == view then
+            return view
+        end
+    end
+    return PriceLedger.CHART_VIEWS[1]
+end
+
+--- Sets the price chart's view, and saves it.
+-- @param db the saved table
+-- @param view one of CHART_VIEWS; anything else changes nothing
+-- @return the view now in use
+function PriceLedger.SetChartView(db, view)
+    for _, choice in ipairs(PriceLedger.CHART_VIEWS) do
+        if view == choice and type(db) == "table" then
+            if type(db.settings) ~= "table" then
+                db.settings = {}
+            end
+            db.settings.chartView = view
+        end
+    end
+    return PriceLedger.ChartView(db)
 end
 
 --- Rounds to the nearest whole number, halves up.
@@ -1075,6 +1239,53 @@ function PriceLedger.ChartDays(days, seen)
         end
     end
     return chart
+end
+
+--- An item's saved scans as chart slots: one per scan, oldest first, with at least
+-- CHART_MIN_DAYS slots (empty ones first) so a new item's few bars aren't drawn full width.
+-- Reads the row's scan list only.
+-- @param scans a row's scan list (time, price, time, price, ...), or nil
+-- @return nil without scans, or { slots, top, count }: a filled slot is { time, dayKey, low, high }
+--   with low and high both the scan's price, an empty one is {}; top is the highest price and
+--   count how many scans there are
+function PriceLedger.ChartScans(scans)
+    if type(scans) ~= "table" or #scans < 2 then
+        return nil
+    end
+    local count = math.floor(#scans / 2)
+    local chart = { slots = {}, top = 0, count = count }
+    for _ = count + 1, PriceLedger.CHART_MIN_DAYS do
+        chart.slots[#chart.slots + 1] = {}
+    end
+    for index = 1, 2 * count - 1, 2 do
+        local time, price = scans[index], scans[index + 1]
+        chart.slots[#chart.slots + 1] = { time = time, dayKey = PriceLedger.DayKey(time), low = price, high = price }
+        chart.top = math.max(chart.top, price)
+    end
+    return chart
+end
+
+--- When a scan chart's scans were, for its hover tip.
+-- @param chart from ChartScans, or nil
+-- @return "first to last" as month/day and time, just the time for one scan, or nil
+function PriceLedger.ScanSpanText(chart)
+    if type(chart) ~= "table" or type(chart.slots) ~= "table" then
+        return nil
+    end
+    local first, last
+    for _, slot in ipairs(chart.slots) do
+        if slot.time then
+            first = first or slot.time
+            last = slot.time
+        end
+    end
+    if first == nil then
+        return nil
+    end
+    if first == last then
+        return FormatStamp(first)
+    end
+    return FormatStamp(first) .. " to " .. FormatStamp(last)
 end
 
 --- A whole number with commas between thousands, like 1,234,567.
@@ -1373,7 +1584,8 @@ end
 -- @param db the saved table
 -- @param itemID the item's id
 -- @param homeKey the house to read
--- @return nil when that house has no price for it, or { unit, qty, seen, scannedAt, stats, days }
+-- @return nil when that house has no price for it, or { unit, qty, seen, scannedAt, stats, days,
+--   scans }
 function PriceLedger.Lookup(db, itemID, homeKey)
     if type(db) ~= "table" or type(db.houses) ~= "table" then
         return nil
@@ -1407,6 +1619,7 @@ function PriceLedger.Lookup(db, itemID, homeKey)
             scannedAt = house.scannedAt,
             stats = PriceLedger.Stats(row),
             days = row.days,
+            scans = row.scans,
         }
     end
     return nil

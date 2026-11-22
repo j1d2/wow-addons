@@ -2364,6 +2364,60 @@ do
     HouseLedgerPrice.SetHistoryDays(HouseLedgerDB, 14)
 end
 
+do
+    -- Days | Scans: one saved choice for every price chart; the scan view has a bar per scan.
+    Setup({ screenRight = 1400 })
+    Load()
+    SaveDailyHistory(3)
+    local P = HouseLedgerPrice
+    local best = {}
+    P.Consider(best, 4306, 1, 50)
+    P.Commit(HouseLedgerDB, "Alliance|TestRealm", best, world.now - 24 * 60 * 60 + 60)
+    OpenHouse()
+    world.browseResults = BrowseResults(4306, 4306, 70)
+    Fire("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
+    local row = ResultRows()[1]
+    row:GetScript("OnClick")(row)
+    local chart = MainFrame().buyPanel.chart
+    local queries = #world.browseQueries
+    Check("charts open on days, its word bright", chart.caption.text == "Daily low, 7 days"
+        and chart.viewWords.days.label.color[1] == 1 and chart.viewWords.scans.label.color[1] < 1)
+    chart:GetScript("OnEnter")(chart)
+    Check("hovering the chart says what it shows", _G.GameTooltip.text == "Daily low, 7 days")
+    chart.viewWords.scans:GetScript("OnClick")(chart.viewWords.scans)
+    local heights = BarHeights(chart)
+    Check("Scans redraws the chart at once, a bar per scan", chart.shown and chart.slotCount == 7
+        and chart.caption.text == "Each scan, 4 scans" and heights[4] and heights[7] and not heights[3])
+    Check("the scan view is saved and its word bright", HouseLedgerDB.settings.chartView == "scans"
+        and chart.viewWords.scans.label.color[1] == 1 and chart.viewWords.days.label.color[1] < 1)
+    Check("the cheaper scan has the shorter bar", heights[7] < heights[6] and heights[6] == chart.barArea)
+    local x = {}
+    for index = 5, 7 do
+        x[index] = chart.bars[index].points[1][4]
+    end
+    Check("a new day starts after a little gap", x[6] - x[5] > x[7] - x[6])
+    Check("the latest scan is gold", chart.bars[7].colorTexture[1] == 1 and chart.bars[6].colorTexture[1] < 1)
+    Check("the hover tip follows the view", _G.GameTooltip.text == "Each scan, 4 scans")
+    Check("switching sends nothing", #world.browseQueries == queries)
+
+    Click("Sell")
+    Drop({ itemID = 4306, commodity = true })
+    world.commodityResults = { { itemID = 4306, unitPrice = 120, quantity = 2, owners = {} } }
+    Fire("COMMODITY_SEARCH_RESULTS_UPDATED", 4306)
+    local sellChart = MainFrame().sellPanel.chart
+    Check("the Sell chart uses the same view", sellChart.shown and sellChart.caption.text == "Each scan, 4 scans")
+
+    HouseLedgerDB.houses["Alliance|TestRealm"].items[4306].scans = nil
+    Click("Reset")
+    Drop({ itemID = 4306, commodity = true })
+    Fire("COMMODITY_SEARCH_RESULTS_UPDATED", 4306)
+    Check("an item saved before scans says when they start", sellChart.shown and sellChart.emptyText.shown
+        and sellChart.caption.text == "Each scan: none saved yet" and not BarHeights(sellChart)[1])
+    sellChart.viewWords.days:GetScript("OnClick")(sellChart.viewWords.days)
+    Check("Days brings its daily bars back", sellChart.shown and not sellChart.emptyText.shown
+        and sellChart.caption.text == "Daily low, 7 days" and HouseLedgerDB.settings.chartView == "days")
+end
+
 -- ---------------------------------------------------------------------
 -- Price Check: saved prices anywhere, no auction house needed
 -- ---------------------------------------------------------------------

@@ -1,7 +1,8 @@
 --[[
-The price chart (one bar per day's lowest price with a faint band up to its highest), used by
-Buy, Market, Sell and Price Check, and the house overview chart (items listed a day, with a trend
-line) on Buy. Both draw saved data only.
+The price chart, used by Buy, Market, Sell and Price Check: one bar per day's lowest price with a
+faint band up to its highest, or one bar per saved scan, picked with the Days | Scans words in its
+corner (one saved choice for every chart). And the house overview chart (items listed a day, with
+a trend line) on Buy. Both draw saved data only.
 ]]
 
 local _, ns = ...
@@ -12,37 +13,53 @@ local CHART_BAR_COLOR = { 0.35, 0.6, 1, 0.9 }
 local CHART_LATEST_COLOR = { 1, 0.82, 0, 1 }
 local CHART_RANGE_COLOR = { 0.35, 0.6, 1, 0.3 }
 
---- Draws an item's saved days on a chart: one bar per day's low, a faint band up to its high,
--- the latest day in gold. The chart has one slot per day from the item's oldest saved day (at
--- least 7, at most the history length), so it grows as the history does. Hides the chart when
--- there is nothing to draw. Saved data only.
+-- Extra space between two days' scans on the scan view, in pixels.
+local CHART_DAY_GAP = 3
+-- The view words: the one in use bright, the other grey.
+local VIEW_ON_COLOR = { 1, 1, 1 }
+local VIEW_OFF_COLOR = { 0.5, 0.5, 0.5 }
+-- What each view word says, by view.
+local VIEW_WORDS = { days = "Days", scans = "Scans" }
+
+-- The price charts Chart.Build made, so a view change redraws every one on screen.
+Chart.built = {}
+
+--- Draws bars from chart slots: one bar per filled slot's low, a faint band up to its high, the
+-- last slot in gold. A slot that starts a new day gets CHART_DAY_GAP more space before it when
+-- `dayGaps` is set.
 -- @param chart a chart from Chart.Build
--- @param info the item's saved prices from PriceLedger.Lookup, or nil
-function Chart.Show(chart, info)
-    local data = info and Price.ChartDays(info.days, info.seen)
-    if data == nil or data.top <= 0 then
-        chart:Hide()
-        return
+-- @param slots the slots, oldest first; a slot without `low` is left empty
+-- @param top the highest price, the top of the bars
+-- @param dayGaps true to space out days (the scan view)
+local function DrawBars(chart, slots, top, dayGaps)
+    -- Which slots start a new day, and how many gaps come before each slot.
+    local gapsBefore, gaps, lastDay = {}, 0, nil
+    for index, slot in ipairs(slots) do
+        if dayGaps and slot.dayKey and lastDay and slot.dayKey ~= lastDay then
+            gaps = gaps + 1
+        end
+        lastDay = slot.dayKey or lastDay
+        gapsBefore[index] = gaps
     end
-    local slotWidth = chart.chartWidth / #data.slots
+    local slotWidth = (chart.chartWidth - gaps * CHART_DAY_GAP) / #slots
     local barWidth = math.max(2, math.floor(slotWidth) - 2)
-    for index = #data.slots + 1, #chart.bars do
+    for index = #slots + 1, #chart.bars do
         chart.bars[index]:Hide()
         chart.bands[index]:Hide()
     end
-    chart.slotCount = #data.slots
-    chart.caption:SetText("Daily low, " .. #data.slots .. " days")
-    for index, slot in ipairs(data.slots) do
+    chart.slotCount = #slots
+    for index, slot in ipairs(slots) do
         local bar, band = chart.bars[index], chart.bands[index]
         bar:ClearAllPoints()
-        bar:SetPoint("BOTTOMLEFT", chart, "BOTTOMLEFT", math.floor((index - 1) * slotWidth) + 1, 2)
+        bar:SetPoint("BOTTOMLEFT", chart, "BOTTOMLEFT",
+            math.floor((index - 1) * slotWidth + gapsBefore[index] * CHART_DAY_GAP) + 1, 2)
         bar:SetWidth(barWidth)
         band:SetWidth(barWidth)
         if slot.low then
-            local low = math.max(1, math.floor(slot.low / data.top * chart.barArea + 0.5))
-            local high = math.floor(slot.high / data.top * chart.barArea + 0.5)
+            local low = math.max(1, math.floor(slot.low / top * chart.barArea + 0.5))
+            local high = math.floor(slot.high / top * chart.barArea + 0.5)
             bar:SetHeight(low)
-            local color = index == #data.slots and CHART_LATEST_COLOR or CHART_BAR_COLOR
+            local color = index == #slots and CHART_LATEST_COLOR or CHART_BAR_COLOR
             bar:SetColorTexture(color[1], color[2], color[3], color[4])
             bar:Show()
             if high > low then
@@ -57,17 +74,122 @@ function Chart.Show(chart, info)
             band:Hide()
         end
     end
+end
+
+--- Shows which view is in use: its word bright, the other grey.
+-- @param chart a chart from Chart.Build
+-- @param view one of PriceLedger.CHART_VIEWS
+local function MarkView(chart, view)
+    for name, word in pairs(chart.viewWords) do
+        local color = name == view and VIEW_ON_COLOR or VIEW_OFF_COLOR
+        word.label:SetTextColor(color[1], color[2], color[3])
+    end
+end
+
+--- Draws an item's saved prices on a chart, in the saved view.
+-- Days: one bar per day's low with a faint band up to its high, one slot per day from the item's
+-- oldest saved day (at least 7, at most the history length), so it grows as the history does.
+-- Scans: one bar per saved scan (at most PriceLedger.SCANS_KEPT), with a little space between
+-- days; an item saved before scans were kept says when they start instead.
+-- The latest bar is gold. Hides the chart when there is no item. Saved data only.
+-- @param chart a chart from Chart.Build
+-- @param info the item's saved prices from PriceLedger.Lookup, or nil
+function Chart.Show(chart, info)
+    chart.info = info
+    local view = Price.ChartView(HouseLedgerDB)
+    MarkView(chart, view)
+    chart.span = nil
+    chart.emptyText:Hide()
+    if view == "scans" and info ~= nil then
+        local data = Price.ChartScans(info.scans)
+        if data == nil or data.top <= 0 then
+            DrawBars(chart, {}, 1, false)
+            chart.topText:SetText("")
+            chart.caption:SetText("Each scan: none saved yet")
+            chart.emptyText:Show()
+            chart:Show()
+            return
+        end
+        DrawBars(chart, data.slots, data.top, true)
+        chart.caption:SetText("Each scan, " .. data.count .. (data.count == 1 and " scan" or " scans"))
+        chart.span = Price.ScanSpanText(data)
+        chart.topText:SetText(U.CopperToText(data.top))
+        chart:Show()
+        return
+    end
+    local data = info and Price.ChartDays(info.days, info.seen)
+    if data == nil or data.top <= 0 then
+        chart:Hide()
+        return
+    end
+    DrawBars(chart, data.slots, data.top, false)
+    chart.caption:SetText("Daily low, " .. #data.slots .. " days")
     chart.topText:SetText(U.CopperToText(data.top))
     chart:Show()
 end
 
+--- Switches every price chart to a view and saves it; the charts on screen redraw at once.
+-- @param view one of PriceLedger.CHART_VIEWS
+function Chart.SetView(view)
+    Price.SetChartView(HouseLedgerDB, view)
+    for _, chart in ipairs(Chart.built) do
+        if chart:IsShown() then
+            Chart.Show(chart, chart.info)
+        end
+    end
+end
+
+--- Hover tip for a price chart: what it shows and how to switch.
+-- @param chart a chart from Chart.Build
+local function ShowChartTip(chart)
+    if GameTooltip == nil then
+        return
+    end
+    GameTooltip:SetOwner(chart, "ANCHOR_TOP")
+    GameTooltip:SetText(chart.caption:GetText() or "", 1, 1, 1)
+    if chart.span then
+        GameTooltip:AddLine(chart.span, 0.8, 0.8, 0.8)
+    end
+    GameTooltip:AddLine("Click Days or Scans to switch.", 0.8, 0.8, 0.8)
+    GameTooltip:Show()
+end
+
+--- Hides the chart's hover tip.
+local function HideChartTip()
+    if GameTooltip then
+        GameTooltip:Hide()
+    end
+end
+
+--- Makes one view word: a small button that switches every price chart to its view.
+-- @param chart the chart it sits on
+-- @param view one of PriceLedger.CHART_VIEWS
+-- @return the button, with its label
+local function ViewWord(chart, view)
+    local word = CreateFrame("Button", nil, chart)
+    word.label = U.Cell(word, "GameFontHighlightSmall", "RIGHT")
+    word.label:SetText(VIEW_WORDS[view])
+    word.label:SetPoint("RIGHT", word, "RIGHT", 0, 0)
+    word:SetSize(math.max(20, math.ceil(word.label:GetStringWidth() or 0) + 2), 14)
+    word:SetScript("OnClick", function()
+        Chart.SetView(view)
+        ShowChartTip(chart)
+    end)
+    word:SetScript("OnEnter", function()
+        ShowChartTip(chart)
+    end)
+    word:SetScript("OnLeave", HideChartTip)
+    return word
+end
+
 --- Makes a price chart, hidden until Chart.Show fills it: a dark box, the top price in its
--- corner, and two textures per day slot (the low's bar and the faint range band), enough for the
--- longest history. Chart.Show places as many as the item's chart has days.
+-- top-left corner, the Days | Scans words in its top-right, and two textures per slot (the
+-- low's bar and the faint range band), enough for the longest history and for SCANS_KEPT. What
+-- it shows ("Daily low, 14 days") is in its hover tip. Chart.Show places as many as it needs.
 -- @param parent the panel it belongs to
 -- @param width the chart's width
 -- @param height the chart's height
--- @return the chart frame, with bars, bands, barArea and topText
+-- @return the chart frame, with bars, bands, barArea, topText, caption, viewWords and emptyText
 function Chart.Build(parent, width, height)
     local chart = CreateFrame("Frame", nil, parent)
     chart:SetSize(width, height)
@@ -76,22 +198,37 @@ function Chart.Build(parent, width, height)
     background:SetColorTexture(0, 0, 0, 0.3)
     chart.topText = U.Cell(chart, "GameFontHighlightSmall", "LEFT")
     chart.topText:SetPoint("TOPLEFT", chart, "TOPLEFT", 3, -2)
-    local caption = U.Cell(chart, "GameFontDisableSmall", "RIGHT")
-    caption:SetPoint("TOPRIGHT", chart, "TOPRIGHT", -3, -2)
-    chart.caption = caption
+    -- What the chart shows; kept for the hover tip, not drawn (the view words use that corner).
+    chart.caption = U.Cell(chart, "GameFontDisableSmall", "RIGHT")
+    chart.caption:Hide()
+    chart.viewWords = { days = ViewWord(chart, "days"), scans = ViewWord(chart, "scans") }
+    chart.viewWords.scans:SetPoint("TOPRIGHT", chart, "TOPRIGHT", -3, -2)
+    local bar = U.Cell(chart, "GameFontDisableSmall", "RIGHT")
+    bar:SetText("|")
+    bar:SetPoint("RIGHT", chart.viewWords.scans, "LEFT", -3, 0)
+    chart.viewWords.days:SetPoint("RIGHT", bar, "LEFT", -3, 0)
+    chart.emptyText = U.Cell(chart, "GameFontDisableSmall", "LEFT")
+    chart.emptyText:SetPoint("LEFT", chart, "LEFT", 6, -6)
+    chart.emptyText:SetPoint("RIGHT", chart, "RIGHT", -6, -6)
+    chart.emptyText:SetText("Scans show from your next scan.")
+    chart.emptyText:Hide()
+    chart:EnableMouse(true)
+    chart:SetScript("OnEnter", ShowChartTip)
+    chart:SetScript("OnLeave", HideChartTip)
     -- Room under the top line for the bars.
     chart.barArea = height - 18
     chart.chartWidth = width
     chart.bars, chart.bands = {}, {}
-    local longest = Price.HISTORY_CHOICES[#Price.HISTORY_CHOICES]
-    for index = 1, longest do
-        local bar = chart:CreateTexture(nil, "ARTWORK")
-        bar:Hide()
+    local slots = math.max(Price.HISTORY_CHOICES[#Price.HISTORY_CHOICES], Price.SCANS_KEPT)
+    for index = 1, slots do
+        local barTexture = chart:CreateTexture(nil, "ARTWORK")
+        barTexture:Hide()
         local band = chart:CreateTexture(nil, "ARTWORK")
         band:SetColorTexture(CHART_RANGE_COLOR[1], CHART_RANGE_COLOR[2], CHART_RANGE_COLOR[3], CHART_RANGE_COLOR[4])
         band:Hide()
-        chart.bars[index], chart.bands[index] = bar, band
+        chart.bars[index], chart.bands[index] = barTexture, band
     end
+    Chart.built[#Chart.built + 1] = chart
     chart:Hide()
     return chart
 end
