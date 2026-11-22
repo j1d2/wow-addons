@@ -919,6 +919,46 @@ do
     Check("the remembered realm is the named one", HouseLedgerDB.homeRealm == "TestRealm")
 end
 
+do
+    -- At a goblin auction house the window reads the goblin house; tooltips keep the player's
+    -- own faction's prices, there and everywhere else.
+    local day = tonumber(os.date("%Y%m%d", 1000))
+    local saved = {
+        version = 3,
+        houses = { ["Alliance|TestRealm"] = { scannedAt = 1000, items = {
+            [4306] = { unit = 50, qty = 1, seen = 1000, days = { { day, 50, 50, 1, 50, 2500 } } } } } },
+        lastHouseKey = "Alliance|TestRealm",
+    }
+    Setup({ listings = { Listing(4306, 1, 90) }, npcSide = "Neutral", savedDB = saved })
+    Load()
+    OpenHouse()
+    Click("Scan")
+    Fire("REPLICATE_ITEM_LIST_UPDATE")
+    RunTimers()
+    Check("a goblin scan saves its own house", HouseLedgerDB.houses["Neutral|TestRealm"].items[4306].unit == 90
+        and HouseLedgerDB.houses["Alliance|TestRealm"].items[4306].unit == 50)
+    Check("the window names it Goblin", ScanLine():find("(Goblin)", 1, true) ~= nil)
+    Click("Market")
+    local frame = MainFrame()
+    Check("Market at a goblin house shows the goblin scan", frame.buyPanel.marketLabel.text:find("just now", 1, true) ~= nil)
+    local lines = {}
+    local tooltip = {
+        AddLine = function(_, text) lines[#lines + 1] = text end,
+        AddDoubleLine = function(_, left, right) lines[#lines + 1] = left .. " = " .. right end,
+    }
+    world.tooltipHooks[1].fn(tooltip, { id = 4306 })
+    Check("tooltips at a goblin house still show the player's faction's price", lines[1] == "HouseLedger  <money 50>")
+    Click("Buy")
+    CloseHouse()
+    lines = {}
+    world.tooltipHooks[1].fn(tooltip, { id = 4306 })
+    Check("and after it closes", lines[1] == "HouseLedger  <money 50>")
+    HouseLedgerDB.houses["Alliance|TestRealm"] = nil
+    lines = {}
+    world.tooltipHooks[1].fn(tooltip, { id = 4306 })
+    Check("no faction price: no tooltip line, never the goblin one", #lines == 0)
+end
+
 -- ---------------------------------------------------------------------
 -- Search
 -- ---------------------------------------------------------------------

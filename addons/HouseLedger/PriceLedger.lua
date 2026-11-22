@@ -1321,15 +1321,20 @@ function PriceLedger.Market(house)
     return market
 end
 
---- A house key as people read it: its side, "Horde|Realm" becomes "Horde". The realm is left
--- out: the player knows it, and it would show in every screenshot of the window.
+--- A house key as people read it: its side, "Horde|Realm" becomes "Horde", and a goblin
+-- house (saved as "Neutral") is "Goblin". The realm is left out: the player knows it, and it
+-- would show in every screenshot of the window.
 -- @param key a house key
 -- @return the label; "" for a non-string, the key itself when it has no "|"
 function PriceLedger.HouseLabel(key)
     if type(key) ~= "string" then
         return ""
     end
-    return string.match(key, "^([^|]*)|") or key
+    local side = string.match(key, "^([^|]*)|") or key
+    if side == "Neutral" then
+        return "Goblin"
+    end
+    return side
 end
 
 --- The Scan button's text: "Scan" when a scan is allowed, otherwise the wait, like
@@ -1362,15 +1367,13 @@ function PriceLedger.SecondsUntil(replicateAt, now)
     return left
 end
 
---- Price for a mouseover.
--- The player's own house wins. If that house has never seen the item, the
--- last scanned house is used and its side is returned so the tooltip can say
--- where the price came from.
+--- An item's saved price at one house.
+-- Only that house is read: tooltips show the player's own faction's prices, and the window
+-- the house that is open, never another side's.
 -- @param db the saved table
 -- @param itemID the item's id
--- @param homeKey the player's own house key
--- @return nil when no house has a price, or
---   { unit, qty, seen, scannedAt, stats, side }; side is nil for the own house
+-- @param homeKey the house to read
+-- @return nil when that house has no price for it, or { unit, qty, seen, scannedAt, stats, days }
 function PriceLedger.Lookup(db, itemID, homeKey)
     if type(db) ~= "table" or type(db.houses) ~= "table" then
         return nil
@@ -1404,24 +1407,7 @@ function PriceLedger.Lookup(db, itemID, homeKey)
             scannedAt = house.scannedAt,
             stats = PriceLedger.Stats(row),
             days = row.days,
-            side = nil,
         }
-    end
-
-    local lastKey = db.lastHouseKey
-    if lastKey ~= homeKey then
-        house, row = RowFrom(lastKey)
-        if row then
-            return {
-                unit = row.unit,
-                qty = row.qty,
-                seen = row.seen,
-                scannedAt = house.scannedAt,
-                stats = PriceLedger.Stats(row),
-            days = row.days,
-                side = string.match(lastKey, "^([^|]+)"),
-            }
-        end
     end
     return nil
 end
@@ -1589,13 +1575,8 @@ function PriceLedger.TooltipLines(info, coinText, showDetails)
         return nil
     end
 
-    local label = "HouseLedger"
-    if type(info.side) == "string" and info.side ~= "" then
-        label = label .. " (" .. info.side .. ")"
-    end
-
     local stats = info.stats
-    local text = label .. "  " .. coinText(info.unit)
+    local text = "HouseLedger  " .. coinText(info.unit)
     local trend = PriceLedger.TrendText(stats, "buyer")
     if trend ~= "" then
         text = text .. "  " .. trend
