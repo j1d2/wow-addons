@@ -37,9 +37,10 @@ local overBudget = 0
 -- its last 30 scans); see bench/README.md before raising one.
 local BUDGETS = {
     keptPerDayRow = 470,
-    -- Share of CONSTANT_LIMIT the smoke data may use.
-    constantShare = 0.5,
+    -- Share of CONSTANT_LIMIT the smoke data may use (3.2% since version 4's rounded days).
+    constantShare = 0.05,
     ["Load saved file"] = { kb = 13000, ms = 2000 },
+    ["EnsureDB, from version 3"] = { kb = 1070, ms = 2000 },
     EnsureDB = { kb = 1000, ms = 2000 },
     ["Stats, every item"] = { kb = 7600, ms = 2000 },
     Market = { kb = 1100, ms = 2000 },
@@ -47,6 +48,7 @@ local BUDGETS = {
     HouseOverview = { kb = 10, ms = 2000 },
     ["ChartDays, every item"] = { kb = 13000, ms = 2000 },
     ["ChartScans, every item"] = { kb = 18000, ms = 2000 },
+    ["Commit, same day"] = { kb = 410, ms = 2000 },
     ["Commit, full scan"] = { kb = 870, ms = 2000 },
     SortHistory = { kb = 200, ms = 2000 },
     FilterHistory = { kb = 60, ms = 2000 },
@@ -124,10 +126,12 @@ end
 --- Benchmarks HouseLedger's price module on one synthetic house.
 -- @param items how many items
 -- @param days how many days of history
-local function BenchHouseLedger(items, days)
-    print(string.format("\nHouseLedger, %d items x %d days", items, days))
+-- @param maxScans optional; most scans a day (each day has 1 to this many), 3 by default
+local function BenchHouseLedger(items, days, maxScans)
+    print(string.format("\nHouseLedger, %d items x %d days%s", items, days,
+        maxScans and string.format(", 1 to %d scans a day", maxScans) or ""))
     local base = KeptKB()
-    local db, houseKey = Synth.HouseLedgerDB(items, days, P.DayKey)
+    local db, houseKey = Synth.HouseLedgerDB(items, days, P, maxScans)
     -- Keep the history length being measured, so loading the data doesn't set it back to 14 and
     -- turn the Commit step into a mass trim. 60 days isn't a Settings choice: it stays at 14 here
     -- and is a what-if for the saved file's size only.
@@ -175,6 +179,14 @@ local function BenchHouseLedger(items, days)
     end
     text = nil
 
+    -- The one-off conversion on the first load after updating: the same days as version 3 sums.
+    for _, row in pairs(house.items) do
+        for _, day in ipairs(row.days) do
+            day[5], day[6] = day[5] * day[4], day[4] * (day[6] * day[6] + day[5] * day[5])
+        end
+    end
+    db.version = 3
+    Step("EnsureDB, from version 3", function() P.EnsureDB(db) end)
     Step("EnsureDB", function() P.EnsureDB(db) end)
     Step("Stats, every item", function()
         for _, row in pairs(house.items) do
@@ -195,6 +207,8 @@ local function BenchHouseLedger(items, days)
         end
     end)
     local best = Synth.FullScan(house)
+    -- A second scan the same day re-rounds every item's day (DaySummary); the next day's starts new days.
+    Step("Commit, same day", function() P.Commit(db, houseKey, best, Synth.NOW + 60 * 60) end)
     Step("Commit, full scan", function() P.Commit(db, houseKey, best, Synth.NOW + 24 * 60 * 60) end)
     HouseLedgerDB = nil
 end
@@ -235,6 +249,9 @@ else
             BenchHouseLedger(items, days)
         end
     end
+    -- A heavy scanner: about 5.5 scans a day. Exact day sums (version 3) passed the constant
+    -- limit here; rounded days (version 4) keep it far under.
+    BenchHouseLedger(20000, 30, 10)
     for _, entries in ipairs({ 500, 2500, 5000, 10000 }) do
         BenchUnmaker(entries)
     end

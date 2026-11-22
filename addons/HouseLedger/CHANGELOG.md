@@ -16,6 +16,7 @@ All notable changes to HouseLedger. The format follows [Keep a Changelog](https:
 
 ### Changed
 
+- Each day's prices are now saved as an average and spread rounded to a few digits, instead of exact running totals. On a very busy auction house with many scans a day, the exact totals could make the saved file too big for the game to load, which can lose your saved prices. Typical prices and spreads may change by a fraction of a percent; your saved history converts by itself the first time it loads. Going back to an older HouseLedger after that isn't supported: it would show wrong averages.
 - HouseLedger's code is now split into smaller files. Nothing looks or works differently, but restart the game once after updating: a `/reload` doesn't pick up new files.
 - The Market tab opens about 6 times faster, and price tooltips and details take about 5 times less work. The numbers are the same as before.
 - Items that stop showing up in scans now drop their days older than 14 days too, so the saved file stays smaller. Their tooltip still shows the last price and when it was seen.
