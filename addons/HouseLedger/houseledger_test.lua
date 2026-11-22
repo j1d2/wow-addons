@@ -2548,9 +2548,9 @@ do
     -- Too few bars: no line, band or guess.
     Setup({ screenRight = 1400 })
     Load()
-    SaveDailyPrices({ 100, 110, 120 })
+    SaveDailyPrices({ 100, 110, 120, 130 })
     local chart = ShowBuyChart()
-    Check("3 days: no line or guess yet", chart.shown and not chart.line.shown and chart.slotCount == 7
+    Check("4 days: no line or guess yet", chart.shown and not chart.line.shown and chart.slotCount == 7
         and not chart.bars[8].shown and not TipHas(ChartTipLines(chart), "White line"))
 end
 

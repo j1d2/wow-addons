@@ -1369,7 +1369,7 @@ do
         return math.abs(a - b) < 1e-9
     end
 
-    Check("chart line: none under 4 bars", P.ChartFit(Slots({ 100, false, 110, 120 })) == nil
+    Check("chart line: none under 5 bars", P.ChartFit(Slots({ 100, false, 110, 120, 130 })) == nil
         and P.ChartFit({}) == nil and P.ChartFit(nil) == nil)
 
     local fit = P.ChartFit(Slots({ 100, 110, 120, 130, 140 }))
@@ -1383,10 +1383,11 @@ do
         and fit.estimate == 100)
     Check("chart line: nor widen its band", fit.spread == 0)
 
-    fit = P.ChartFit(Slots({ false, false, 100, false, 120, 130, 140 }))
-    Check("chart line: x is the slot, so empty days count", Near(fit.slope, 10) and fit.first == 3
-        and fit.points == 4)
-    Check("chart line: 4 bars get a line but no guess", fit.estimate == nil)
+    fit = P.ChartFit(Slots({ false, 90, 100, false, 120, 130, 140 }))
+    Check("chart line: x is the slot, so empty days count", Near(fit.slope, 10) and fit.first == 2
+        and fit.points == 5 and fit.estimate == 150)
+    fit = P.ChartFit(Slots({ 100, 100, 100, 100, 50 }))
+    Check("chart line: 5 bars hold back one odd latest listing", Near(fit.slope, 0) and fit.spread == 0)
 
     fit = P.ChartFit(Slots({ 50, 40, 30, 20, 10 }))
     Check("chart line: no guess at 0 or below", Near(fit.slope, -10) and fit.estimate == nil)
@@ -1396,9 +1397,9 @@ do
         Near(fit.slope, 0) and Near(fit.fit(1), 110) and fit.estimate == 110)
     Check("chart line: the band reads like one standard deviation", Near(fit.spread, 10 * P.ROBUST_SPREAD_SCALE))
 
-    local scans = P.ChartScans({ 1000, 90, 2000, 95, 3000, 100, 4000, 105 })
+    local scans = P.ChartScans({ 1000, 90, 2000, 95, 3000, 100, 4000, 105, 5000, 110 })
     fit = P.ChartFit(scans.slots)
-    Check("chart line: on scans it starts at the first scan, after the empty slots", fit.first == 4
+    Check("chart line: on scans it starts at the first scan, after the empty slots", fit.first == 3
         and Near(fit.slope, 5))
 end
 

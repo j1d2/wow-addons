@@ -13,7 +13,7 @@ All notable changes to HouseLedger. The format follows [Keep a Changelog](https:
 - With Price Check open, shift-click an item in your bags or a chat link to look it up.
 - The price chart grows with your history. It starts at the first day an item was scanned, with at least 7 bars and up to 14 or 30. Hover it to see how many days it shows.
 - **Days | Scans** in the corner of every price chart. Scans shows one bar per scan (an item's last 30, within your history length) with a little space between days, so you can see a price move during a day. Your choice is saved for every chart. Scans are saved from your first scan after updating.
-- Every price chart gets a **trend line** (from 4 bars), a faint band for its normal range, and a purple **guess** at the next day or scan (from 5 bars), like the house overview. The line is fit so one odd cheap listing can't tilt it. The guess is only the line carried on one more step, not a promise. Hover the chart for what each part means.
+- Every price chart gets a **trend line**, a faint band for its normal range, and a purple **guess** at the next day or scan, like the house overview, once it has 5 bars. The line is fit so one odd cheap listing can't tilt it. The guess is only the line carried on one more step, not a promise. Hover the chart for what each part means.
 
 ### Changed
 

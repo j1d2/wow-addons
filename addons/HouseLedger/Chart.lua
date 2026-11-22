@@ -194,9 +194,9 @@ end
 -- oldest saved day (at least 7, at most the history length), so it grows as the history does.
 -- Scans: one bar per saved scan (at most PriceLedger.SCANS_KEPT), with a little space between
 -- days; an item saved before scans were kept says when they start instead.
--- The latest bar is gold. Both views add the trend line and its normal range from
--- CHART_FIT_MIN_POINTS bars, and a purple guess at the next day or scan from
--- CHART_ESTIMATE_MIN_POINTS (PriceLedger.ChartFit). Hides the chart when there is no item.
+-- The latest bar is gold. Both views add the trend line, its normal range and a purple guess at
+-- the next day or scan from CHART_FIT_MIN_POINTS bars (PriceLedger.ChartFit). Hides the chart
+-- when there is no item.
 -- Saved data only.
 -- @param chart a chart from Chart.Build
 -- @param info the item's saved prices from PriceLedger.Lookup, or nil
@@ -303,7 +303,7 @@ local function ViewWord(chart, view)
     return word
 end
 
---- Makes a price chart, hidden until Chart.Show fills it: a dark box, the top price in its
+--- Makes a price chart, hidden until Chart.Show fills it: a dark box, the top of its axis in its
 -- top-left corner, the Days | Scans words in its top-right, three textures per slot (the low's
 -- bar, the faint range band and the trend line's normal range), enough for the longest history
 -- and for SCANS_KEPT plus the guess, and the trend line when the client can draw lines. What it

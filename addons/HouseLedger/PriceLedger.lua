@@ -54,10 +54,9 @@ PriceLedger.SCANS_KEPT = 30
 PriceLedger.CHART_VIEWS = { "days", "scans" }
 -- The house overview estimates the next day only from this many days of scans.
 PriceLedger.OVERVIEW_MIN_DAYS = 5
--- A price chart draws its line and normal range from this many bars, and its guess at the next
--- day or scan from CHART_ESTIMATE_MIN_POINTS (as many as the house overview needs).
-PriceLedger.CHART_FIT_MIN_POINTS = 4
-PriceLedger.CHART_ESTIMATE_MIN_POINTS = 5
+-- A price chart draws its line, normal range and guess at the next day or scan from this many
+-- bars. Fewer can't hold one odd listing back: of 4 bars' 6 slope pairs, 3 include it.
+PriceLedger.CHART_FIT_MIN_POINTS = 5
 -- Turns the median distance from the line into a standard deviation, for prices that scatter
 -- the usual way; unlike a standard deviation, one odd listing can't stretch it.
 PriceLedger.ROBUST_SPREAD_SCALE = 1.4826
@@ -1373,8 +1372,7 @@ end
 --   points: bars used; first: the first slot with a bar
 --   slope, intercept, fit(x): the line at slot x
 --   spread: the normal range on each side of the line, 0 when most bars sit on it
---   estimate: the line at the slot after the last, in whole copper, from CHART_ESTIMATE_MIN_POINTS
---     bars and only when above 0; else nil
+--   estimate: the line at the slot after the last, in whole copper, when above 0; else nil
 function PriceLedger.ChartFit(slots)
     if type(slots) ~= "table" then
         return nil
@@ -1415,11 +1413,9 @@ function PriceLedger.ChartFit(slots)
         end,
         spread = PriceLedger.ROBUST_SPREAD_SCALE * Median(distances),
     }
-    if points >= PriceLedger.CHART_ESTIMATE_MIN_POINTS then
-        local estimate = Round(intercept + slope * (#slots + 1))
-        if estimate > 0 then
-            result.estimate = estimate
-        end
+    local estimate = Round(intercept + slope * (#slots + 1))
+    if estimate > 0 then
+        result.estimate = estimate
     end
     return result
 end
