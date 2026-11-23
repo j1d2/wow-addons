@@ -54,9 +54,9 @@ Open the addon's CurseForge page, [HouseLedger](https://www.curseforge.com/wow/a
 - **Scan** at the auction house saves today's prices. Scan as often as every 15 minutes; every scan adds to your history.
 - **Hover any item:** the last price, a trend arrow and a ⭐ for a deal. Hold **Shift** for the 1, 3, 7 and 14-day averages and ranges.
 - **Buy tab:** search, then compare today's price with your 7-day average. Click a row for 1, 3, 7 and 14 days. Before you click one, a house overview shows how many items are listed each day, the trend and a next-day estimate.
-- **Buying:** click a row, then **Listings** to see what's for sale, cheapest first. Type how many (or click one piece of gear), click **Buy**, check the price and how it compares with your 7-day average, then click **Confirm**. Works from the Market tab's deals too.
+- **Buying:** click a row, then the **Buy** button on it to see what's for sale, cheapest first. Type how many (or click a listing), click **Buy**, check the price and how it compares with your 7-day average, then click **Confirm**. Works from the Market tab's deals too.
 - **Sell tab:** drop an item in to see the lowest price now and its history. Then post it in Blizzard's window.
-- **Market tab:** the deals, biggest drops and biggest rises from your last scan, with no searching until you click **Listings** to buy one.
+- **Market tab:** the deals, biggest drops and biggest rises from your last scan, with no searching until you click **Buy** on one.
 - **Settings tab:** turn tooltip prices off, always show the day lines without Shift, or keep 30 or 60 days of prices instead of 14.
 - **Price Check:** type `/pc` anywhere, or click **Price Check** above your bags, to look up a saved price by name. Shift-click an item in your bags or a chat link to look it up, scroll through every match, and click a heading to sort.
 - **Never** buys, posts or scans by itself: every step is your click.
@@ -85,7 +85,7 @@ Open the addon's CurseForge page, [HouseLedger](https://www.curseforge.com/wow/a
 
 **House overview:** until you click a row, the space under the Buy list shows your whole auction house. It lists how many items your scans saw at the last scan and on average, the trend per day, an estimate for the next day (after 5 days of scans), and the last scan's listings, units and value. The value counts each item's units at its cheapest price, so a few listings at joke prices don't inflate it. Its chart has one bar per day (the last scan's day in gold), a white trend line, a faint band for the normal range around it, and a purple bar for the next-day estimate. Items listed per day come from the scans you've already saved; listings, units and value start with your next scan. All of it reads saved data only.
 
-**Market tab** (right): your last scan, with no searching. It reads only saved prices and sends nothing until you click **Listings** on a picked row.
+**Market tab** (right): your last scan, with no searching. It reads only saved prices and sends nothing until you click **Buy** on a picked row.
 1. **View:** Deals, Biggest drops or Biggest rises, and how long ago you scanned.
 2. **Filters:** name, quality and ilvl (the item's base level).
 3. **Columns:** sortable like Buy. **Scanned** is the price at your last scan.
@@ -145,9 +145,10 @@ Its Buy and Sell tabs switch Blizzard's tabs too, and the reverse.
 ### What it does not do
 
 - It buys only at the buyout price, and only when you click Buy and then Confirm. It does not post, bid or cancel. You do that in Blizzard's window.
-- After a buy it doesn't search again by itself; click Listings to see what's left. What you buy arrives in your mailbox.
+- After a buy it doesn't search again by itself; click Back, then Buy, to see what's left. What you buy arrives in your mailbox.
+- Some items, like Silver Rods, are sold in stacks that you buy whole. Their listing shows the whole stack's price, with the price each after the name.
 - It does not scan when the auction house opens. A full scan needs your click, at most once each 15 minutes, which is the game's limit.
-- Search, Listings and Sell send one request per click. Scrolling, hovering and clicking a row send nothing.
+- Search, a row's Buy and Sell send one request per click. Scrolling, hovering and clicking a row send nothing.
 - It does not save seller names or send anything to other players.
 
 [`RULES.md`](RULES.md) lists everything these addons may and may not do.

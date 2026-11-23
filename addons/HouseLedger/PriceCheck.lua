@@ -73,6 +73,7 @@ function PC.Render()
                 mark = mark .. " " .. Price.DEAL_ICON
             end
             row.trendText:SetText(mark)
+            U.MarkRow(row, entry.itemID == ui.priceCheck.picked)
             row:Show()
         else
             row:Hide()
@@ -170,6 +171,10 @@ function PC.ShowDetails(row)
     local entry = row.entry
     if entry == nil then
         return
+    end
+    ui.priceCheck.picked = entry.itemID
+    for _, shown in ipairs(ui.priceCheck.rows) do
+        U.MarkRow(shown, shown.entry ~= nil and shown.entry.itemID == entry.itemID)
     end
     local info = Price.Lookup(HouseLedgerDB, entry.itemID, U.PlayerHouseKey())
     local stats = info and info.stats
@@ -318,6 +323,7 @@ function PC.Build()
         row:SetPoint("TOPLEFT", ui.priceCheck, "TOPLEFT", 12, -PC.ROWS_TOP - (index - 1) * C.ROW_HEIGHT)
         row:SetPoint("RIGHT", ui.priceCheck, "RIGHT", -12, 0)
         row:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
+        U.AddSelection(row)
         row.icon = row:CreateTexture(nil, "ARTWORK")
         row.icon:SetSize(C.ICON_SIZE, C.ICON_SIZE)
         row.icon:SetPoint("LEFT", row, "LEFT", 4, 0)

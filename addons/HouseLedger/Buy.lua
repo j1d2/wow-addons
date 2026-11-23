@@ -67,8 +67,18 @@ local OVERVIEW_HEIGHT = 80
 -- has a newer scan or the history length changes.
 local overviewShown = false
 local overviewCache
--- True while the details block shows a clicked row's prices.
+-- True while the details block shows a clicked row's prices, and that row's result (marked in
+-- gold in the list, with its Buy button).
 local rowShown = false
+local pickedResult
+
+--- Marks the picked row in gold, and puts the Buy button on it (Purchase.PlaceRowButtons).
+local function MarkPicked()
+    for _, row in ipairs(ui.rows) do
+        U.MarkRow(row, row.result ~= nil and U.SameItemKey(row.result, pickedResult))
+    end
+    Purchase.PlaceRowButtons()
+end
 
 --- Sets the Buy tab's status line, once the window is built.
 -- @param text the line's text
@@ -139,6 +149,7 @@ local function FillRow(row, result)
         mark = mark .. " " .. Price.DEAL_ICON
     end
     row.trendText:SetText(mark)
+    U.MarkRow(row, U.SameItemKey(result, pickedResult))
     row:Show()
 end
 
@@ -307,6 +318,7 @@ function Buy.RenderRows()
         return
     end
     SetListMessage(nil)
+    Purchase.PlaceRowButtons()
     local last = math.min(#list, offset + C.VISIBLE_ROWS)
     local filtered = from > #list and string.format(" (filtered from %d)", from) or ""
     if market then
@@ -319,8 +331,9 @@ end
 
 --- Empties the details block under the list: the hint, no lines, no chart.
 local function EmptyDetails()
-    overviewShown, rowShown = false, false
+    overviewShown, rowShown, pickedResult = false, false, nil
     Purchase.SetPicked(nil)
+    MarkPicked()
     ui.buyPanel.detailTitle:SetText(DETAIL_HINT)
     for _, line in ipairs(ui.buyPanel.detailLines) do
         line.left:SetText("")
@@ -427,8 +440,9 @@ local function ShowRowDetails(row)
         return
     end
     EmptyDetails()
-    rowShown = true
+    rowShown, pickedResult = true, row.result
     Purchase.SetPicked(row.result)
+    MarkPicked()
     local name = U.ItemLook(row.result.itemKey, row.result)
     local stats = U.SavedStats(row.result.itemKey and row.result.itemKey.itemID)
     if stats == nil then
@@ -720,6 +734,7 @@ function Buy.BuildRow(list, index)
     row:SetPoint("TOPLEFT", list, "TOPLEFT", 0, -C.HEADER_HEIGHT - (index - 1) * C.ROW_HEIGHT)
     row:SetPoint("RIGHT", list, "RIGHT", 0, 0)
     row:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
+    U.AddSelection(row)
     row.icon = row:CreateTexture(nil, "ARTWORK")
     row.icon:SetSize(C.ICON_SIZE, C.ICON_SIZE)
     row.icon:SetPoint("LEFT", row, "LEFT", 4, 0)
