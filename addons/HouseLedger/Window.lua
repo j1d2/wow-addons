@@ -4,9 +4,9 @@ and following Blizzard's window through hooksecurefunc (never calling its method
 ]]
 
 local _, ns = ...
-local C, ui, state, U, Chart, Scan, Tooltip, Buy, Sell, Purchase, PC, History, Settings, Window = ns.C, ns.ui,
-    ns.state, ns.U, ns.Chart, ns.Scan, ns.Tooltip, ns.Buy, ns.Sell, ns.Purchase, ns.PC, ns.History, ns.Settings,
-    ns.Window
+local C, ui, state, U, Chart, Scan, Tooltip, Buy, Sell, Purchase, Post, PC, History, Settings, Window = ns.C,
+    ns.ui, ns.state, ns.U, ns.Chart, ns.Scan, ns.Tooltip, ns.Buy, ns.Sell, ns.Purchase, ns.Post, ns.PC, ns.History,
+    ns.Settings, ns.Window
 
 -- The Buy chart's height, beside the details block.
 local CHART_HEIGHT = 74
@@ -27,6 +27,7 @@ local function SelectTab(id)
     if id ~= state.currentTab then
         -- Another tab leaves an item's listings and drops a price the house quoted.
         Purchase.Close()
+        Post.Close()
         Buy.HideRecent()
     end
     state.currentTab = id
@@ -315,6 +316,7 @@ function Window.Build()
         end
         tick = 0
         Purchase.Tick()
+        Post.Tick()
         Scan.RefreshIdleLine()
         Scan.RefreshButton()
         if state.currentTab == C.MARKET_TAB and ui.buyPanel.marketMode then

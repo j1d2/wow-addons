@@ -11,7 +11,7 @@ How this repo stays safe to share. The policy for reporting a problem is in [`SE
 | Privacy | `scripts/privacy_scan.sh` | Home, mount and Wine paths, WoW account folders, email addresses, private IP addresses, plus any name in your local denylist |
 | Secrets | `scripts/privacy_scan.sh` | Private keys, AWS keys, GitHub, Slack and API tokens, hard-coded passwords |
 | Commit messages | `.githooks/commit-msg` | The same privacy and secret rules, run on the message text |
-| Addon policy | `scripts/addon_checks.sh policy` | Calls that `RULES.md` forbids: post or cancel, a buy call outside HouseLedger's `Purchase.lua` or without a `-- reviewed: <why>` note, code run from text (`loadstring`, `RunScript`), `setfenv`/`getfenv`, the `debug` library and `RunMacro`. Chat, addon and Battle.net messages, and changes to settings, keybindings or macros, need a `-- reviewed: <why>` note on the line. |
+| Addon policy | `scripts/addon_checks.sh policy` | Calls that `RULES.md` forbids: bid or cancel, a post call outside HouseLedger's `Post.lua`, a buy call outside HouseLedger's `Purchase.lua` or without a `-- reviewed: <why>` note, code run from text (`loadstring`, `RunScript`), `setfenv`/`getfenv`, the `debug` library and `RunMacro`. Chat, addon and Battle.net messages, and changes to settings, keybindings or macros, need a `-- reviewed: <why>` note on the line. |
 | Globals | `scripts/addon_checks.sh globals` | Stray global variables, which can collide with other addons or be overwritten by them |
 | File hygiene | `scripts/hygiene_check.sh` | Big files (over 500 KB), conflict markers, mixed line endings |
 
