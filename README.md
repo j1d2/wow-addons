@@ -77,7 +77,7 @@ Open the addon's CurseForge page, [HouseLedger](https://www.curseforge.com/wow/a
 </p>
 
 **Buy tab** (left):
-1. **Search:** type a name and click **Search**. **Clear** empties the list and the filters. Click into the box for your recent searches: type to narrow them, then click one, or use the arrow keys and Enter. Right-click one to forget it.
+1. **Search:** type a name and click **Search**. **Clear** empties the list and the filters. Click into the box for your recent searches: type to narrow them, then click one to search it, or use the arrow keys to put one in the box and press Enter (or click Search). Right-click one to forget it.
 2. **Filters:** pick a **quality** and an **ilvl** range. With a quality picked you can search with no name. **Show** picks what a search looks for: **Everything**; **Gear for me** (weapons this character can use and its best armor type, like plate for a paladin from level 40, plus rings, necks, trinkets, cloaks, and its shields and relics); **Usable gear** (every armor type too); or **My recipes** (recipes for this character's professions). Picking a quality or a Show choice searches right away; with one picked you can search with no name too.
 3. **Columns:** click a heading to sort by it, and again to reverse. **Price** is the cheapest up right now, **Avg 7d** your saved 7-day average, and **Trend** a green arrow for cheaper than usual, red for pricier, grey "steady" about the same, ⭐ for a deal.
 4. **Scan:** saves today's prices for the whole auction house. The button counts down the 15 minutes until you can scan again.

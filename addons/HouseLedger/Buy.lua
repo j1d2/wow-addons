@@ -159,20 +159,24 @@ local function PickRecent(text)
     Buy.SendSearch()
 end
 
---- Up and Down: moves the mark through the list, and past either end back to what was typed.
+--- Up and Down: moves the mark through the list and puts the marked search in the box, so Enter
+-- or Search searches what the box shows; past either end the box gets back what was typed.
 -- @param step -1 for up, 1 for down
 local function MoveRecent(step)
     if not recent.frame:IsShown() then
+        recent.typed = ui.searchBox:GetText()
         ShowRecent()
         return
     end
     recent.selected = (recent.selected + step) % (#recent.matches + 1)
+    -- Not typing, so the list stays as it is (OnTextChanged filters only on typing).
+    ui.searchBox:SetText(recent.matches[recent.selected] or recent.typed or "")
     DrawRecent()
 end
 
 --- Makes the recent-searches list under the search box and gives the box its keys: the list
--- opens when the box is clicked, filters as you type, Up and Down pick, Enter searches the
--- picked one (or what was typed), Escape or a click elsewhere closes it.
+-- opens when the box is clicked, filters as you type, Up and Down fill the box with one, Enter
+-- searches what the box shows, Escape or a click elsewhere closes it.
 function Buy.BuildRecent()
     local box = ui.searchBox
     local frame = CreateFrame("Frame", nil, ui.buyPanel, "TooltipBackdropTemplate")
@@ -221,7 +225,10 @@ function Buy.BuildRecent()
 
     -- The arrow keys reach the box's OnArrowPressed only with this off.
     box:SetAltArrowKeyMode(false)
-    box:HookScript("OnEditFocusGained", ShowRecent)
+    box:HookScript("OnEditFocusGained", function(self)
+        recent.typed = self:GetText()
+        ShowRecent()
+    end)
     box:HookScript("OnEditFocusLost", function()
         if not frame:IsMouseOver() then
             HideRecent()
@@ -230,7 +237,7 @@ function Buy.BuildRecent()
     box:HookScript("OnTextChanged", function(self, userInput)
         -- Only the player's typing filters; text put in by a pick doesn't.
         if userInput then
-            recent.selected = 0
+            recent.selected, recent.typed = 0, self:GetText()
             if self:HasFocus() then
                 ShowRecent()
             end
@@ -244,15 +251,11 @@ function Buy.BuildRecent()
         end
     end)
     box:HookScript("OnEscapePressed", HideRecent)
+    -- Enter searches what the box shows: typed, or filled in from the list.
     box:SetScript("OnEnterPressed", function(self)
-        local picked = frame:IsShown() and recent.matches[recent.selected]
-        if picked then
-            PickRecent(picked)
-            return
-        end
         HideRecent()
-        Buy.SendSearch()
         self:ClearFocus()
+        Buy.SendSearch()
     end)
 end
 
