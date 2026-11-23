@@ -146,7 +146,6 @@ Its Buy and Sell tabs switch Blizzard's tabs too, and the reverse.
 
 - It buys only at the buyout price, and only when you click Buy and then Confirm. It does not post, bid or cancel. You do that in Blizzard's window.
 - After a buy it doesn't search again by itself; click Back, then Buy, to see what's left. What you buy arrives in your mailbox.
-- Some items, like Silver Rods, are sold in stacks that you buy whole. Their listing shows the whole stack's price, with the price each after the name.
 - It does not scan when the auction house opens. A full scan needs your click, at most once each 15 minutes, which is the game's limit.
 - Search, a row's Buy and Sell send one request per click. Scrolling, hovering and clicking a row send nothing.
 - It does not save seller names or send anything to other players.

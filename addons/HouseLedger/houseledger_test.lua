@@ -3526,7 +3526,8 @@ do
 end
 
 do
-    -- A stack of a non-stackable-at-the-house item (a Silver Rod): the price is the whole stack's.
+    -- A Silver Rod listing of "quantity" 50: on Forever one buy gets one rod for the whole buyout, so
+    -- the buyout is the price, as listed.
     Setup()
     Load()
     local key = { itemID = 6338, itemLevel = 20, itemSuffix = 0, battlePetSpeciesID = 0 }
@@ -3540,19 +3541,17 @@ do
     }
     Fire("ITEM_SEARCH_RESULTS_UPDATED", key)
     local rows = ResultRows()
-    Check("a stack shows what you pay for all of it, and its price each after the name",
-        rows[1].priceText.text == "<money 1300>" and rows[1].availText.text == "50"
-        and rows[1].nameText.text:find("<money 26> each", 1, true))
-    Check("a single shows its price, with no each", rows[2].priceText.text == "<money 795>"
+    Check("cheapest buyout first, the price never divided by the quantity", rows[1].priceText.text == "<money 795>"
+        and rows[2].priceText.text == "<money 1300>" and rows[2].availText.text == "50"
         and not rows[2].nameText.text:find("each", 1, true))
-    rows[1]:GetScript("OnClick")(rows[1])
+    rows[2]:GetScript("OnClick")(rows[2])
     local rod = "|Hitem:6338|h[Silver Rod]|h"
-    Check("picking the stack says how many, the total and each",
-        StatusLine():find("50 x " .. rod .. " for <money 1300> (<money 26> each)", 1, true))
+    Check("picking it says what one buy costs", StatusLine():find(rod .. " for <money 1300>", 1, true)
+        and not StatusLine():find("each", 1, true))
     Press(panel.rowBuyButton)
-    Check("Buy asks to confirm the whole stack", StatusLine():find("Buy 50 x " .. rod .. " for <money 1300>", 1, true))
+    Check("Buy asks to confirm that price", StatusLine():find("Buy " .. rod .. " for <money 1300>?", 1, true))
     Press(panel.rowBuyButton)
-    Check("Confirm pays the stack's buyout", world.buys[1].kind == "bid" and world.buys[1].amount == 1300)
+    Check("Confirm pays the listing's buyout", world.buys[1].kind == "bid" and world.buys[1].amount == 1300)
 end
 
 do
