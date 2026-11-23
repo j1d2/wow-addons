@@ -20,6 +20,7 @@ if mode ~= "--smoke" and mode ~= "--full" then
 end
 
 local S = dofile("addons/Unmaker/UnmakerStats.lua")
+local D = dofile("addons/Unmaker/UnmakerResults.lua")
 local P = dofile("addons/HouseLedger/PriceLedger.lua")
 local Synth = dofile("bench/synth.lua")
 
@@ -55,6 +56,8 @@ local BUDGETS = {
     SortHistory = { kb = 85, ms = 2000 },
     FilterHistory = { kb = 25, ms = 2000 },
     ["Record, full history"] = { kb = 15, ms = 2000 },
+    -- Counting the player's own disenchant results, after each disenchant (2026-11-22).
+    ["Tally, full history"] = { kb = 70, ms = 2000 },
 }
 
 --- The memory in use now, in KB, after a full collection.
@@ -237,6 +240,10 @@ local function BenchUnmaker(entries)
     print(string.format("memory  Unmaker %d entries: %.2f MB kept", entries, (KeptKB() - base) / 1024))
     Step("SortHistory", function() S.SortHistory(db.history, "name", false) end)
     Step("FilterHistory", function() S.FilterHistory(db.history, "Benchmain-Bench Realm", "Bench Realm") end)
+    -- Every other item a weapon, the rest armor, as GetItemInfoInstant would say.
+    Step("Tally, full history", function()
+        D.Tally(db.history, function(itemID) return itemID % 2 == 0 and 2 or 4 end)
+    end)
     local item = { itemID = 1001, name = "Bench Gear 1001", link = "x", quality = 2, level = 20,
         character = "Benchmain", realm = "Bench Realm" }
     Step("Record, full history", function()

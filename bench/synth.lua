@@ -126,7 +126,7 @@ function Synth.UnmakerHistory(entries)
             quality = 2 + math.floor(next() * 3), level = 5 + math.floor(next() * 55),
             character = (index % 3 == 0) and "Benchalt" or "Benchmain", realm = "Bench Realm",
             time = Synth.NOW - (entries - index) * 600,
-            mats = { { name = "Strange Dust", count = 1 + math.floor(next() * 3) } },
+            looted = true, mats = { { name = "Strange Dust", quantity = 1 + math.floor(next() * 3) } },
         }
     end
     return history

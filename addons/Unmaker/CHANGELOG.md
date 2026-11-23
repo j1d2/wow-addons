@@ -6,6 +6,7 @@ All notable changes to Unmaker. The format follows [Keep a Changelog](https://ke
 
 ### Added
 
+- **What it gives.** A **Gives** column on the Items tab shows each item's likely materials, with an icon and its chance, and item tooltips everywhere (bags, links, the auction house) say what an item disenchants into, in two short lines: icons with their chances. Your own results take over once you've disenchanted 5 of that kind of item; until then the numbers come from warcraft.wiki.gg's tables, with Forever's own differences for blues below item level 20 and green weapons from 21 to 30. Turn the tooltip lines off in Settings. The window is a little wider to fit the column.
 - `/um`, a short way to type `/unmaker`.
 - A **Kept** tab: every item you've unchecked so Unmaker keeps it, whether it's in your bags or not. **Forget** puts one back, checked again unless a setting keeps it. Items you kept before this update show once the game has loaded them.
 - **History length** on the Settings tab: keep 500, 1,000, 5,000 or 10,000 disenchants in the History tab. A shorter one drops the oldest right away. The Stats totals count every disenchant either way.
@@ -14,6 +15,7 @@ All notable changes to Unmaker. The format follows [Keep a Changelog](https://ke
 
 - "Open with my bags" is now "Open and close with my bags": when the bags opened Unmaker, closing the bags closes it too. A window you opened yourself, with `/um` or the bag button, stays open.
 - Characters show with their full Forever name, first name and surname ("Mira Stone"), in the History tab and the Stats character list, so two characters with the same first name are counted apart. Your older disenchants move to the full name the next time each character logs in.
+- The History tab's **Got** column shows each material's icon, with its name shortened to fit, so a disenchant that gave two materials shows both. Hover the row for the full names.
 - Unmaker's files now share their code privately instead of through game-wide names, like HouseLedger. Nothing looks or works differently.
 
 ### Fixed

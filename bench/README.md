@@ -1,6 +1,6 @@
 # Speed and memory benchmarks
 
-`scripts/bench.sh` runs `bench/bench.lua`, which times the pure Lua parts of HouseLedger (`PriceLedger.lua`) and Unmaker (`UnmakerStats.lua`) on made-up data. It uses plain `lua5.1` and no packages, and it never reads a real saved file.
+`scripts/bench.sh` runs `bench/bench.lua`, which times the pure Lua parts of HouseLedger (`PriceLedger.lua`) and Unmaker (`UnmakerStats.lua`, `UnmakerResults.lua`) on made-up data. It uses plain `lua5.1` and no packages, and it never reads a real saved file.
 
 ```bash
 scripts/bench.sh --smoke   # small sizes with budgets; the gate runs it
