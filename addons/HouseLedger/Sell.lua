@@ -103,17 +103,6 @@ local function ShowSellResults(summary, complete)
     Sell.SetStatus(text)
 end
 
---- False only when the house says the list is not complete.
--- @param check the game's Has...Full...Results function, or nil when missing
--- @param ... the arguments for check
--- @return true unless check returns false
-local function IsComplete(check, ...)
-    if type(check) ~= "function" then
-        return true
-    end
-    return check(...) ~= false
-end
-
 --- Commodity search results came in: shows them if they are for the Sell item.
 -- @param itemID the item the results are for
 function Sell.OnCommodityResults(itemID)
@@ -129,7 +118,7 @@ function Sell.OnCommodityResults(itemID)
         end
     end
     ShowSellResults(Price.LowestListing(listings),
-        IsComplete(C_AuctionHouse.HasFullCommoditySearchResults, itemID))
+        U.IsComplete(C_AuctionHouse.HasFullCommoditySearchResults, itemID))
 end
 
 --- Item search results came in: shows them if they are for the Sell item.
@@ -158,7 +147,7 @@ function Sell.OnItemResults(itemKey)
         end
     end
     ShowSellResults(Price.LowestListing(listings),
-        IsComplete(C_AuctionHouse.HasFullItemSearchResults, searchKey))
+        U.IsComplete(C_AuctionHouse.HasFullItemSearchResults, searchKey))
 end
 
 --- Puts an item on the Sell tab with empty values until its prices come in.

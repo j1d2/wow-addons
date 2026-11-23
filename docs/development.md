@@ -87,6 +87,7 @@ HouseLedger loads in this order:
 | `Scan.lua` | The full scan and its 15-minute wait (`ns.Scan`). |
 | `Buy.lua` | The Buy and Market tabs: list, headings, filters, details, the browse search (`ns.Buy`). |
 | `Sell.lua` | The Sell tab (`ns.Sell`). |
+| `Purchase.lua` | Buying from Buy and Market: the picked row's Buy (one item search), the listings, Buy and Confirm (`ns.Purchase`). The only file the `policy` check lets buy. |
 | `PriceCheck.lua` | The `/pc` window and its bag button (`ns.PC`). |
 | `Settings.lua` | The Settings tab (`ns.Settings`). |
 | `Window.lua` | The window, its tabs, its place beside the auction house, and following Blizzard's window (`ns.Window`). |

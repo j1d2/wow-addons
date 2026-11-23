@@ -83,6 +83,7 @@ function FrameMethods:GetWidth() return self.width end
 function FrameMethods:GetRight() return self.right end
 function FrameMethods:GetHeight() return self.height end
 function FrameMethods:SetTextColor(r, g, b) self.color = { r, g, b } end
+function FrameMethods:SetAlpha(alpha) self.alpha = alpha end
 function FrameMethods:SetTexture(texture) self.texture = texture end
 function FrameMethods:SetMinMaxValues(min, max) self.min, self.max = min, max end
 -- A dropdown keeps the menu generator it was given, as Blizzard's DropdownButton does.
@@ -184,7 +185,10 @@ local function Setup(opts)
         houseOpen = false,
         listings = opts.listings or {},
         tooltipHooks = {},
+        buys = {},
     }
+    -- The character's money in copper (GetMoney); plenty unless a test sets it.
+    _G.GetMoney = function() return world.money or 100000000 end
 
     _G.HouseLedgerDB = opts.savedDB
     _G.HouseLedger = nil
@@ -244,7 +248,7 @@ local function Setup(opts)
             Cooking = 5, Alchemy = 6, FirstAid = 7, Enchanting = 8, Fishing = 9, Jewelcrafting = 10, Inscription = 11 },
         Profession = { FirstAid = 0, Blacksmithing = 1, Leatherworking = 2, Alchemy = 3, Herbalism = 4, Cooking = 5,
             Mining = 6, Tailoring = 7, Engineering = 8, Enchanting = 9, Fishing = 10, Skinning = 11 },
-        AuctionHouseSortOrder = { Price = 0, Name = 1 },
+        AuctionHouseSortOrder = { Price = 0, Name = 1, Bid = 3, Buyout = 4 },
         TooltipDataType = { Item = 0 },
         ItemCommodityStatus = { Unknown = 0, Item = 1, Commodity = 2 },
     }
@@ -426,8 +430,24 @@ local function Setup(opts)
             return location.commodity and 2 or 1
         end,
         SendSearchQuery = function(itemKey)
-            world.itemQueries[#world.itemQueries + 1] = { kind = "search", itemID = itemKey.itemID }
+            world.itemQueries[#world.itemQueries + 1] = { kind = "search", itemID = itemKey.itemID,
+                itemLevel = itemKey.itemLevel }
         end,
+        -- Buying: each call is recorded in world.buys as { kind, ... }; the house's answers are
+        -- fired by the test. world.quoteLeft is the quote's seconds left (30 by default).
+        StartCommoditiesPurchase = function(itemID, quantity, extra)
+            world.buys[#world.buys + 1] = { kind = "start", itemID = itemID, quantity = quantity, extra = extra }
+        end,
+        ConfirmCommoditiesPurchase = function(itemID, quantity)
+            world.buys[#world.buys + 1] = { kind = "confirm", itemID = itemID, quantity = quantity }
+        end,
+        CancelCommoditiesPurchase = function()
+            world.buys[#world.buys + 1] = { kind = "cancel" }
+        end,
+        PlaceBid = function(auctionID, amount)
+            world.buys[#world.buys + 1] = { kind = "bid", auctionID = auctionID, amount = amount }
+        end,
+        GetQuoteDurationRemaining = function() return world.quoteLeft or 30 end,
         SendSellSearchQuery = function(itemKey)
             world.itemQueries[#world.itemQueries + 1] = {
                 kind = "sell", itemID = itemKey.itemID,
@@ -458,6 +478,7 @@ local function Setup(opts)
                 itemName = "Item " .. itemKey.itemID, quality = (world.qualities or {})[itemKey.itemID] or 1,
                 iconFileID = 134400,
                 isEquipment = world.equipment == true,
+                isCommodity = (world.commodities or {})[itemKey.itemID] == true,
             }
         end,
     }
@@ -3060,6 +3081,502 @@ do
     local timers = #world.timers
     Fire("GET_ITEM_INFO_RECEIVED", 7, true)
     Check("with no level filter or level sort, an item arriving doesn't rebuild the list", #world.timers == timers)
+end
+
+--- A click on one of our own buttons (Listings, Back, Buy, Max), as the player's would be.
+-- @param button the button
+local function Press(button)
+    button:GetScript("OnClick")(button, "LeftButton")
+end
+
+--- The buy calls of one kind made so far.
+-- @param kind "start", "confirm", "cancel" or "bid"
+-- @return how many
+local function BuyCalls(kind)
+    local count = 0
+    for _, call in ipairs(world.buys) do
+        if call.kind == kind then
+            count = count + 1
+        end
+    end
+    return count
+end
+
+--- Opens the house, searches, and picks the first row of the results given.
+-- @param results the browse results
+-- @return the Buy panel
+local function PickFirstResult(results)
+    OpenHouse()
+    Type(SearchBox(), "item")
+    Click("Search")
+    world.browseResults = results
+    Fire("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
+    local row = ResultRows()[1]
+    row:GetScript("OnClick")(row)
+    return MainFrame().buyPanel
+end
+
+--- The house's commodity listings for item 2589: 40 at 12c, 200 at 14c, and 5 of the player's own at 20c.
+local function LinenListings()
+    world.commodityResults = {
+        { itemID = 2589, quantity = 40, unitPrice = 12, auctionID = 1, containsOwnerItem = false, numOwnerItems = 0 },
+        { itemID = 2589, quantity = 200, unitPrice = 14, auctionID = 2, containsOwnerItem = false, numOwnerItems = 0 },
+        { itemID = 2589, quantity = 5, unitPrice = 20, auctionID = 3, containsOwnerItem = true, numOwnerItems = 5 },
+    }
+    Fire("COMMODITY_SEARCH_RESULTS_UPDATED", 2589)
+end
+
+do
+    -- Buying a stackable item: Listings, how many, Buy, the house's price, Confirm.
+    Setup()
+    Load()
+    world.commodities = { [2589] = true }
+    SaveDailyHistory(7, 2589) -- 100c a day: the 7-day average
+    local panel = MainFrame().buyPanel
+    Check("no row picked: no Listings button", not panel.listingsButton.shown)
+    panel = PickFirstResult({ { itemKey = { itemID = 2589, itemLevel = 0, itemSuffix = 0 }, minPrice = 12,
+        totalQuantity = 245 } })
+    Check("a picked row shows Listings", panel.listingsButton.shown and panel.listingsButton.enabled ~= false)
+    Check("picking a row sends nothing", #world.itemQueries == 0 and #world.buys == 0)
+
+    world.throttleReady = false
+    Press(panel.listingsButton)
+    Check("Listings waits for the house's throttle, like Search", #world.itemQueries == 0
+        and StatusLine():find("still busy", 1, true))
+    world.throttleReady = true
+    Press(panel.listingsButton)
+    Check("Listings: one click sends one search for that item", #world.itemQueries == 1
+        and world.itemQueries[1].kind == "search" and world.itemQueries[1].itemID == 2589)
+    Check("the list shows its listings: Back and Buy in place of the filters", panel.purchaseBar.shown
+        and not panel.filterRow.shown and panel.qtyBox.shown)
+
+    LinenListings()
+    local rows = ResultRows()
+    Check("listings show cheapest first, with how many are up to each", rows[1].priceText.text == "<money 12>"
+        and rows[1].availText.text == "40" and rows[1].typicalText.text == "40"
+        and rows[2].typicalText.text == "240" and rows[2].shown and not rows[3].shown)
+    Check("your own listings are left out, and the status says so",
+        StatusLine():find("2 listings", 1, true) and StatusLine():find("5 of your own", 1, true))
+    Check("the headings name the listing columns", panel.headerTexts.typical.text == "Up to"
+        and panel.headerTexts.trend.text == "vs avg")
+    Check("nothing to buy yet", panel.buyButton.enabled == false)
+
+    Type(panel.qtyBox, "50")
+    Check("how many: the cost, cheapest first, with how it compares", panel.buyButton.enabled
+        and StatusLine():find("50 for <money 620>", 1, true) and StatusLine():find("below the 7-day average", 1, true))
+    Type(panel.qtyBox, "0")
+    Check("zero: nothing to buy", panel.buyButton.enabled == false)
+    Type(panel.qtyBox, "50")
+    world.money = 500
+    Type(panel.qtyBox, "50")
+    Check("can't afford it: Buy stays off and says why", panel.buyButton.enabled == false
+        and StatusLine():find("You have <money 500>", 1, true))
+    world.money = nil
+    Press(panel.maxButton)
+    Check("Max: everything that is up", panel.qtyBox.text == "240")
+    rows[1]:GetScript("OnClick")(rows[1])
+    Check("a row click: up to and including that listing", panel.qtyBox.text == "40")
+    Type(panel.qtyBox, "50")
+
+    Press(panel.buyButton)
+    Check("Buy asks the house for its price, for that many", BuyCalls("start") == 1
+        and world.buys[1].itemID == 2589 and world.buys[1].quantity == 50 and world.buys[1].extra == nil)
+    Check("and waits", panel.buyButton.text == "Waiting..." and panel.buyButton.enabled == false)
+    Press(panel.buyButton)
+    Check("a second click while waiting does nothing", BuyCalls("start") == 1)
+
+    Fire("COMMODITY_PRICE_UPDATED", 13, 650)
+    Check("a small rise: shows it and needs Confirm", panel.buyButton.text == "Confirm" and panel.buyButton.enabled
+        and StatusLine():find("went up by <money 30>", 1, true) and BuyCalls("confirm") == 0)
+    Press(panel.buyButton)
+    Check("Confirm buys at the house's price", BuyCalls("confirm") == 1 and world.buys[#world.buys].quantity == 50)
+    Check("then locks", panel.buyButton.text == "Buying..." and panel.buyButton.enabled == false)
+    Press(panel.buyButton)
+    Type(panel.qtyBox, "10")
+    Check("a double click can't buy twice, and how many can't change", BuyCalls("confirm") == 1
+        and panel.qtyBox.text == "50")
+    Fire("COMMODITY_PURCHASE_SUCCEEDED")
+    Check("bought: says so, and the list may be out of date", StatusLine():find("Bought 50", 1, true)
+        and StatusLine():find("<money 650>", 1, true) and StatusLine():find("Back, then Buy", 1, true)
+        and panel.buyButton.text == "Buy")
+    Check("no search after a buy", #world.itemQueries == 1)
+
+    Press(panel.buyButton)
+    Fire("COMMODITY_PRICE_UPDATED", 12, 620)
+    Check("same price: Confirm", panel.buyButton.text == "Confirm" and StatusLine():find("Click Confirm", 1, true))
+    world.quoteLeft = 0
+    local cancels = BuyCalls("cancel")
+    Advance(1)
+    Check("the quote runs out: dropped, Buy again", BuyCalls("cancel") == cancels + 1 and panel.buyButton.text == "Buy"
+        and StatusLine():find("ran out", 1, true))
+    world.quoteLeft = nil
+
+    Press(panel.buyButton)
+    Fire("COMMODITY_PRICE_UPDATED", 20, 1000)
+    Check("over 5% more: refused and dropped, like Blizzard's", BuyCalls("cancel") == cancels + 2
+        and panel.buyButton.text == "Buy" and StatusLine():find("more than 5%", 1, true))
+    Press(panel.buyButton)
+    Fire("COMMODITY_PRICE_UNAVAILABLE")
+    Check("gone: says so", panel.buyButton.text == "Buy" and StatusLine():find("gone", 1, true))
+    Press(panel.buyButton)
+    Fire("COMMODITY_PRICE_UPDATED", 12, 620)
+    Press(panel.buyButton)
+    Fire("COMMODITY_PURCHASE_FAILED")
+    Check("failed: nothing bought", panel.buyButton.text == "Buy" and StatusLine():find("Nothing was bought", 1, true))
+    local confirms = BuyCalls("confirm")
+    Press(panel.buyButton)
+    Fire("COMMODITY_PRICE_UPDATED", 12, 620)
+    Press(panel.buyButton)
+    Advance(11)
+    Check("no answer: stays locked, so a late answer can't let a second buy through",
+        panel.buyButton.text == "Buying..." and panel.buyButton.enabled == false
+        and BuyCalls("confirm") == confirms + 1 and StatusLine():find("mailbox", 1, true))
+    local starts = BuyCalls("start")
+    Press(panel.buyButton)
+    Check("and a click does nothing", BuyCalls("confirm") == confirms + 1 and BuyCalls("start") == starts)
+    Fire("COMMODITY_PURCHASE_SUCCEEDED")
+    Check("a late answer still shows", StatusLine():find("Bought 50", 1, true) and panel.buyButton.text == "Buy")
+    Press(panel.buyButton)
+    Fire("COMMODITY_PRICE_UPDATED", 12, 620)
+    Press(panel.buyButton)
+    Advance(11)
+    Press(panel.backButton)
+    Check("still locked after Back", panel.listingsButton.shown)
+    Press(panel.listingsButton)
+    LinenListings()
+    Type(panel.qtyBox, "50")
+    Check("fresh listings after no answer unlock Buy", panel.buyButton.text == "Buy" and panel.buyButton.enabled)
+
+    local before = #world.buys
+    Fire("COMMODITY_PRICE_UPDATED", 12, 620)
+    Fire("COMMODITY_PURCHASE_SUCCEEDED")
+    Check("answers for a buy we didn't start (Blizzard's window) are ignored", #world.buys == before
+        and panel.buyButton.text == "Buy" and not StatusLine():find("Bought", 1, true))
+
+    Press(panel.buyButton)
+    Fire("COMMODITY_PRICE_UPDATED", 12, 620)
+    cancels = BuyCalls("cancel")
+    Press(panel.backButton)
+    Check("Back drops the quote and shows the search results again", BuyCalls("cancel") == cancels + 1
+        and panel.filterRow.shown and not panel.purchaseBar.shown and ResultRows()[1].nameText.text == "Item 2589"
+        and panel.headerTexts.typical.text == "Avg 7d")
+    Check("and keeps the picked row's prices", panel.listingsButton.shown
+        and panel.detailTitle.text:find("Item 2589", 1, true))
+
+    Press(panel.listingsButton)
+    LinenListings()
+    Type(panel.qtyBox, "5")
+    Press(panel.buyButton)
+    Click("Sell")
+    Check("another tab drops the quote and the listings", BuyCalls("cancel") == cancels + 2 and panel.filterRow.shown)
+    Click("Buy")
+    Press(panel.listingsButton)
+    LinenListings()
+    Type(panel.qtyBox, "5")
+    Press(panel.buyButton)
+    CloseHouse()
+    Check("the house closing drops the quote", BuyCalls("cancel") == cancels + 3)
+    OpenHouse()
+    Check("and leaves the listings", panel.filterRow.shown and not panel.purchaseBar.shown)
+
+    local results = #world.browseQueries
+    Press(panel.listingsButton)
+    LinenListings()
+    world.browseResults = { { itemKey = { itemID = 7, itemLevel = 0, itemSuffix = 0 }, minPrice = 5, totalQuantity = 1 } }
+    Fire("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
+    Check("a search from Blizzard's window doesn't replace the listings", panel.purchaseBar.shown
+        and ResultRows()[1].priceText.text == "<money 12>")
+    Press(panel.backButton)
+    Check("its results show after Back", ResultRows()[1].nameText.text == "Item 7" and #world.browseQueries == results)
+end
+
+do
+    -- Buying gear: Listings, pick one, Buy, Confirm. Bid-only and own listings are left out.
+    Setup()
+    Load()
+    world.equipment = true
+    local key = { itemID = 5000, itemLevel = 20, itemSuffix = 0, battlePetSpeciesID = 0 }
+    local panel = PickFirstResult({ { itemKey = key, minPrice = 300, totalQuantity = 4 } })
+    Press(panel.listingsButton)
+    Check("gear: searches its own item level", #world.itemQueries == 1 and world.itemQueries[1].kind == "search"
+        and world.itemQueries[1].itemLevel == 20)
+    Check("no how-many box for gear", not panel.qtyBox.shown and not panel.maxButton.shown)
+    world.itemResults = {
+        { itemKey = key, auctionID = 11, quantity = 1, buyoutAmount = 500, itemLink = "|Hitem:5000|h[Sword]|h",
+            timeLeft = 2, containsOwnerItem = false },
+        { itemKey = key, auctionID = 12, quantity = 1, buyoutAmount = 300, itemLink = "|Hitem:5000|h[Sword]|h",
+            timeLeft = 0, containsOwnerItem = false },
+        { itemKey = key, auctionID = 13, quantity = 1, minBid = 100, itemLink = "|Hitem:5000|h[Sword]|h",
+            timeLeft = 3, containsOwnerItem = false },
+        { itemKey = key, auctionID = 14, quantity = 1, buyoutAmount = 200, itemLink = "|Hitem:5000|h[Sword]|h",
+            timeLeft = 3, containsOwnerItem = true },
+    }
+    Fire("ITEM_SEARCH_RESULTS_UPDATED", key)
+    local rows = ResultRows()
+    Check("gear listings: cheapest first, with time left; bid-only and your own left out",
+        rows[1].priceText.text == "<money 300>" and rows[1].typicalText.text == "< 30m"
+        and rows[2].priceText.text == "<money 500>" and not rows[3].shown)
+    Check("the time column says so", panel.headerTexts.typical.text == "Time left")
+    Check("Buy waits for a pick", panel.buyButton.enabled == false)
+    rows[1]:GetScript("OnClick")(rows[1])
+    Check("a picked listing can be bought", panel.buyButton.enabled and panel.buyButton.text == "Buy"
+        and StatusLine():find("<money 300>", 1, true))
+    Press(panel.buyButton)
+    Check("Buy only asks to confirm; nothing is sent", #world.buys == 0 and panel.buyButton.text == "Confirm")
+    rows[2]:GetScript("OnClick")(rows[2])
+    Check("picking another listing starts over", panel.buyButton.text == "Buy" and #world.buys == 0)
+    rows[1]:GetScript("OnClick")(rows[1])
+    Press(panel.buyButton)
+    Press(panel.buyButton)
+    Check("Confirm buys that listing at its buyout", BuyCalls("bid") == 1 and world.buys[1].auctionID == 12
+        and world.buys[1].amount == 300 and panel.buyButton.text == "Buying...")
+    Press(panel.buyButton)
+    Check("a double click can't buy twice", BuyCalls("bid") == 1)
+    Fire("AUCTION_HOUSE_PURCHASE_COMPLETED", 99)
+    Check("another auction's answer is ignored", panel.buyButton.text == "Buying...")
+    Fire("AUCTION_HOUSE_PURCHASE_COMPLETED", 12)
+    Check("bought: says so and takes it off the list", StatusLine():find("Bought", 1, true)
+        and rows[1].priceText.text == "<money 500>" and not rows[2].shown)
+    rows[1]:GetScript("OnClick")(rows[1])
+    Press(panel.buyButton)
+    Press(panel.buyButton)
+    Fire("AUCTION_HOUSE_SHOW_ERROR", 3)
+    Check("the house refuses: nothing bought, and the listing stays", StatusLine():find("Nothing was bought", 1, true)
+        and panel.buyButton.text == "Buy" and rows[1].shown)
+    world.inCombat = true
+    Press(panel.buyButton)
+    Check("never in combat", panel.buyButton.text == "Buy" and StatusLine():find("combat", 1, true))
+    world.inCombat = false
+    Check("no quote to drop for gear", BuyCalls("cancel") == 0)
+end
+
+do
+    -- Market rows get Listings too: one click, one search, as on Buy.
+    Setup()
+    local P = HouseLedgerPrice
+    world.now = 1762900000
+    local db = P.EmptyDB()
+    for day = 1, 5 do
+        local best = {}
+        P.Consider(best, 2589, 1, day < 5 and 100 or 50, "Linen Cloth", 1)
+        P.Consider(best, 5000, 1, day < 5 and 1000 or 500, "Sword", 2)
+        P.Commit(db, "Alliance|TestRealm", best, world.now - (5 - day) * 24 * 60 * 60)
+    end
+    _G.HouseLedgerDB = db
+    Load()
+    OpenHouse()
+    world.commodities = { [2589] = true }
+    Click("Market")
+    local panel = MainFrame().buyPanel
+    Pick(panel.marketDropdown, "Biggest drops")
+    local rows = ResultRows()
+    local linen = rows[1].nameText.text == "Linen Cloth" and rows[1] or rows[2]
+    local sword = linen == rows[1] and rows[2] or rows[1]
+    linen:GetScript("OnClick")(linen)
+    Check("a Market row shows Listings", panel.listingsButton.shown)
+    Press(panel.listingsButton)
+    Check("a stackable Market item: one search for it", #world.itemQueries == 1
+        and world.itemQueries[1].kind == "search" and world.itemQueries[1].itemID == 2589)
+    Press(panel.backButton)
+    Check("Back returns to the Market list", panel.marketDropdown.shown and ResultRows()[1].shown)
+    world.equipment = true
+    sword:GetScript("OnClick")(sword)
+    Press(panel.listingsButton)
+    Check("gear from Market: every item level, as Blizzard's Sell tab searches", #world.itemQueries == 2
+        and world.itemQueries[2].kind == "sell" and world.itemQueries[2].itemLevel == 0)
+    Press(panel.backButton)
+    world.noItemInfo = true
+    sword:GetScript("OnClick")(sword)
+    Press(panel.listingsButton)
+    Check("an item the game hasn't loaded: nothing sent, try again", #world.itemQueries == 2
+        and StatusLine():find("still loading", 1, true))
+    world.noItemInfo = false
+    Pick(panel.marketDropdown, "Deals")
+    Check("a new Market view leaves no Listings button", not panel.listingsButton.shown)
+    CloseHouse()
+    linen:GetScript("OnClick")(linen)
+    Press(panel.listingsButton)
+    Check("house closed: no search", #world.itemQueries == 2 and StatusLine():find("Open the auction house", 1, true))
+end
+
+do
+    -- Buying: the less common paths.
+    Setup()
+    Load()
+    world.commodities = { [2589] = true }
+    local panel = PickFirstResult({ { itemKey = { itemID = 2589, itemLevel = 0, itemSuffix = 0 }, minPrice = 12,
+        totalQuantity = 245 } })
+    Press(panel.listingsButton)
+    world.commodityResults = {}
+    world.partialResults = true
+    Fire("COMMODITY_SEARCH_RESULTS_UPDATED", 2589)
+    Check("none for sale: says so", StatusLine():find("nothing for sale", 1, true)
+        and StatusLine():find("first ones", 1, true) and panel.listMessage.text == "None for sale with a buyout.")
+    Press(panel.maxButton)
+    Check("Max with nothing up does nothing", panel.qtyBox.text == "")
+    world.partialResults = false
+    local many = {}
+    for index = 1, 30 do
+        many[index] = { itemID = 2589, quantity = 1, unitPrice = index, auctionID = index, containsOwnerItem = index == 30 }
+    end
+    world.commodityResults = many
+    Fire("COMMODITY_SEARCH_RESULTS_UPDATED", 2589)
+    Check("a listing with your own items but no count is all yours", StatusLine():find("1 of your own", 1, true))
+    WheelDown()
+    Check("the wheel scrolls the listings", ResultRows()[1].priceText.text ~= "<money 1>")
+    WheelUp()
+    Check("and back", ResultRows()[1].priceText.text == "<money 1>")
+    Fire("COMMODITY_SEARCH_RESULTS_UPDATED", 9999)
+    Check("results for another item are ignored", ResultRows()[1].priceText.text == "<money 1>")
+    Type(panel.qtyBox, "100")
+    Check("more than is up: says how many are", StatusLine():find("Only 29 are up", 1, true))
+    Type(panel.qtyBox, "2")
+    Press(panel.buyButton)
+    Advance(11)
+    Check("no price from the house: drops the ask", panel.buyButton.text == "Buy"
+        and StatusLine():find("No price from the house", 1, true) and BuyCalls("cancel") == 1)
+    Press(panel.buyButton)
+    world.money = 2
+    Fire("COMMODITY_PRICE_UPDATED", 2, 3)
+    Check("a quote you can't afford: dropped, and says why", panel.buyButton.text == "Buy"
+        and StatusLine():find("the house's price for 2 is <money 3>", 1, true) and BuyCalls("cancel") == 2)
+    world.money = nil
+    Fire("COMMODITY_PURCHASE_FAILED")
+    Fire("COMMODITY_PRICE_UNAVAILABLE")
+    Fire("AUCTION_HOUSE_SHOW_ERROR", 1)
+    Check("answers with no buy under way change nothing", panel.buyButton.text == "Buy")
+    Press(panel.buyButton)
+    Type(panel.qtyBox, "3")
+    Check("how many can't change while the house is asked", panel.qtyBox.text == "2")
+    Fire("COMMODITY_PRICE_UPDATED", 1, 3)
+    ResultRows()[3]:GetScript("OnClick")(ResultRows()[3])
+    Check("a row click while Confirm waits starts over with the new number", panel.qtyBox.text == "3"
+        and panel.buyButton.text == "Buy" and BuyCalls("cancel") == 3)
+    Press(panel.buyButton)
+    ResultRows()[1]:GetScript("OnClick")(ResultRows()[1])
+    Press(panel.maxButton)
+    Check("while the house is asked, row clicks and Max wait", panel.qtyBox.text == "3")
+    Fire("COMMODITY_PRICE_UPDATED", 1, 6)
+    Type(panel.qtyBox, "4")
+    Check("typing a new number drops the quote", panel.buyButton.text == "Buy" and BuyCalls("cancel") == 4)
+    Press(panel.backButton)
+
+    -- Gear you can't afford.
+    world.equipment = true
+    local key = { itemID = 5000, itemLevel = 20, itemSuffix = 0, battlePetSpeciesID = 0 }
+    panel = PickFirstResult({ { itemKey = key, minPrice = 300, totalQuantity = 1 } })
+    Press(panel.listingsButton)
+    world.itemResults = {
+        { itemKey = key, auctionID = 21, quantity = 1, buyoutAmount = 300, timeLeft = 1, containsOwnerItem = false },
+    }
+    Fire("ITEM_SEARCH_RESULTS_UPDATED", key)
+    Fire("ITEM_SEARCH_RESULTS_UPDATED", { itemID = 1 })
+    world.money = 100
+    ResultRows()[1]:GetScript("OnClick")(ResultRows()[1])
+    Check("gear you can't afford: Buy stays off and says why", panel.buyButton.enabled == false
+        and StatusLine():find("You have <money 100>; this costs <money 300>", 1, true))
+    Press(panel.buyButton)
+    Check("and a click does nothing", panel.buyButton.text == "Buy")
+    world.money = nil
+    ResultRows()[1]:GetScript("OnEnter")(ResultRows()[1])
+    world.itemResults = {}
+    Fire("ITEM_SEARCH_RESULTS_UPDATED", key)
+    Check("a picked listing that is gone is let go", panel.buyButton.enabled == false)
+    Fire("AUCTION_HOUSE_PURCHASE_COMPLETED", 21)
+    Check("a buyout we didn't send changes nothing", not StatusLine():find("Bought", 1, true))
+end
+
+do
+    -- The picked row: marked in gold, with a Buy button on it; listings the same.
+    Setup()
+    Load()
+    world.commodities = { [2589] = true }
+    local panel = PickFirstResult(BrowseResults(2589, 2608))
+    local rows = ResultRows()
+    Check("a clicked row is marked in gold, and only that one", rows[1].selection.shown and not rows[2].selection.shown)
+    Check("its Buy button sits on the row", panel.listingsButton.shown and panel.listingsButton.text == "Buy"
+        and panel.listingsButton.points[1][2] == rows[1])
+    rows[3]:GetScript("OnClick")(rows[3])
+    Check("another click moves the mark and the button", rows[3].selection.shown and not rows[1].selection.shown
+        and panel.listingsButton.points[1][2] == rows[3])
+    Check("the button hides the trend under it, and gives it back when it moves", rows[3].trendText.alpha == 0
+        and rows[1].trendText.alpha == 1)
+    WheelDown()
+    Check("scrolled out of sight: no button, and no row marked by mistake", not panel.listingsButton.shown
+        and not ResultRows()[3].selection.shown)
+    WheelUp()
+    Check("scrolled back: both return", panel.listingsButton.shown and ResultRows()[3].selection.shown)
+    Click("Clear")
+    Check("Clear unmarks it", not panel.listingsButton.shown and not ResultRows()[3].selection.shown)
+    Check("and shows the trend again", ResultRows()[3].trendText.alpha == 1)
+
+    panel = PickFirstResult({ { itemKey = { itemID = 2589, itemLevel = 0, itemSuffix = 0 }, minPrice = 12,
+        totalQuantity = 245 } })
+    Press(panel.listingsButton)
+    LinenListings()
+    rows = ResultRows()
+    Check("a listing has no Buy button until it is picked", not panel.rowBuyButton.shown)
+    rows[2]:GetScript("OnClick")(rows[2])
+    Check("a picked listing is marked, with its own Buy button", rows[2].selection.shown and not rows[1].selection.shown
+        and panel.rowBuyButton.shown and panel.rowBuyButton.points[1][2] == rows[2] and panel.rowBuyButton.enabled)
+    Press(panel.rowBuyButton)
+    Check("the row's Buy does what the bar's does", BuyCalls("start") == 1 and world.buys[1].quantity == 240
+        and panel.rowBuyButton.text == "Waiting..." and panel.rowBuyButton.enabled == false)
+    Fire("COMMODITY_PRICE_UPDATED", 14, 3280)
+    Check("and turns to Confirm with it", panel.rowBuyButton.text == "Confirm" and panel.buyButton.text == "Confirm")
+    Press(panel.backButton)
+    Check("Back: no listing button, and the result row's Buy is back", not panel.rowBuyButton.shown
+        and panel.listingsButton.shown and ResultRows()[1].selection.shown)
+end
+
+do
+    -- A Silver Rod listing of "quantity" 50: on Forever one buy gets one rod for the whole buyout, so
+    -- the buyout is the price, as listed.
+    Setup()
+    Load()
+    local key = { itemID = 6338, itemLevel = 20, itemSuffix = 0, battlePetSpeciesID = 0 }
+    local panel = PickFirstResult({ { itemKey = key, minPrice = 795, totalQuantity = 2 } })
+    Press(panel.listingsButton)
+    world.itemResults = {
+        { itemKey = key, auctionID = 31, quantity = 50, buyoutAmount = 1300, itemLink = "|Hitem:6338|h[Silver Rod]|h",
+            timeLeft = 2, containsOwnerItem = false },
+        { itemKey = key, auctionID = 32, quantity = 1, buyoutAmount = 795, itemLink = "|Hitem:6338|h[Silver Rod]|h",
+            timeLeft = 2, containsOwnerItem = false },
+    }
+    Fire("ITEM_SEARCH_RESULTS_UPDATED", key)
+    local rows = ResultRows()
+    Check("cheapest buyout first, the price never divided by the quantity", rows[1].priceText.text == "<money 795>"
+        and rows[2].priceText.text == "<money 1300>" and rows[2].availText.text == "50"
+        and not rows[2].nameText.text:find("each", 1, true))
+    rows[2]:GetScript("OnClick")(rows[2])
+    local rod = "|Hitem:6338|h[Silver Rod]|h"
+    Check("picking it says what one buy costs", StatusLine():find(rod .. " for <money 1300>", 1, true)
+        and not StatusLine():find("each", 1, true))
+    Press(panel.rowBuyButton)
+    Check("Buy asks to confirm that price", StatusLine():find("Buy " .. rod .. " for <money 1300>?", 1, true))
+    Press(panel.rowBuyButton)
+    Check("Confirm pays the listing's buyout", world.buys[1].kind == "bid" and world.buys[1].amount == 1300)
+end
+
+do
+    -- Price Check marks its clicked row too.
+    Setup()
+    world.now = 1762900000
+    Load()
+    _G.HouseLedgerDB = HouseLedgerPrice.EnsureDB(SaveOres(5))
+    _G.SlashCmdList.HOUSELEDGERPC("ore")
+    local rows = _G.HouseLedgerPriceCheck.rows
+    rows[2]:GetScript("OnClick")(rows[2])
+    Check("Price Check: the clicked row is marked", rows[2].selection.shown and not rows[1].selection.shown)
+    local picked = rows[2].entry.itemID
+    _G.SlashCmdList.HOUSELEDGERPC("ore")
+    local still
+    for _, row in ipairs(rows) do
+        if row.shown and row.entry and row.entry.itemID == picked then
+            still = row.selection.shown
+        end
+    end
+    Check("and stays marked when the list draws again", still == true)
 end
 
 if failed > 0 then

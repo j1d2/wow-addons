@@ -7,7 +7,7 @@ item looks, font-string cells).
 local _, ns = ...
 ns.C, ns.ui, ns.state = {}, {}, {}
 -- One table per file, made here so any file can name another's before it loads.
-for _, name in ipairs({ "U", "Chart", "Scan", "Tooltip", "Buy", "Sell", "PC", "Settings", "Window" }) do
+for _, name in ipairs({ "U", "Chart", "Scan", "Tooltip", "Buy", "Sell", "Purchase", "PC", "Settings", "Window" }) do
     ns[name] = {}
 end
 local C, ui, state, Price, U = ns.C, ns.ui, ns.state, ns.Price, ns.U
@@ -383,6 +383,16 @@ end
 -- @param row the hovered row button
 function U.ShowRowTooltip(row)
     local itemKey = row.result and row.result.itemKey
+    if itemKey == nil and row.listing then
+        -- A listing: gear shows its own link (its item level and stats), stackables their item.
+        itemKey = row.listingKey
+        if row.listing.link and GameTooltip then
+            GameTooltip:SetOwner(row, "ANCHOR_RIGHT")
+            GameTooltip:SetHyperlink(row.listing.link)
+            GameTooltip:Show()
+            return
+        end
+    end
     if itemKey == nil or GameTooltip == nil then
         return
     end
@@ -395,11 +405,53 @@ function U.ShowRowTooltip(row)
     GameTooltip:Show()
 end
 
+--- True when two results are the same item: same item ID, item level and suffix. Market's list
+-- is rebuilt with new tables, so a picked row is found again by its item, not its table.
+-- @param a a browse result or Market row, or nil
+-- @param b another, or nil
+-- @return true when both are the same item
+function U.SameItemKey(a, b)
+    local keyA, keyB = a and a.itemKey, b and b.itemKey
+    if keyA == nil or keyB == nil then
+        return false
+    end
+    return keyA.itemID == keyB.itemID and (keyA.itemLevel or 0) == (keyB.itemLevel or 0)
+        and (keyA.itemSuffix or 0) == (keyB.itemSuffix or 0)
+end
+
+--- Gives a list row a gold background that marks it as the picked row (as Unmaker's list
+-- does), hidden until U.MarkRow shows it. The hover highlight stays as it was.
+-- @param row the row button
+function U.AddSelection(row)
+    row.selection = row:CreateTexture(nil, "BACKGROUND")
+    row.selection:SetAllPoints()
+    row.selection:SetColorTexture(1, 0.82, 0, 0.2)
+    row.selection:Hide()
+end
+
+--- Shows or hides a row's picked mark.
+-- @param row a row from U.AddSelection
+-- @param picked true to mark it
+function U.MarkRow(row, picked)
+    if picked then row.selection:Show() else row.selection:Hide() end
+end
+
 --- Hides the item tooltip when the mouse leaves a row.
 function U.HideRowTooltip()
     if GameTooltip then
         GameTooltip:Hide()
     end
+end
+
+--- False only when the house says a search's list is not complete.
+-- @param check the game's Has...Full...Results function, or nil when missing
+-- @param ... the arguments for check
+-- @return true unless check returns false
+function U.IsComplete(check, ...)
+    if type(check) ~= "function" then
+        return true
+    end
+    return check(...) ~= false
 end
 
 --- True when Blizzard's auction house window exists and is shown.

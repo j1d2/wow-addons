@@ -1445,6 +1445,63 @@ do
         and Near(fit.slope, 5))
 end
 
+do
+    -- Buying: the listings to buy from, the cost of N, the price warning and the house's quote.
+    local rows, own = P.BuyRows({
+        { unit = 14, quantity = 200, id = "b" },
+        { unit = 12, quantity = 40, id = "a" },
+        { unit = 0, quantity = 5, id = "bid only" },
+        { unit = 14, quantity = 10, id = "c" },
+        { unit = 20, quantity = 3, own = 3, id = "all mine" },
+        { unit = 30, quantity = 5, own = 2, id = "some mine" },
+        { unit = 40, quantity = 0, id = "empty" },
+    })
+    Check("buy rows: cheapest first, equal prices keep the house's order", #rows == 4 and rows[1].id == "a"
+        and rows[2].id == "b" and rows[3].id == "c" and rows[4].id == "some mine")
+    Check("buy rows: bid-only, empty and all-mine listings are left out, and mine are counted", own == 5)
+    Check("buy rows: my own items in a listing don't count as for sale", rows[4].quantity == 3)
+    Check("buy rows: each says how many are up to and including it", rows[1].upTo == 40 and rows[2].upTo == 240
+        and rows[3].upTo == 250 and rows[4].upTo == 253)
+    Check("buy rows: new tables; the house's results are not changed", rows[4] ~= nil and rows[4].own == 2)
+
+    local cost = P.FillCost(rows, 50)
+    Check("cost: cheapest first, 40 at 12c then 10 at 14c", cost.total == 40 * 12 + 10 * 14 and cost.count == 50
+        and cost.top == 14)
+    cost = P.FillCost(rows, 1)
+    Check("cost: one", cost.total == 12 and cost.count == 1 and cost.top == 12)
+    cost = P.FillCost(rows, 1000)
+    Check("cost: more than is up buys only what is up", cost.count == 253
+        and cost.total == 40 * 12 + 200 * 14 + 10 * 14 + 3 * 30)
+    cost = P.FillCost({}, 5)
+    Check("cost: nothing up costs nothing", cost.total == 0 and cost.count == 0 and cost.top == nil)
+    cost = P.FillCost(rows, 0)
+    Check("cost: zero buys nothing", cost.total == 0 and cost.count == 0)
+
+    local stats = { typical = 100, spread = 10, earlierScans = 5 }
+    local text, tone = P.BuyWarning(stats, 142)
+    Check("warning: well above the 7-day average", text == "42% above the 7-day average" and tone == "high")
+    text, tone = P.BuyWarning(stats, 62)
+    Check("warning: below it", text == "38% below the 7-day average" and tone == "low")
+    text, tone = P.BuyWarning(stats, 105)
+    Check("warning: near it", text == "about the 7-day average" and tone == "usual")
+    text, tone = P.BuyWarning(nil, 105)
+    Check("warning: none without saved prices", text == nil and tone == nil)
+    Check("warning text: colored by tone", P.BuyWarningText(stats, 142):find("ff2020", 1, true)
+        and P.BuyWarningText(stats, 62):find("20ff20", 1, true) and P.BuyWarningText(nil, 5) == "")
+
+    local verdict, rise = P.QuoteCheck(1000, 1000)
+    Check("quote: same as the listings", verdict == "ok" and rise == 0)
+    verdict = P.QuoteCheck(1000, 900)
+    Check("quote: cheaper is fine", verdict == "ok")
+    verdict, rise = P.QuoteCheck(1000, 1040)
+    Check("quote: a small rise needs a new look", verdict == "rose" and rise == 40)
+    verdict, rise = P.QuoteCheck(1000, 1051)
+    Check("quote: over 5% more is refused, like Blizzard's", verdict == "too high" and rise == 51)
+
+    Check("time left: the house's four bands", P.TimeLeftText(0) == "< 30m" and P.TimeLeftText(3) == "12-48h"
+        and P.TimeLeftText(9) == "")
+end
+
 if failed > 0 then
     io.write(string.format("%d failed\n", failed))
     os.exit(1)

@@ -156,7 +156,7 @@ run_check toc
 if [[ $status -eq 1 && "$out" == *"has no '## Interface:' number"* ]]; then rc=0; else rc=1; fi
 check "toc: missing Interface line is caught" "$rc"
 
-for call in "C_AuctionHouse.PlaceBid(key, 1)" "C_AuctionHouse.PostItem(loc, 1, 1)" \
+for call in "C_AuctionHouse.PostCommodity(loc, 1, 1, 1)" "C_AuctionHouse.PostItem(loc, 1, 1)" \
     "C_AuctionHouse.CancelAuction(id)" "loadstring(text)"; do
     good_addon
     printf 'local function Go()\n    %s\nend\n' "$call" >>"$ROOT/addons/Demo/Demo.lua"
@@ -164,6 +164,30 @@ for call in "C_AuctionHouse.PlaceBid(key, 1)" "C_AuctionHouse.PostItem(loc, 1, 1
     if [[ $status -eq 1 && "$out" == *"Demo.lua:5: calls"*"which RULES.md forbids"* ]]; then rc=0; else rc=1; fi
     check "policy: '${call%%(*}' is caught" "$rc"
 done
+
+# Buying happens only in Purchase.lua, on the player's click, each use with a reviewed note.
+for call in "C_AuctionHouse.PlaceBid(id, 1)" "C_AuctionHouse.StartCommoditiesPurchase(1, 2)" \
+    "C_AuctionHouse.ConfirmCommoditiesPurchase(1, 2)" "local buy = C_AuctionHouse.PlaceBid"; do
+    good_addon
+    printf 'local function Go()\n    %s -- reviewed: the Buy click\nend\n' "$call" >>"$ROOT/addons/Demo/Demo.lua"
+    run_check policy
+    name="${call#local buy = }"
+    if [[ $status -eq 1 && "$out" == *"Demo.lua:5: buys with '${name%%(*}' outside Purchase.lua"* ]]; then rc=0; else rc=1; fi
+    check "policy: '${name%%(*}' outside Purchase.lua is caught" "$rc"
+done
+
+good_addon
+printf 'local function Go()\n    %s\nend\n' 'C_AuctionHouse.PlaceBid(id, 1)' >"$ROOT/addons/Demo/Purchase.lua"
+run_check policy
+if [[ $status -eq 1 && "$out" == *"Purchase.lua:2: uses 'C_AuctionHouse.PlaceBid', which needs a '-- reviewed: <why>' note"* ]]; then rc=0; else rc=1; fi
+check "policy: a buy in Purchase.lua still needs a reviewed note" "$rc"
+
+good_addon
+printf 'local function Go()\n    %s\nend\n' 'C_AuctionHouse.PlaceBid(id, 1) -- reviewed: the Confirm click buys it' \
+    >"$ROOT/addons/Demo/Purchase.lua"
+run_check policy
+if [[ $status -eq 0 ]]; then rc=0; else rc=1; fi
+check "policy: a buy in Purchase.lua with a reviewed note passes" "$rc"
 
 # No place in these addons: swapping a function's environment hides what code does, the debug
 # library reaches into other code, and RunMacro plays the character.

@@ -1832,6 +1832,123 @@ function PriceLedger.SteadyText(verdict)
     return string.format("|cff9d9d9dsteady %s%d%%|r", verdict.trendPct < 0 and "-" or "+", percent)
 end
 
+-- Buying (Purchase.lua). Pure helpers: nothing here sends anything or calls the game.
+
+-- Like Blizzard's buy window: a quote over 5% above the listings' price is refused.
+PriceLedger.QUOTE_RISE_LIMIT = 1.05
+
+--- The house's listings of one item, ready to buy from: the player's own items and bid-only
+-- or empty listings left out, cheapest first (equal prices keep the house's order), each with
+-- how many are up to and including it.
+-- @param listings list of { unit = copper per unit, quantity, own = how many are the player's
+--   (a number; true means all) }, plus any other fields, which are copied
+-- @return a new list of new tables, each with quantity less own and upTo added; and how many
+--   of the player's own items were left out
+function PriceLedger.BuyRows(listings)
+    local rows, ownCount = {}, 0
+    for index, listing in ipairs(listings) do
+        local quantity = type(listing.quantity) == "number" and listing.quantity or 0
+        local own = listing.own == true and quantity or math.min(quantity, tonumber(listing.own) or 0)
+        ownCount = ownCount + own
+        if type(listing.unit) == "number" and listing.unit > 0 and quantity - own > 0 then
+            local row = {}
+            for key, value in pairs(listing) do
+                row[key] = value
+            end
+            row.quantity, row.order = quantity - own, index
+            rows[#rows + 1] = row
+        end
+    end
+    table.sort(rows, function(a, b)
+        if a.unit ~= b.unit then
+            return a.unit < b.unit
+        end
+        return a.order < b.order
+    end)
+    local upTo = 0
+    for _, row in ipairs(rows) do
+        upTo = upTo + row.quantity
+        row.upTo, row.order = upTo, nil
+    end
+    return rows, ownCount
+end
+
+--- What buying a number of an item costs, cheapest listings first, as the house fills it.
+-- @param rows from PriceLedger.BuyRows
+-- @param quantity how many to buy
+-- @return { total, count, top }: copper in all, how many that buys (less than asked when fewer
+--   are up), and the highest unit price paid (nil when nothing)
+function PriceLedger.FillCost(rows, quantity)
+    local cost = { total = 0, count = 0 }
+    for _, row in ipairs(rows) do
+        local left = quantity - cost.count
+        if left <= 0 then
+            break
+        end
+        local take = math.min(left, row.quantity)
+        cost.total = cost.total + take * row.unit
+        cost.count = cost.count + take
+        cost.top = row.unit
+    end
+    return cost
+end
+
+--- How a price to pay compares with the item's 7-day average, in words.
+-- @param stats from PriceLedger.Stats, or nil
+-- @param unit the copper per unit to pay
+-- @return text like "42% above the 7-day average" and its tone ("high", "low" or "usual"), or
+--   nil without saved prices
+function PriceLedger.BuyWarning(stats, unit)
+    local verdict = PriceLedger.Judge(stats, unit)
+    if verdict.trendPct == nil then
+        return nil, nil
+    end
+    local percent = math.floor(math.abs(verdict.trendPct) * 100 + 0.5)
+    if verdict.trend == "up" then
+        return percent .. "% above the 7-day average", "high"
+    elseif verdict.trend == "down" then
+        return percent .. "% below the 7-day average", "low"
+    end
+    return "about the 7-day average", "usual"
+end
+
+--- The buy warning in color: red above, green below, grey about the average.
+-- @param stats from PriceLedger.Stats, or nil
+-- @param unit the copper per unit to pay
+-- @return the markup, or "" without saved prices
+function PriceLedger.BuyWarningText(stats, unit)
+    local text, tone = PriceLedger.BuyWarning(stats, unit)
+    if text == nil then
+        return ""
+    end
+    local color = tone == "high" and RED[4] or tone == "low" and GREEN[4] or "9d9d9d"
+    return "|cff" .. color .. text .. "|r"
+end
+
+--- Checks the house's quote for a commodity buy against what the listings showed.
+-- @param estimate copper the listings said, from FillCost
+-- @param quote copper the house quoted for the same number
+-- @return "ok", "rose" (more, needs another look) or "too high" (over QUOTE_RISE_LIMIT); and
+--   the rise in copper (0 or more)
+function PriceLedger.QuoteCheck(estimate, quote)
+    local rise = math.max(0, quote - estimate)
+    if quote > estimate * PriceLedger.QUOTE_RISE_LIMIT then
+        return "too high", rise
+    elseif rise > 0 then
+        return "rose", rise
+    end
+    return "ok", 0
+end
+
+local TIME_LEFT = { [0] = "< 30m", [1] = "30m-2h", [2] = "2-12h", [3] = "12-48h" }
+
+--- A listing's time left as short text.
+-- @param band an Enum.AuctionHouseTimeLeftBand value (0 short to 3 very long)
+-- @return text like "2-12h", or "" for anything else
+function PriceLedger.TimeLeftText(band)
+    return TIME_LEFT[band] or ""
+end
+
 --- A count and a word, with an "s" unless the count is 1.
 -- @param count a number
 -- @param word the singular word
