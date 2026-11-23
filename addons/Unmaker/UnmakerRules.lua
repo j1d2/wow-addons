@@ -38,6 +38,7 @@ R.SETTINGS = {
     { key = "openOnLoot", label = "Open when I loot something to disenchant", default = false },
     { key = "openOnBags", label = "Open and close with my bags", default = false },
     { key = "bagButton", label = "Show the Unmaker button above the bags", default = true },
+    { key = "tooltipResults", label = "Show what an item disenchants into on its tooltip", default = true },
 }
 
 local SETTING_DEFAULTS = {}

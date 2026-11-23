@@ -164,6 +164,7 @@ Its Buy and Sell tabs switch Blizzard's tabs too, and the reverse.
 - **Every Uncommon, Rare and Epic** weapon and armor piece in your bags is listed, with its item level and vendor price. **Uncheck** what you want to keep; Unmaker remembers. Filter by quality and item level, and click a heading to sort.
 - **Disenchant next** disenchants the next checked item. One click per item, which is Blizzard's rule. Bind it to a key in the game's Key Bindings menu.
 - **Epics and soulbound gear start unchecked.** Change that on the **Settings** tab.
+- **What it gives:** the **Gives** column shows each item's likely materials and their chances, and every item tooltip (bags, links, the auction house) says what it disenchants into. Once you've disenchanted 5 of a kind of item, your own results replace the guide's numbers.
 - **Stats and History tabs:** how many items you've unmade (this session, today, lifetime) on each character and all of them together, the materials you got, fun facts, and a sortable list of every recent disenchant.
 - **Never** disenchants without your click, and does nothing in combat.
 
@@ -231,6 +232,7 @@ Its Buy and Sell tabs switch Blizzard's tabs too, and the reverse.
 - With a fast-loot addon the button may stay locked a little longer. It unlocks by itself after 10 seconds.
 - **Stats tab:** items unmade this session, today, lifetime and in your best session; counts by quality; your most-unmade item, best item and busiest day; and lifetime materials. Pick all your characters together or one of them from the dropdown at the top. A 14-day chart shows how many you unmade each day.
 - **History tab:** your last 500 disenchants (up to 10,000 from Settings), newest first, and who unmade each. Pick a character from the dropdown to see only theirs. Click **Item**, **ilvl**, **Who** or **When** to sort, and again to reverse.
+- **Gives and tooltips:** the chances come from your own results once you have 5 disenchants of that kind of item (same quality, armor or weapon, and item-level range). Until then they come from [warcraft.wiki.gg's disenchanting tables](https://warcraft.wiki.gg/wiki/Disenchanting_tables) (CC BY-SA 4.0), plus two places where Forever is different: blues below item level 20 give dust or essence like a green, one more of each, and green weapons from item level 21 to 30 give Greater Magic Essence. Those two were checked against other Forever tools' numbers and Unmaker's own results; the tooltip says "Forever's own results (few seen yet)" for them. Turn the tooltip lines off in **Settings**.
 - **Kept tab:** every item you've unchecked, so Unmaker keeps it, in or out of your bags. Click **Forget** to put one back: it starts checked again, unless a setting keeps it (like Keep epics).
 - Every character can see every character's stats and the shared history. They only count disenchants done with Unmaker's buttons.
 
@@ -252,7 +254,7 @@ These are unofficial player addons. They are not affiliated with, endorsed by, o
 
 World of Warcraft, WoW, Warcraft, Battle.net, and Blizzard are trademarks or registered trademarks of Blizzard Entertainment, Inc. in the U.S. and/or other countries. Other names are the property of their respective owners.
 
-The code is original addon code. It does not include Blizzard's client files, interface code, or copied text from their games or website. The screenshots in `docs/screenshots/` show these addons in the game. The game art in them is © Blizzard Entertainment, Inc., shown here for noncommercial use under the terms of [Blizzard's legal FAQ](https://www.blizzard.com/en-us/legal/28d5ebbf-c245-4408-8ba9-043dd5f056bf/legal-faq), and is not covered by this project's license. Naming a product or a game API here is only so a reader can find it.
+The code is original addon code. It does not include Blizzard's client files, interface code, or copied text from their games or website. Unmaker's disenchant chances (`addons/Unmaker/UnmakerResults.lua`) are based on [warcraft.wiki.gg's Disenchanting tables](https://warcraft.wiki.gg/wiki/Disenchanting_tables), used under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/). The screenshots in `docs/screenshots/` show these addons in the game. The game art in them is © Blizzard Entertainment, Inc., shown here for noncommercial use under the terms of [Blizzard's legal FAQ](https://www.blizzard.com/en-us/legal/28d5ebbf-c245-4408-8ba9-043dd5f056bf/legal-faq), and is not covered by this project's license. Naming a product or a game API here is only so a reader can find it.
 
 ## License
 

@@ -245,6 +245,10 @@ local function Load(setup)
     }
     _G.C_Item = {
         GetItemInfoInstant = function(itemID)
+            -- Like the game's, it also takes an item link.
+            if type(itemID) == "string" then
+                itemID = tonumber(itemID:match("item:(%d+)"))
+            end
             for _, bag in pairs(world.bags) do
                 for _, record in pairs(bag) do
                     if record.itemID == itemID then
@@ -284,7 +288,26 @@ local function Load(setup)
     _G.GameTooltip = { SetOwner = function() end, SetBagItem = function(_, bag, slot)
         world.tooltip = bag .. ":" .. slot end, Show = function() end, Hide = function() world.tooltip = nil end,
         SetHyperlink = function(_, link) world.tooltip = link end,
-        AddLine = function(_, text) world.tooltipLine = text end }
+        AddLine = function(_, text)
+            world.tooltipLine = text
+            world.tooltipLines[#world.tooltipLines + 1] = text
+        end,
+        AddDoubleLine = function(_, left, right)
+            world.tooltipLines[#world.tooltipLines + 1] = left .. " | " .. right
+        end }
+    world.tooltipLines = {}
+    -- The game's tooltip data hooks: world.tooltipHook is the function added for item tooltips.
+    _G.Enum = { TooltipDataType = { Item = 0 } }
+    _G.TooltipDataProcessor = nil
+    if not setup.noTooltipHook then
+        _G.TooltipDataProcessor = {
+            AddTooltipPostCall = function(kind, fn)
+                if kind == 0 then
+                    world.tooltipHook = fn
+                end
+            end,
+        }
+    end
     _G.PanelTemplates_SetNumTabs = function() end
     _G.PanelTemplates_SetTab = function(_, id) world.tab = id end
     _G.PanelTemplates_TabResize = function() end
@@ -294,8 +317,11 @@ local function Load(setup)
     _G.SlashCmdList = {}
     -- Like the game: the .toc's files in order, each given the addon's name and one shared table.
     local ns = {}
-    for _, file in ipairs({ "UnmakerRules.lua", "UnmakerStats.lua", "Unmaker.lua" }) do
-        assert(loadfile(folder .. "/" .. file))("Unmaker", ns)
+    for line in io.lines(folder .. "/Unmaker.toc") do
+        local file = line:match("^%s*([^#%s][^%s]*%.lua)%s*$")
+        if file then
+            assert(loadfile(folder .. "/" .. file))("Unmaker", ns)
+        end
     end
     world.ns = ns
     for _, f in ipairs(world.frames) do
@@ -1276,6 +1302,100 @@ do
     Check("and counts for the full-name character", db.characters["Tester Vale-Testrealm"] ~= nil
         and db.characters["Tester Vale-Testrealm"].total >= 1)
     Check("no character is saved under the unknown realm", db.characters["Tester Vale-Forever"] == nil)
+end
+
+
+--- True when a tooltip line starts with the given text.
+-- @param prefix the start of the line
+-- @return true when one does
+local function TooltipHas(prefix)
+    for _, line in ipairs(world.tooltipLines) do
+        if line:sub(1, #prefix) == prefix then
+            return true
+        end
+    end
+    return false
+end
+
+do
+    -- What each item disenchants into: the Gives column, item tooltips and the setting.
+    local bags = StandardBags()
+    bags[0][1].level = 13 -- Green Vest: green armor, item level 13
+    Start({ bags = bags })
+    _G.SlashCmdList.UNMAKER("")
+    local vest
+    for _, row in ipairs(ShownRows()) do
+        if row.nameText.text:find("Green Vest", 1, true) then
+            vest = row
+        end
+    end
+    Check("Gives: the most likely material first, with its chance", vest.gives[1].text.text == "80%"
+        and vest.gives[1].icon.shown and vest.gives[2].text.text == "20%" and vest.gives[3].text.text == ""
+        and not vest.gives[3].icon.shown)
+    local axe = ShownRows()[1]
+    Check("an epic below the tables' levels shows nothing", axe.gives[1].text.text == "")
+    local panel = _G.UnmakerNextButton.parent
+    Check("the Gives heading doesn't sort", panel.headerTexts.gives.text == "Gives" and panel.sortButtons.gives == nil)
+
+    Check("the tooltip hook is added once loaded", type(world.tooltipHook) == "function")
+    world.tooltipHook(_G.GameTooltip, { id = 11, hyperlink = "|Hitem:11|h[Green Vest]|h" })
+    Check("an item tooltip says what it disenchants into", TooltipHas("Disenchants into:")
+        and TooltipHas("Strange Dust 1-2 | 80%") and TooltipHas("Guide: warcraft.wiki.gg"))
+    world.tooltipLines = {}
+    world.tooltipHook(_G.GameTooltip, { id = 15 })
+    Check("not for an item that can't be disenchanted", #world.tooltipLines == 0)
+    world.tooltipHook(_G.GameTooltip, { hyperlink = "|Hitem:11|h[Green Vest]|h" })
+    Check("an item known by its link only", TooltipHas("Disenchants into:"))
+    world.tooltipLines = {}
+    world.tooltipHook(_G.GameTooltip, {})
+    world.tooltipHook(nil, { id = 11 })
+    Check("no item, or no tooltip: nothing", #world.tooltipLines == 0)
+
+    vest:GetScript("OnEnter")(vest)
+    Check("hovering a row: the hook adds the lines, not the row", #world.tooltipLines == 0)
+    _G.UnmakerDB.settings.tooltipResults = false
+    world.tooltipHook(_G.GameTooltip, { id = 11 })
+    Check("with the setting off, item tooltips don't show it", #world.tooltipLines == 0)
+    vest:GetScript("OnEnter")(vest)
+    Check("but the Items tab still does", TooltipHas("Disenchants into:"))
+end
+
+do
+    -- The player's own results take over at 5 disenchants of that kind of item.
+    local history = {}
+    for index = 1, 5 do
+        history[index] = { itemID = 11, quality = 2, level = 13, looted = true, time = index,
+            mats = { { name = "Strange Dust", link = "|Hitem:10940|h[Strange Dust]|h", quantity = 2 } } }
+    end
+    local bags = StandardBags()
+    bags[0][1].level = 13
+    Start({ bags = bags, db = { history = history } })
+    world.tooltipHook(_G.GameTooltip, { id = 11 })
+    Check("5 of yours: the tooltip shows your results", TooltipHas("Strange Dust 2 | 100%")
+        and TooltipHas("From 5 of your disenchants"))
+    _G.SlashCmdList.UNMAKER("")
+    local vest
+    for _, row in ipairs(ShownRows()) do
+        if row.nameText.text:find("Green Vest", 1, true) then
+            vest = row
+        end
+    end
+    Check("and so does the Gives column", vest.gives[1].text.text == "100%" and vest.gives[2].text.text == "")
+end
+
+do
+    -- A client without the tooltip data hooks: the Items tab still shows the results on hover.
+    local bags = StandardBags()
+    bags[0][1].level = 13
+    Start({ bags = bags, noTooltipHook = true })
+    _G.SlashCmdList.UNMAKER("")
+    for _, row in ipairs(ShownRows()) do
+        if row.nameText.text:find("Green Vest", 1, true) then
+            row:GetScript("OnEnter")(row)
+        end
+    end
+    Check("no tooltip hook: the row's tooltip adds the results itself", world.tooltipHook == nil
+        and TooltipHas("Disenchants into:"))
 end
 
 if failed > 0 then

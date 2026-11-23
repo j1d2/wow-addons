@@ -1,7 +1,9 @@
 --[[
 Unmaker: a window that lists the gear in your bags you can disenchant, with a checkbox on each
 item. "Disenchant next" disenchants the first checked item; "Disenchant selected" the item you
-clicked. UnmakerRules.lua (ns.Rules) and UnmakerStats.lua (ns.Stats) hold the logic; this file reads the bags and draws the window.
+clicked. UnmakerRules.lua (ns.Rules), UnmakerStats.lua (ns.Stats) and UnmakerResults.lua
+(ns.Results: what an item disenchants into) hold the logic; this file reads the bags and draws
+the window, and adds the disenchant results to item tooltips.
 
 Blizzard's rules (RULES.md, Disenchanting): every cast needs its own click or key press.
 Unmaker never casts. Its two buttons are Blizzard secure buttons: on the player's click, PreClick
@@ -14,13 +16,13 @@ those wait until the fight ends, as in HouseLedger.
 
 -- The rules and stats modules, shared through the addon's own table (never globals).
 local _, ns = ...
-local R, S = ns.Rules, ns.Stats
+local R, S, D = ns.Rules, ns.Stats, ns.Results
 
 local DISENCHANT_SPELL = 13262
 local BAGS = { 0, 1, 2, 3, 4 } -- the backpack and four bags; the reagent bag holds no gear
 local ROW_COUNT = 10
 local ROW_HEIGHT = 24
-local WIDTH = 520
+local WIDTH = 600
 local LIST_TOP = 64 -- the Items tab starts this far below the window's top edge
 -- On the Items tab: the filter row, then the column headings, then the list.
 local FILTER_HEIGHT = 26
@@ -32,7 +34,11 @@ local TEXT_HEIGHT = 56
 local BUTTON_AREA = 40
 local HEIGHT = LIST_START + LIST_HEIGHT + TEXT_HEIGHT + BUTTON_AREA
 -- Items tab columns: their headings, and the way each first sorts when clicked (true is A to Z).
-local COLUMN_LABELS = { name = "Item", ilvl = "ilvl", vendor = "Vendor" }
+local COLUMN_LABELS = { name = "Item", ilvl = "ilvl", gives = "Gives", vendor = "Vendor" }
+-- The Gives column: up to this many materials, each an icon and its chance, most likely first.
+local GIVES_SHOWN, GIVES_SLOT, GIVES_ICON = 3, 46, 14
+-- Items tab cells, from the row's right edge: vendor price, then Gives, then item level.
+local VENDOR_RIGHT, GIVES_RIGHT, LEVEL_RIGHT, NAME_RIGHT = -4, -100, -244, -284
 local SORT_FIRST_ASCENDING = { name = true, ilvl = false, vendor = false }
 -- History headings that sort A to Z (the rest sort highest or newest first).
 local HISTORY_ASCENDING = { name = true, who = true }
@@ -205,6 +211,114 @@ local function UpdateButtons()
 end
 
 --- Draw the visible rows, the count and the buttons.
+-- The player's own disenchant results, counted from the history (D.Tally), and a stamp of the
+-- history they were counted from, so they are counted again only when it changed.
+local tally, tallyStamp
+local tooltipsHooked = false
+
+--- An item's class, from the game's instant item data (no server query).
+-- @param itemID the item's ID
+-- @return its class (Enum.ItemClass), or nil
+local function ClassOf(itemID)
+    local _, _, _, _, _, classID = C_Item.GetItemInfoInstant(itemID)
+    return classID
+end
+
+--- The player's own results, counted again only when the history changed (a new disenchant,
+-- its loot, or a trim).
+-- @return the tally from D.Tally
+local function CurrentTally()
+    local history = db.history
+    local last = history[#history]
+    local stamp = #history .. ":" .. (last and (tostring(last.time) .. tostring(last.looted)) or "")
+    if stamp ~= tallyStamp then
+        tally, tallyStamp = D.Tally(history, ClassOf), stamp
+    end
+    return tally
+end
+
+--- What an item disenchants into: the player's own results, or the tables (UnmakerResults).
+-- @param item { quality, classID, level }
+-- @return the prediction from D.Predict, or nil
+local function Prediction(item)
+    return D.Predict(item, CurrentTally())
+end
+
+--- A material's icon: from its link (the player's own results) or its item ID (the tables).
+-- @param result one result of a prediction
+-- @return the icon
+local function MaterialIcon(result)
+    local _, _, _, _, icon = C_Item.GetItemInfoInstant(result.id or result.link)
+    return icon or UNKNOWN_ICON
+end
+
+--- A material's name in the game's language, once the game has the item; else the table's.
+-- @param result one result of a prediction
+-- @return the name
+local function MaterialName(result)
+    local name = result.id and C_Item.GetItemInfo(result.id)
+    return name or result.name
+end
+
+--- Adds a prediction's lines to a tooltip: a gold title, each material with its chance, and a
+-- grey line saying where the numbers come from.
+-- @param tooltip the tooltip
+-- @param prediction from Prediction, or nil
+-- @return true when lines were added
+local function AddPredictionLines(tooltip, prediction)
+    local lines = D.TooltipLines(prediction, MaterialName)
+    if lines == nil then
+        return false
+    end
+    tooltip:AddLine(lines[1].left, 1, 0.82, 0)
+    for index = 2, #lines - 1 do
+        tooltip:AddDoubleLine(lines[index].left, lines[index].right, 1, 1, 1, 1, 1, 1)
+    end
+    tooltip:AddLine(lines[#lines].left, 0.6, 0.6, 0.6)
+    return true
+end
+
+--- Any item tooltip (bags, links, the auction house, loot): adds what the item disenchants
+-- into, if it can be disenchanted and the setting is on. Reads the game's item data only.
+-- @param tooltip the tooltip being shown
+-- @param data the game's tooltip data for an item ({ id, hyperlink })
+local function AddResultsToTooltip(tooltip, data)
+    if db == nil or not db.settings.tooltipResults or type(data) ~= "table" or tooltip == nil
+        or type(tooltip.AddDoubleLine) ~= "function" then
+        return
+    end
+    local link = type(data.hyperlink) == "string" and data.hyperlink or nil
+    local itemID = data.id
+    if type(itemID) ~= "number" and link then
+        itemID = C_Item.GetItemInfoInstant(link)
+    end
+    if type(itemID) ~= "number" then
+        return
+    end
+    local _, _, _, equipLoc, _, classID = C_Item.GetItemInfoInstant(itemID)
+    local _, _, quality, level = C_Item.GetItemInfo(itemID)
+    -- The item's own level (upgrades and scaling included), as the Items tab shows it.
+    if link and type(C_Item.GetDetailedItemLevelInfo) == "function" then
+        level = C_Item.GetDetailedItemLevelInfo(link) or level
+    end
+    local item = { quality = quality, classID = classID, equipLoc = equipLoc, level = level,
+        cosmetic = C_Item.IsCosmeticItem(itemID) == true }
+    if R.CanDisenchant(item) then
+        AddPredictionLines(tooltip, Prediction(item))
+    end
+end
+
+--- Adds the disenchant results to every item tooltip, once. A client without the game's
+-- tooltip data hooks shows them only on the Items tab.
+local function HookTooltips()
+    if tooltipsHooked or TooltipDataProcessor == nil or type(TooltipDataProcessor.AddTooltipPostCall) ~= "function"
+        or Enum == nil or Enum.TooltipDataType == nil or Enum.TooltipDataType.Item == nil then
+        return
+    end
+    TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, AddResultsToTooltip)
+    tooltipsHooked = true
+end
+
 --- A copper amount the way the game shows money, with coin icons; plain "1s 20c" if the game's
 -- formatter is missing.
 -- @param copper whole copper
@@ -233,6 +347,18 @@ local function Render()
             rowFrame.nameText:SetText(row.link or row.name)
             rowFrame.levelText:SetText(row.level and tostring(row.level) or "")
             rowFrame.vendorText:SetText(row.vendor and MoneyText(row.vendor) or "-")
+            local prediction = Prediction(row)
+            for slot, cell in ipairs(rowFrame.gives) do
+                local result = prediction and prediction.results[slot]
+                if result then
+                    cell.icon:SetTexture(MaterialIcon(result))
+                    cell.icon:Show()
+                    cell.text:SetText(D.PercentText(result.pct))
+                else
+                    cell.icon:Hide()
+                    cell.text:SetText("")
+                end
+            end
             rowFrame.check:SetChecked(row.checked)
             rowFrame.highlight:SetShown(row == selected)
             rowFrame:Show()
@@ -546,20 +672,36 @@ local function BuildRow(index)
 
     rowFrame.nameText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     rowFrame.nameText:SetPoint("LEFT", rowFrame.icon, "RIGHT", 6, 0)
-    rowFrame.nameText:SetPoint("RIGHT", rowFrame, "RIGHT", -140, 0)
+    rowFrame.nameText:SetPoint("RIGHT", rowFrame, "RIGHT", NAME_RIGHT, 0)
     rowFrame.nameText:SetJustifyH("LEFT")
     rowFrame.nameText:SetWordWrap(false)
 
     rowFrame.vendorText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    rowFrame.vendorText:SetPoint("RIGHT", rowFrame, "RIGHT", -4, 0)
+    rowFrame.vendorText:SetPoint("RIGHT", rowFrame, "RIGHT", VENDOR_RIGHT, 0)
     rowFrame.vendorText:SetWidth(90)
     rowFrame.vendorText:SetJustifyH("RIGHT")
     rowFrame.vendorText:SetWordWrap(false)
 
     rowFrame.levelText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    rowFrame.levelText:SetPoint("RIGHT", rowFrame, "RIGHT", -100, 0)
+    rowFrame.levelText:SetPoint("RIGHT", rowFrame, "RIGHT", LEVEL_RIGHT, 0)
     rowFrame.levelText:SetWidth(34)
     rowFrame.levelText:SetJustifyH("RIGHT")
+
+    -- Gives: an icon and a chance per material, left to right, most likely first.
+    rowFrame.gives = {}
+    local givesLeft = GIVES_RIGHT - GIVES_SHOWN * GIVES_SLOT
+    for slot = 1, GIVES_SHOWN do
+        local icon = rowFrame:CreateTexture(nil, "ARTWORK")
+        icon:SetSize(GIVES_ICON, GIVES_ICON)
+        icon:SetPoint("LEFT", rowFrame, "RIGHT", givesLeft + (slot - 1) * GIVES_SLOT, 0)
+        icon:Hide()
+        local text = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        text:SetPoint("LEFT", icon, "RIGHT", 2, 0)
+        text:SetWidth(GIVES_SLOT - GIVES_ICON - 4)
+        text:SetJustifyH("LEFT")
+        text:SetWordWrap(false)
+        rowFrame.gives[slot] = { icon = icon, text = text }
+    end
 
     rowFrame:SetScript("OnClick", function()
         selected = rowFrame.row
@@ -569,6 +711,10 @@ local function BuildRow(index)
         if rowFrame.row then
             GameTooltip:SetOwner(rowFrame, "ANCHOR_RIGHT")
             GameTooltip:SetBagItem(rowFrame.row.bag, rowFrame.row.slot)
+            -- With the tooltip setting on, the tooltip hook has added the results already.
+            if not db.settings.tooltipResults or not tooltipsHooked then
+                AddPredictionLines(GameTooltip, Prediction(rowFrame.row))
+            end
             GameTooltip:Show()
         end
     end)
@@ -1062,8 +1208,10 @@ local function BuildFilterAndHeader()
     header:SetSize(WIDTH - 40, HEADER_HEIGHT)
     local places = {
         { key = "name", point = "LEFT", x = ROW_HEIGHT + 2 + ROW_HEIGHT - 4 + 6, width = 120, justify = "LEFT" },
-        { key = "ilvl", point = "RIGHT", x = -100, width = 50, justify = "RIGHT" },
-        { key = "vendor", point = "RIGHT", x = -4, width = 90, justify = "RIGHT" },
+        { key = "ilvl", point = "RIGHT", x = LEVEL_RIGHT, width = 50, justify = "RIGHT" },
+        { key = "gives", point = "RIGHT", x = GIVES_RIGHT, width = GIVES_SHOWN * GIVES_SLOT, justify = "LEFT",
+            fixed = true },
+        { key = "vendor", point = "RIGHT", x = VENDOR_RIGHT, width = 90, justify = "RIGHT" },
     }
     itemsPanel.headerTexts, itemsPanel.sortButtons = {}, {}
     for _, place in ipairs(places) do
@@ -1072,13 +1220,17 @@ local function BuildFilterAndHeader()
         text:SetWidth(place.width)
         text:SetJustifyH(place.justify)
         text:SetText(COLUMN_LABELS[place.key])
-        local button = CreateFrame("Button", nil, header)
-        button:SetPoint("TOPLEFT", text, "TOPLEFT", -2, 3)
-        button:SetPoint("BOTTOMRIGHT", text, "BOTTOMRIGHT", 2, -3)
-        button:SetScript("OnClick", function()
-            SortByColumn(place.key)
-        end)
-        itemsPanel.headerTexts[place.key], itemsPanel.sortButtons[place.key] = text, button
+        itemsPanel.headerTexts[place.key] = text
+        -- Gives doesn't sort: its chances aren't one number.
+        if not place.fixed then
+            local button = CreateFrame("Button", nil, header)
+            button:SetPoint("TOPLEFT", text, "TOPLEFT", -2, 3)
+            button:SetPoint("BOTTOMRIGHT", text, "BOTTOMRIGHT", 2, -3)
+            button:SetScript("OnClick", function()
+                SortByColumn(place.key)
+            end)
+            itemsPanel.sortButtons[place.key] = button
+        end
     end
 end
 
@@ -1257,6 +1409,7 @@ function handlers.ADDON_LOADED(name)
     UnmakerDB = db
     charDB = R.EnsureCharDB(UnmakerCharDB)
     UnmakerCharDB = charDB
+    HookTooltips()
     if not InCombat() then
         BuildFrame()
     end
