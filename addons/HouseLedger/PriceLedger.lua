@@ -2240,6 +2240,9 @@ end
 PriceLedger.LEDGER_KEPT = 2000
 -- Entry kinds and their words in the window.
 PriceLedger.LEDGER_KINDS = { bought = "Bought", sold = "Sold", expired = "Expired", cancelled = "Cancelled" }
+-- How long auction house mail lasts (seconds), as on Blizzard's other realms; not confirmed on Forever.
+-- A mail's time is estimated from it: the expiry less this, so a sale shows about when it happened.
+PriceLedger.MAIL_LIFE = 30 * 86400
 -- Two looks at one mail give an expiry this close (seconds): the game counts its days left as it goes.
 PriceLedger.MAIL_SAME_EXPIRY = 300
 -- A mail seen once is remembered this long past its expiry, so it is never counted twice.
@@ -2278,7 +2281,12 @@ end
 -- @param entry the entry
 local function AddEntry(ledger, entry)
     local entries = ledger.entries
-    entries[#entries + 1] = entry
+    -- Kept in time order: a mail's estimated time can be earlier than entries already there.
+    local at = #entries + 1
+    while at > 1 and entries[at - 1].time > entry.time do
+        at = at - 1
+    end
+    table.insert(entries, at, entry)
     while #entries > PriceLedger.LEDGER_KEPT do
         table.remove(entries, 1)
     end
@@ -2369,9 +2377,10 @@ function PriceLedger.RecordMail(ledger, mails, now, who, realm)
                 end
             end
             if not matched then
-                AddEntry(ledger, { time = now, who = who, realm = realm, kind = mail.kind, itemID = mail.itemID,
-                    name = mail.name, count = mail.count, bid = mail.bid, deposit = mail.deposit, cut = mail.cut,
-                    source = "mail" })
+                -- About when the mail came: its expiry less a mail's life, never later than now.
+                AddEntry(ledger, { time = math.min(now, mail.expires - PriceLedger.MAIL_LIFE), who = who,
+                    realm = realm, kind = mail.kind, itemID = mail.itemID, name = mail.name, count = mail.count,
+                    bid = mail.bid, deposit = mail.deposit, cut = mail.cut, source = "mail", estimated = true })
                 added = added + 1
             end
         end

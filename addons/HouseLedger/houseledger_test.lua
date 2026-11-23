@@ -3810,15 +3810,18 @@ do
     world.mail = {
         { header = Header("Auction won: Item 2589", 30, 50, "|Hitem:2589|h[Item 2589]|h"),
             invoice = { "buyer", "Item 2589", "A Seller", 620, 620, 0, 0, 0, 0, 0, 50 } },
-        { header = Header("Auction successful: Item 2589", 29.5),
+        { header = Header("Auction successful: Item 2589", 30),
             invoice = { "seller", "Item 2589", "Some Buyer", 1000, 1000, 15, 50, 0, 0, 0, 40 } },
         { header = Header("Auction expired: Silver Rod", 29, 1, "|Hitem:6338|h[Silver Rod]|h") },
         { header = Header("Hello", 3, 0) },
     }
     Fire("MAIL_INBOX_UPDATE")
+    -- In time order: the auction that came back a day ago (its mail has 29 days left), then the buy
+    -- and the sale, both now.
     Check("history: the buy's mail is matched to it, a sale and a returned auction are added", #entries == 3
-        and entries[2].kind == "sold" and entries[2].count == 40 and entries[2].cut == 50
-        and entries[3].kind == "expired" and entries[3].name == "Silver Rod" and entries[3].itemID == 6338)
+        and entries[1].kind == "expired" and entries[1].name == "Silver Rod" and entries[1].itemID == 6338
+        and entries[1].time == world.now - 86400 and entries[2].kind == "bought"
+        and entries[3].kind == "sold" and entries[3].count == 40 and entries[3].cut == 50)
     Fire("MAIL_INBOX_UPDATE")
     Check("history: looking at the mailbox again adds nothing", #entries == 3)
     Check("history: the other player's name is never saved", not SavedAnywhere(HouseLedgerDB, "Some Buyer")
@@ -3826,7 +3829,7 @@ do
     rows = Rows()
     -- Sold 40 for 1000 less 50 cut = 950; paid 620 for 50 = 12.4 each, 496 for 40: profit 454.
     Check("history: newest first; a sale shows what came in and its profit", #rows == 3
-        and rows[1] == "Silver Rod|1|Expired||Tester Vale" and rows[2] == "Item 2589|40|<money 950>|<money 454>|Tester Vale")
+        and rows[1] == "Item 2589|40|<money 950>|<money 454>|Tester Vale" and rows[3] == "Silver Rod|1|Expired||Tester Vale")
     Check("history: the totals line", panel.totals.text:find("Bought 50 for <money 620>", 1, true)
         and panel.totals.text:find("sold 40 for <money 950> after the house's cut", 1, true)
         and panel.totals.text:find("1 came back", 1, true) and panel.totals.text:find("Profit on 1 sale", 1, true))
@@ -3857,7 +3860,8 @@ do
     Check("history: hovering a sale says the price, the cut, what came in and the profit",
         text:find("Sold 40 for <money 1000> (<money 25> each)", 1, true)
         and text:find("House cut <money 50>; you got <money 950>", 1, true)
-        and text:find("Profit: <money 454>", 1, true) and text:find("From the auction house mail", 1, true))
+        and text:find("Profit: <money 454>", 1, true) and text:find("From the auction house mail", 1, true)
+        and text:find("Tester Vale, about ", 1, true))
     lines = {}
     row = panel.rows[3]
     row:GetScript("OnEnter")(row)

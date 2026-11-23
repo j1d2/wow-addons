@@ -313,7 +313,9 @@ local function ShowEntryTooltip(row)
         GameTooltip:AddLine(string.format("%s: %d came back by mail", Price.LEDGER_KINDS[entry.kind], entry.count),
             1, 1, 1)
     end
-    GameTooltip:AddLine(string.format("%s, %s", entry.who or "?", Price.WhenText(entry.time)), 0.8, 0.8, 0.8)
+    -- A mail's time is worked out from its days left, so it is about right, not exact.
+    GameTooltip:AddLine(string.format("%s, %s%s", entry.who or "?", entry.estimated and "about " or "",
+        Price.WhenText(entry.time)), 0.8, 0.8, 0.8)
     GameTooltip:AddLine(entry.source == "hl" and "Bought in HouseLedger" or "From the auction house mail",
         0.6, 0.6, 0.6)
     GameTooltip:Show()

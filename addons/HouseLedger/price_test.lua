@@ -669,7 +669,13 @@ do
     local sold = Mail("sold", "Linen Cloth", 20, 400, now + 30 * DAY, { deposit = 10, cut = 20 })
     Check("history: a sale's mail is recorded", P.RecordMail(ledger, { sold }, now, "Mira Stone", "R") == 1
         and ledger.entries[1].kind == "sold" and ledger.entries[1].who == "Mira Stone"
-        and ledger.entries[1].cut == 20 and ledger.entries[1].time == now)
+        and ledger.entries[1].cut == 20 and ledger.entries[1].time == now and ledger.entries[1].estimated)
+    local older = P.CleanLedger({})
+    P.RecordMail(older, { Mail("sold", "A", 1, 5, now + 27 * DAY), Mail("sold", "B", 1, 5, now + 29 * DAY) }, now, "M", "R")
+    P.RecordMail(older, { Mail("sold", "C", 1, 5, now + 25 * DAY) }, now + 60, "M", "R")
+    Check("history: a mail's time is estimated from its days left, and entries stay in time order",
+        older.entries[1].name == "C" and older.entries[1].time == now - 5 * DAY
+        and older.entries[2].name == "A" and older.entries[2].time == now - 3 * DAY and older.entries[3].name == "B")
     Check("history: the same mail looked at again later isn't counted twice",
         P.RecordMail(ledger, { Mail("sold", "Linen Cloth", 20, 400, now + 30 * DAY + 4) }, now + 3600, "Mira Stone", "R") == 0
         and #ledger.entries == 1)
