@@ -405,6 +405,37 @@ function U.ShowRowTooltip(row)
     GameTooltip:Show()
 end
 
+--- True when two results are the same item: same item ID, item level and suffix. Market's list
+-- is rebuilt with new tables, so a picked row is found again by its item, not its table.
+-- @param a a browse result or Market row, or nil
+-- @param b another, or nil
+-- @return true when both are the same item
+function U.SameItemKey(a, b)
+    local keyA, keyB = a and a.itemKey, b and b.itemKey
+    if keyA == nil or keyB == nil then
+        return false
+    end
+    return keyA.itemID == keyB.itemID and (keyA.itemLevel or 0) == (keyB.itemLevel or 0)
+        and (keyA.itemSuffix or 0) == (keyB.itemSuffix or 0)
+end
+
+--- Gives a list row a gold background that marks it as the picked row (as Unmaker's list
+-- does), hidden until U.MarkRow shows it. The hover highlight stays as it was.
+-- @param row the row button
+function U.AddSelection(row)
+    row.selection = row:CreateTexture(nil, "BACKGROUND")
+    row.selection:SetAllPoints()
+    row.selection:SetColorTexture(1, 0.82, 0, 0.2)
+    row.selection:Hide()
+end
+
+--- Shows or hides a row's picked mark.
+-- @param row a row from U.AddSelection
+-- @param picked true to mark it
+function U.MarkRow(row, picked)
+    if picked then row.selection:Show() else row.selection:Hide() end
+end
+
 --- Hides the item tooltip when the mouse leaves a row.
 function U.HideRowTooltip()
     if GameTooltip then

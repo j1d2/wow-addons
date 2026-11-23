@@ -3196,7 +3196,7 @@ do
         and panel.qtyBox.text == "50")
     Fire("COMMODITY_PURCHASE_SUCCEEDED")
     Check("bought: says so, and the list may be out of date", StatusLine():find("Bought 50", 1, true)
-        and StatusLine():find("<money 650>", 1, true) and StatusLine():find("Listings", 1, true)
+        and StatusLine():find("<money 650>", 1, true) and StatusLine():find("Back, then Buy", 1, true)
         and panel.buyButton.text == "Buy")
     Check("no search after a buy", #world.itemQueries == 1)
 
@@ -3483,6 +3483,97 @@ do
     Check("a picked listing that is gone is let go", panel.buyButton.enabled == false)
     Fire("AUCTION_HOUSE_PURCHASE_COMPLETED", 21)
     Check("a buyout we didn't send changes nothing", not StatusLine():find("Bought", 1, true))
+end
+
+do
+    -- The picked row: marked in gold, with a Buy button on it; listings the same.
+    Setup()
+    Load()
+    world.commodities = { [2589] = true }
+    local panel = PickFirstResult(BrowseResults(2589, 2608))
+    local rows = ResultRows()
+    Check("a clicked row is marked in gold, and only that one", rows[1].selection.shown and not rows[2].selection.shown)
+    Check("its Buy button sits on the row", panel.listingsButton.shown and panel.listingsButton.text == "Buy"
+        and panel.listingsButton.points[1][2] == rows[1])
+    rows[3]:GetScript("OnClick")(rows[3])
+    Check("another click moves the mark and the button", rows[3].selection.shown and not rows[1].selection.shown
+        and panel.listingsButton.points[1][2] == rows[3])
+    WheelDown()
+    Check("scrolled out of sight: no button, and no row marked by mistake", not panel.listingsButton.shown
+        and not ResultRows()[3].selection.shown)
+    WheelUp()
+    Check("scrolled back: both return", panel.listingsButton.shown and ResultRows()[3].selection.shown)
+    Click("Clear")
+    Check("Clear unmarks it", not panel.listingsButton.shown and not ResultRows()[3].selection.shown)
+
+    panel = PickFirstResult({ { itemKey = { itemID = 2589, itemLevel = 0, itemSuffix = 0 }, minPrice = 12,
+        totalQuantity = 245 } })
+    Press(panel.listingsButton)
+    LinenListings()
+    rows = ResultRows()
+    Check("a listing has no Buy button until it is picked", not panel.rowBuyButton.shown)
+    rows[2]:GetScript("OnClick")(rows[2])
+    Check("a picked listing is marked, with its own Buy button", rows[2].selection.shown and not rows[1].selection.shown
+        and panel.rowBuyButton.shown and panel.rowBuyButton.points[1][2] == rows[2] and panel.rowBuyButton.enabled)
+    Press(panel.rowBuyButton)
+    Check("the row's Buy does what the bar's does", BuyCalls("start") == 1 and world.buys[1].quantity == 240
+        and panel.rowBuyButton.text == "Waiting..." and panel.rowBuyButton.enabled == false)
+    Fire("COMMODITY_PRICE_UPDATED", 14, 3280)
+    Check("and turns to Confirm with it", panel.rowBuyButton.text == "Confirm" and panel.buyButton.text == "Confirm")
+    Press(panel.backButton)
+    Check("Back: no listing button, and the result row's Buy is back", not panel.rowBuyButton.shown
+        and panel.listingsButton.shown and ResultRows()[1].selection.shown)
+end
+
+do
+    -- A stack of a non-stackable-at-the-house item (a Silver Rod): the price is the whole stack's.
+    Setup()
+    Load()
+    local key = { itemID = 6338, itemLevel = 20, itemSuffix = 0, battlePetSpeciesID = 0 }
+    local panel = PickFirstResult({ { itemKey = key, minPrice = 795, totalQuantity = 2 } })
+    Press(panel.listingsButton)
+    world.itemResults = {
+        { itemKey = key, auctionID = 31, quantity = 50, buyoutAmount = 1300, itemLink = "|Hitem:6338|h[Silver Rod]|h",
+            timeLeft = 2, containsOwnerItem = false },
+        { itemKey = key, auctionID = 32, quantity = 1, buyoutAmount = 795, itemLink = "|Hitem:6338|h[Silver Rod]|h",
+            timeLeft = 2, containsOwnerItem = false },
+    }
+    Fire("ITEM_SEARCH_RESULTS_UPDATED", key)
+    local rows = ResultRows()
+    Check("a stack shows what you pay for all of it, and its price each after the name",
+        rows[1].priceText.text == "<money 1300>" and rows[1].availText.text == "50"
+        and rows[1].nameText.text:find("<money 26> each", 1, true))
+    Check("a single shows its price, with no each", rows[2].priceText.text == "<money 795>"
+        and not rows[2].nameText.text:find("each", 1, true))
+    rows[1]:GetScript("OnClick")(rows[1])
+    local rod = "|Hitem:6338|h[Silver Rod]|h"
+    Check("picking the stack says how many, the total and each",
+        StatusLine():find("50 x " .. rod .. " for <money 1300> (<money 26> each)", 1, true))
+    Press(panel.rowBuyButton)
+    Check("Buy asks to confirm the whole stack", StatusLine():find("Buy 50 x " .. rod .. " for <money 1300>", 1, true))
+    Press(panel.rowBuyButton)
+    Check("Confirm pays the stack's buyout", world.buys[1].kind == "bid" and world.buys[1].amount == 1300)
+end
+
+do
+    -- Price Check marks its clicked row too.
+    Setup()
+    world.now = 1762900000
+    Load()
+    _G.HouseLedgerDB = HouseLedgerPrice.EnsureDB(SaveOres(5))
+    _G.SlashCmdList.HOUSELEDGERPC("ore")
+    local rows = _G.HouseLedgerPriceCheck.rows
+    rows[2]:GetScript("OnClick")(rows[2])
+    Check("Price Check: the clicked row is marked", rows[2].selection.shown and not rows[1].selection.shown)
+    local picked = rows[2].entry.itemID
+    _G.SlashCmdList.HOUSELEDGERPC("ore")
+    local still
+    for _, row in ipairs(rows) do
+        if row.shown and row.entry and row.entry.itemID == picked then
+            still = row.selection.shown
+        end
+    end
+    Check("and stays marked when the list draws again", still == true)
 end
 
 if failed > 0 then

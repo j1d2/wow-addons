@@ -1,7 +1,7 @@
 --[[
-Buying, on the Buy and Market tabs. A picked row's Listings button sends one item search; the
+Buying, on the Buy and Market tabs. The picked row's Buy button sends one item search; the
 list then shows that item's listings, cheapest first, and a bar in the filter row's place buys
-from them:
+from them (the picked listing gets its own Buy button too, which does what the bar's does):
 
 - Stackable items: how many, then Buy asks the house for its price (a quote), then Confirm buys
   at that price.
@@ -31,12 +31,14 @@ local GEAR_SORT = {
 local NO_ANSWER_WAIT = 10
 -- The bar's widths, in the filter row's place.
 local BACK_WIDTH, QTY_WIDTH, MAX_WIDTH, BUY_WIDTH = 60, 52, 44, 96
-local LISTINGS_WIDTH, LISTINGS_HEIGHT = 72, 18
+-- The Buy button on the picked row, at its right end (over the Trend cell).
+local ROW_BUTTON_WIDTH, ROW_BUTTON_HEIGHT = 64, 16
 
 -- The row picked on Buy or Market (a browse result or Market row), which Listings searches for.
 local picked
 -- The open listings, or nil: { itemID, readKey, name, commodity, rows (PriceLedger.BuyRows),
--- ownCount, complete, offset, waiting (no answer yet), chosen (a gear row's auctionID) }.
+-- ownCount, complete, offset, waiting (no answer yet), chosen (a gear row's auctionID), picked
+-- (the listing row clicked last, marked in gold) }.
 local listing
 -- A buy under way, or nil: { step, commodity, itemID, quantity, estimate, total, auctionID,
 -- buyout, name, sentAt, late }. step is "quoting" (asked the house's price), "quoted" (Confirm
@@ -95,6 +97,17 @@ local function ListingStatus()
     return text
 end
 
+--- How a listing reads in the status line: "50 x [Silver Rod]" for a stack, else its name.
+-- @param row a listing row
+-- @return the text
+local function ListingLabel(row)
+    local name = row.link or listing.name
+    if row.quantity > 1 then
+        return row.quantity .. " x " .. name
+    end
+    return name
+end
+
 --- The gear row the player picked, or nil.
 -- @return the row from listing.rows
 local function ChosenRow()
@@ -112,23 +125,22 @@ local function AskedCost()
     return asked, Price.FillCost(listing.rows, asked)
 end
 
---- Sets the Buy button's text and whether it can be clicked, from the buy step.
+--- Sets the Buy buttons' text and whether they can be clicked, from the buy step: the bar's,
+-- and the one on the picked listing, which does the same.
 -- @param ready true when a Buy click would start a buy (a number or listing picked, affordable)
 local function ShowBuyButton(ready)
-    local button = ui.buyPanel.buyButton
     local step = buy and buy.step
+    local text, enabled = "Buy", ready
     if step == "quoting" then
-        button:SetText("Waiting...")
-        button:Disable()
+        text, enabled = "Waiting...", false
     elseif step == "buying" then
-        button:SetText("Buying...")
-        button:Disable()
+        text, enabled = "Buying...", false
     elseif step == "quoted" or step == "armed" then
-        button:SetText("Confirm")
-        button:Enable()
-    else
-        button:SetText("Buy")
-        if ready then button:Enable() else button:Disable() end
+        text, enabled = "Confirm", true
+    end
+    for _, button in ipairs({ ui.buyPanel.buyButton, ui.buyPanel.rowBuyButton }) do
+        button:SetText(text)
+        if enabled then button:Enable() else button:Disable() end
     end
 end
 
@@ -165,7 +177,8 @@ local function RefreshBuy()
         local row = ChosenRow()
         if row then
             local warning = Price.BuyWarningText(ListingStats(), row.unit)
-            text = string.format("%s for %s%s.", row.link or listing.name, U.CopperToText(row.buyout),
+            local each = row.quantity > 1 and (" (" .. U.CopperToText(row.unit) .. " each)") or ""
+            text = string.format("%s for %s%s%s.", ListingLabel(row), U.CopperToText(row.buyout), each,
                 warning ~= "" and (", " .. warning) or "")
             ready = row.buyout <= money
             if not ready then
@@ -188,26 +201,28 @@ function Purchase.Render()
         if entry then
             row.listingKey = listing.readKey
             row.icon:SetTexture(icon)
-            row.nameText:SetText(entry.link or listing.name)
+            -- A stack of gear-like items costs its whole buyout, as in Blizzard's window; its price
+            -- each shows after the name.
+            local name = entry.link or listing.name
+            if not listing.commodity and entry.quantity > 1 then
+                name = name .. " |cff9d9d9d" .. U.CopperToText(entry.unit) .. " each|r"
+            end
+            row.nameText:SetText(name)
             row.nameText:SetTextColor(1, 1, 1)
             row.ilvlText:SetText(entry.level and entry.level > 0 and tostring(entry.level) or "")
-            row.priceText:SetText(U.CopperToText(entry.unit))
+            row.priceText:SetText(U.CopperToText(listing.commodity and entry.unit or entry.buyout))
             row.availText:SetText(tostring(entry.quantity))
             row.typicalText:SetText(listing.commodity and tostring(entry.upTo) or Price.TimeLeftText(entry.timeLeft))
             local verdict = Price.Judge(stats, entry.unit)
             local mark = Price.TrendText(verdict, "buyer")
             row.trendText:SetText(mark ~= "" and mark or Price.SteadyText(verdict))
-            if not listing.commodity and entry.auctionID == listing.chosen then
-                row:LockHighlight()
-            else
-                row:UnlockHighlight()
-            end
+            U.MarkRow(row, entry == listing.picked)
             row:Show()
         else
-            row:UnlockHighlight()
             row:Hide()
         end
     end
+    Purchase.PlaceRowButtons()
     local message
     if listing.waiting then
         message = "Searching..."
@@ -239,29 +254,54 @@ local function ListingHeader()
     texts.trend:SetText("vs avg")
 end
 
---- Shows or hides the Listings button, and moves the details title beside it.
-local function ShowListingsButton()
-    local button = ui.buyPanel.listingsButton
-    local title = ui.buyPanel.detailTitle
-    local shown = picked ~= nil and listing == nil
-    title:ClearAllPoints()
-    if shown then
-        button:Show()
-        title:SetPoint("LEFT", button, "RIGHT", 8, 0)
-    else
-        button:Hide()
-        title:SetPoint("TOPLEFT", ui.frame, "BOTTOMLEFT", 16, C.LIST_BOTTOM - 6)
+--- The shown list row that passes a test, or nil (the picked row may be scrolled away).
+-- @param test function(row) returning true for the one wanted
+-- @return the row, or nil
+local function ShownRow(test)
+    for _, row in ipairs(ui.rows) do
+        if row:IsShown() and test(row) then
+            return row
+        end
     end
-    title:SetPoint("RIGHT", ui.frame, "RIGHT", -16, 0)
+end
+
+--- Puts a button at the right end of a row, or hides it when there is no row.
+-- @param button the button
+-- @param row the row, or nil
+local function PlaceOn(button, row)
+    if row == nil then
+        button:Hide()
+        return
+    end
+    -- A child of the row, so it draws over the row and its clicks reach it.
+    button:SetParent(row)
+    button:ClearAllPoints()
+    button:SetPoint("RIGHT", row, "RIGHT", -2, 0)
+    button:Show()
+end
+
+--- Puts the Buy button on the picked row: on a search result or Market row it opens that item's
+-- listings; on a picked listing it buys, like the bar's Buy. Hidden when that row isn't shown.
+function Purchase.PlaceRowButtons()
+    local panel = ui.buyPanel
+    if panel == nil or panel.listingsButton == nil then
+        return
+    end
+    local resultRow = listing == nil and picked ~= nil and ShownRow(function(row)
+        return U.SameItemKey(row.result, picked)
+    end)
+    PlaceOn(panel.listingsButton, resultRow or nil)
+    local listingRow = listing ~= nil and listing.picked ~= nil and ShownRow(function(row)
+        return row.listing == listing.picked
+    end)
+    PlaceOn(panel.rowBuyButton, listingRow or nil)
 end
 
 --- The row whose prices the details block shows, which Listings would search for; nil for none.
 -- @param result a browse result or Market row, or nil
 function Purchase.SetPicked(result)
     picked = result
-    if ui.buyPanel.listingsButton then
-        ShowListingsButton()
-    end
+    Purchase.PlaceRowButtons()
 end
 
 --- Drops a quote the house holds for us. A buy already sent is kept, so its answer still shows.
@@ -287,11 +327,11 @@ function Purchase.Close()
     ui.buyPanel.filterRow:Show()
     for _, row in ipairs(ui.rows) do
         row.listing = nil
-        row:UnlockHighlight()
+        U.MarkRow(row, false)
     end
-    ShowListingsButton()
     Buy.RefreshHeader()
     Buy.RenderRows()
+    Purchase.PlaceRowButtons()
 end
 
 --- The Listings click: one search for the picked item's listings, when the house's throttle
@@ -311,13 +351,13 @@ function Purchase.ShowListings()
         return
     end
     if not C_AuctionHouse.IsThrottledMessageSystemReady() then
-        SetStatus("The auction house is still busy. Wait, then click Listings again.")
+        SetStatus("The auction house is still busy. Wait, then click Buy again.")
         return
     end
     -- Stackable or not decides the search and how its answer is read, as in Blizzard's window.
     local info = C_AuctionHouse.GetItemKeyInfo(itemKey)
     if info == nil then
-        SetStatus("The game is still loading " .. name .. ". Click Listings again.")
+        SetStatus("The game is still loading " .. name .. ". Click Buy again.")
         return
     end
     local commodity = info.isCommodity == true
@@ -336,7 +376,6 @@ function Purchase.ShowListings()
     end
     panel.buyButton:ClearAllPoints()
     panel.buyButton:SetPoint("LEFT", commodity and panel.maxButton or panel.backButton, "RIGHT", 8, 0)
-    ShowListingsButton()
     ListingHeader()
     -- One click, one search. Its answer comes as a results event; nothing follows up.
     local sorts = commodity and COMMODITY_SORT or GEAR_SORT
@@ -360,6 +399,8 @@ local function TakeListings(raw, complete)
     if listing.chosen and ChosenRow() == nil then
         listing.chosen = nil
     end
+    -- The new rows are new tables: gear keeps its pick by auction; a stackable's pick ends.
+    listing.picked = listing.chosen and ChosenRow() or nil
     Purchase.Render()
     RefreshBuy()
 end
@@ -416,12 +457,13 @@ function Purchase.PickRow(row)
         return
     end
     DropQuote()
+    listing.picked = entry
     if listing.commodity then
         ui.buyPanel.qtyBox:SetText(tostring(entry.upTo))
     else
         listing.chosen = entry.auctionID
-        Purchase.Render()
     end
+    Purchase.Render()
     RefreshBuy()
 end
 
@@ -478,9 +520,10 @@ function Purchase.OnBuyClick()
         if row == nil or row.buyout > GetMoney() then
             return
         end
-        buy = { step = "armed", auctionID = row.auctionID, buyout = row.buyout, name = row.link or listing.name }
+        buy = { step = "armed", auctionID = row.auctionID, buyout = row.buyout, name = ListingLabel(row) }
         local warning = Price.BuyWarningText(ListingStats(), row.unit)
-        SetStatus(string.format("Buy %s for %s?%s Click Confirm.", buy.name, U.CopperToText(row.buyout),
+        local each = row.quantity > 1 and (" (" .. U.CopperToText(row.unit) .. " each)") or ""
+        SetStatus(string.format("Buy %s for %s%s?%s Click Confirm.", buy.name, U.CopperToText(row.buyout), each,
             warning ~= "" and (" " .. warning .. ".") or ""))
     elseif step == "armed" then
         buy.step, buy.sentAt = "buying", U.Clock()
@@ -505,7 +548,7 @@ function Purchase.OnPriceUpdated(unit, total)
         DropQuote()
         RefreshBuy()
         SetStatus(string.format("The price went up by more than 5%% (now %d for %s). Nothing was bought. "
-            .. "Click Listings to see the new prices.", quantity, U.CopperToText(total)))
+            .. "Click Back, then Buy, to see the new prices.", quantity, U.CopperToText(total)))
         return
     end
     if total > GetMoney() then
@@ -540,7 +583,7 @@ function Purchase.OnPriceUnavailable()
         return
     end
     DropQuote()
-    EndBuy("Those listings are gone. Nothing was bought. Click Listings to see the new prices.")
+    EndBuy("Those listings are gone. Nothing was bought. Click Back, then Buy, to see the new prices.")
 end
 
 --- Our stackable buy went through (COMMODITY_PURCHASE_SUCCEEDED).
@@ -548,7 +591,7 @@ function Purchase.OnPurchaseSucceeded()
     if buy == nil or not buy.commodity or buy.step ~= "buying" then
         return
     end
-    EndBuy(string.format("Bought %d %s for %s. Check your mailbox. Click Listings to see what's left.",
+    EndBuy(string.format("Bought %d %s for %s. Check your mailbox. Click Back, then Buy, to see what's left.",
         buy.quantity, buy.name, U.CopperToText(buy.total)))
 end
 
@@ -574,7 +617,7 @@ function Purchase.OnAuctionBought(auctionID)
                 break
             end
         end
-        listing.chosen = nil
+        listing.chosen, listing.picked = nil, nil
         Purchase.Render()
     end
     EndBuy(string.format("Bought %s for %s. Check your mailbox.", buy.name, U.CopperToText(buy.buyout)))
@@ -603,7 +646,7 @@ function Purchase.Tick()
         EndBuy("No price from the house. Nothing was bought. Click Buy to ask again.")
     elseif buy.step == "buying" and not buy.late and U.Clock() - buy.sentAt >= NO_ANSWER_WAIT then
         buy.late = true
-        SetStatus("No answer from the house yet. Check your mailbox, then click Back and Listings to see "
+        SetStatus("No answer from the house yet. Check your mailbox, then click Back and Buy to see "
             .. "what's left before buying again.")
     end
 end
@@ -612,12 +655,20 @@ end
 -- shown with the listings): Back, how many, Max and Buy.
 function Purchase.Build()
     local panel = ui.buyPanel
+    -- On the picked search result or Market row: opens its listings.
     local listings = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
-    listings:SetSize(LISTINGS_WIDTH, LISTINGS_HEIGHT)
-    listings:SetPoint("TOPLEFT", ui.frame, "BOTTOMLEFT", 14, C.LIST_BOTTOM - 3)
-    listings:SetText("Listings")
+    listings:SetSize(ROW_BUTTON_WIDTH, ROW_BUTTON_HEIGHT)
+    listings:SetText("Buy")
     listings:SetScript("OnClick", Purchase.ShowListings)
+    listings:Hide()
     panel.listingsButton = listings
+    -- On the picked listing: the bar's Buy (then Confirm), one row closer.
+    local rowBuy = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
+    rowBuy:SetSize(ROW_BUTTON_WIDTH, ROW_BUTTON_HEIGHT)
+    rowBuy:SetText("Buy")
+    rowBuy:SetScript("OnClick", Purchase.OnBuyClick)
+    rowBuy:Hide()
+    panel.rowBuyButton = rowBuy
 
     local bar = CreateFrame("Frame", nil, panel)
     bar:SetAllPoints(panel)
@@ -662,5 +713,4 @@ function Purchase.Build()
     buyButton:SetText("Buy")
     buyButton:SetScript("OnClick", Purchase.OnBuyClick)
     panel.buyButton = buyButton
-    ShowListingsButton()
 end
