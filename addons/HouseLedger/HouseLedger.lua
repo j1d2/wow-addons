@@ -9,12 +9,14 @@ about every 15 minutes. Listings are read across frames. The lowest
 buyout per item is saved on this computer and shown on item mouseovers.
 Seller names are not saved.
 
-This addon does not post, buy, bid, or cancel, and it does not scan
-when the auction house opens.
+Buy: an item's Listings, then Buy and Confirm, each the player's own
+click (Purchase.lua). This addon does not post, bid, or cancel, and it
+does not scan when the auction house opens.
 ]]
 
 local ADDON_NAME, ns = ...
-local C, ui, state, Price, U, Scan, Tooltip, Buy, Sell, PC, Window = ns.C, ns.ui, ns.state, ns.Price, ns.U, ns.Scan, ns.Tooltip, ns.Buy, ns.Sell, ns.PC, ns.Window
+local C, ui, state, Price, U, Scan, Tooltip, Buy, Sell, Purchase, PC, Window = ns.C, ns.ui, ns.state, ns.Price, ns.U,
+    ns.Scan, ns.Tooltip, ns.Buy, ns.Sell, ns.Purchase, ns.PC, ns.Window
 
 -- True while one refilter waits for the next frame, so a burst of item-info events filters once.
 local refilterPending = false
@@ -30,8 +32,25 @@ eventFrame:RegisterEvent("GET_ITEM_INFO_RECEIVED")
 eventFrame:RegisterEvent("COMMODITY_SEARCH_RESULTS_UPDATED")
 eventFrame:RegisterEvent("ITEM_SEARCH_RESULTS_UPDATED")
 eventFrame:RegisterEvent("REPLICATE_ITEM_LIST_UPDATE")
+-- Answers to a buy (Purchase.lua): each handler checks the buy is one started here.
+eventFrame:RegisterEvent("COMMODITY_PRICE_UPDATED")
+eventFrame:RegisterEvent("COMMODITY_PRICE_UNAVAILABLE")
+eventFrame:RegisterEvent("COMMODITY_PURCHASE_SUCCEEDED")
+eventFrame:RegisterEvent("COMMODITY_PURCHASE_FAILED")
+eventFrame:RegisterEvent("AUCTION_HOUSE_PURCHASE_COMPLETED")
+eventFrame:RegisterEvent("AUCTION_HOUSE_SHOW_ERROR")
 
-eventFrame:SetScript("OnEvent", function(_, event, arg1)
+-- The buy answers and the handler each one goes to; COMMODITY_PRICE_UPDATED also passes arg2.
+local PURCHASE_EVENTS = {
+    COMMODITY_PRICE_UPDATED = "OnPriceUpdated",
+    COMMODITY_PRICE_UNAVAILABLE = "OnPriceUnavailable",
+    COMMODITY_PURCHASE_SUCCEEDED = "OnPurchaseSucceeded",
+    COMMODITY_PURCHASE_FAILED = "OnPurchaseFailed",
+    AUCTION_HOUSE_PURCHASE_COMPLETED = "OnAuctionBought",
+    AUCTION_HOUSE_SHOW_ERROR = "OnHouseError",
+}
+
+eventFrame:SetScript("OnEvent", function(_, event, arg1, arg2)
     if event == "ADDON_LOADED" then
         if arg1 ~= ADDON_NAME then
             return
@@ -95,8 +114,15 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
         return
     end
 
+    if PURCHASE_EVENTS[event] then
+        Purchase[PURCHASE_EVENTS[event]](arg1, arg2)
+        return
+    end
+
     if event == "AUCTION_HOUSE_CLOSED" then
         state.openHouseKey = nil
+        -- Leaving the house ends its listings and drops a price it quoted.
+        Purchase.Close()
         if U.InCombat() then
             state.afterCombat = true
         else
@@ -154,12 +180,16 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
         return
     end
 
+    -- Item search results: the Sell tab's item, or the listings Buy or Market asked for. Each
+    -- checks the results are for its own search.
     if event == "COMMODITY_SEARCH_RESULTS_UPDATED" then
         Sell.OnCommodityResults(arg1)
+        Purchase.OnCommodityResults(arg1)
         return
     end
 
     if event == "ITEM_SEARCH_RESULTS_UPDATED" then
         Sell.OnItemResults(arg1)
+        Purchase.OnItemResults(arg1)
     end
 end)

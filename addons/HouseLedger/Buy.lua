@@ -4,7 +4,8 @@ the clicked row's details, and the one browse query a Search click sends.
 ]]
 
 local _, ns = ...
-local C, ui, state, Price, U, Chart, Buy = ns.C, ns.ui, ns.state, ns.Price, ns.U, ns.Chart, ns.Buy
+local C, ui, state, Price, U, Chart, Buy, Purchase = ns.C, ns.ui, ns.state, ns.Price, ns.U, ns.Chart, ns.Buy,
+    ns.Purchase
 
 -- Below this width the Avg 7d column is hidden; a row click still
 -- shows the averages in the details block.
@@ -86,6 +87,7 @@ local function SetListMessage(text)
         if text then ui.buyPanel.listMessage:Show() else ui.buyPanel.listMessage:Hide() end
     end
 end
+Buy.SetListMessage = SetListMessage
 
 --- Shows a note in orange beside the filters, for something the player needs to act on; nil
 -- hides it.
@@ -256,6 +258,10 @@ end
 --- Draws the visible rows from the active list at its scroll offset.
 -- Also sets the status line to the range shown, or says the list is empty.
 function Buy.RenderRows()
+    if Purchase.IsOpen() then
+        Purchase.Render()
+        return
+    end
     local list, offset = ActiveList()
     local market = state.currentTab == C.MARKET_TAB
     for index = 1, C.VISIBLE_ROWS do
@@ -314,6 +320,7 @@ end
 --- Empties the details block under the list: the hint, no lines, no chart.
 local function EmptyDetails()
     overviewShown, rowShown = false, false
+    Purchase.SetPicked(nil)
     ui.buyPanel.detailTitle:SetText(DETAIL_HINT)
     for _, line in ipairs(ui.buyPanel.detailLines) do
         line.left:SetText("")
@@ -375,8 +382,9 @@ function Buy.ShowResults()
     state.results = C_AuctionHouse.GetBrowseResults() or {}
     Buy.FilterResults()
     scrollOffset = 0
-    if state.currentTab == C.MARKET_TAB then
-        -- Kept for when the Buy tab opens again.
+    if state.currentTab == C.MARKET_TAB or Purchase.IsOpen() then
+        -- Kept for when the Buy tab opens again, or Back leaves an item's listings (a search in
+        -- Blizzard's window brings results too).
         return
     end
     -- The clicked row may not be in the new list.
@@ -388,6 +396,10 @@ end
 -- Moves through results already received.
 -- @param rowsDown rows to move; negative moves up. Clamped to the list.
 function Buy.Scroll(rowsDown)
+    if Purchase.IsOpen() then
+        Purchase.Scroll(rowsDown)
+        return
+    end
     local list, current = ActiveList()
     local maxOffset = math.max(0, #list - C.VISIBLE_ROWS)
     local offset = math.min(maxOffset, math.max(0, current + rowsDown))
@@ -402,15 +414,21 @@ function Buy.Scroll(rowsDown)
     Buy.RenderRows()
 end
 
---- A row click: its saved stats in the details block.
+--- A row click: its saved stats in the details block, and the Listings button for it. While an
+-- item's listings show, the click picks a listing instead (Purchase.PickRow).
 -- Reads saved data only; the house is not asked anything.
 -- @param row the clicked row button
 local function ShowRowDetails(row)
+    if Purchase.IsOpen() then
+        Purchase.PickRow(row)
+        return
+    end
     if row.result == nil then
         return
     end
     EmptyDetails()
     rowShown = true
+    Purchase.SetPicked(row.result)
     local name = U.ItemLook(row.result.itemKey, row.result)
     local stats = U.SavedStats(row.result.itemKey and row.result.itemKey.itemID)
     if stats == nil then
@@ -430,7 +448,7 @@ local function ShowRowDetails(row)
 end
 
 --- Writes the column headings: Market's price is "Scanned", and the sorted column gets an arrow.
-local function RefreshHeader()
+function Buy.RefreshHeader()
     local sort = state.currentTab == C.MARKET_TAB and state.marketSort or buySort
     for key, text in pairs(ui.buyPanel.headerTexts) do
         local label = C.HEADER_LABELS[key]
@@ -448,6 +466,9 @@ end
 -- by it. Reorders what is already here; sends nothing.
 -- @param key the column
 local function SortByColumn(key)
+    if Purchase.IsOpen() then
+        return -- listings are always cheapest first
+    end
     local market = state.currentTab == C.MARKET_TAB
     local sort = market and state.marketSort or buySort
     if sort.key == key then
@@ -462,7 +483,7 @@ local function SortByColumn(key)
         scrollOffset = 0
         Buy.FilterResults()
     end
-    RefreshHeader()
+    Buy.RefreshHeader()
     Buy.RenderRows()
 end
 
@@ -494,7 +515,7 @@ function Buy.SetMarketMode(market)
     notice:SetPoint("LEFT", market and ui.buyPanel.maxLevelBox or ui.buyPanel.showDropdown, "RIGHT", 12, 0)
     notice:SetPoint("RIGHT", ui.frame, "RIGHT", -14, 0)
     Buy.ClearDetails()
-    RefreshHeader()
+    Buy.RefreshHeader()
     if market then
         Buy.RefreshMarket()
         Buy.RenderRows()
@@ -534,11 +555,12 @@ end
 --- Market's view dropdown: shows Deals, Biggest drops or Biggest rises.
 -- @param view the index in MARKET_VIEWS
 function Buy.SetMarketView(view)
+    Purchase.Close()
     state.marketView = view
     marketOffset = 0
     -- Each view has its own order (biggest move first); a column sort starts over.
     state.marketSort.key = nil
-    RefreshHeader()
+    Buy.RefreshHeader()
     Buy.RefreshMarket()
     Buy.ClearDetails()
     Buy.RenderRows()
@@ -547,6 +569,7 @@ end
 --- Clear on the Buy tab: empties the search box and the list.
 -- The house is not asked anything; a result that still arrives shows as usual.
 function Buy.ClearSearch()
+    Purchase.Close()
     ui.searchBox:SetText("")
     ui.searchBox:ClearFocus()
     state.results = {}
@@ -626,6 +649,7 @@ function Buy.SendSearch()
         return
     end
     SetNotice(nil)
+    Purchase.Close()
 
     -- One click, one query. No follow-up timer.
     -- The quality filter goes with the search; item level filters the results it brings back.
@@ -787,12 +811,16 @@ end
 -- Buy's Show dropdown. Item level and Market's filters only filter what is shown; on Buy, a
 -- quality or Show pick also searches again (SearchAfterPick), as the house does that filtering.
 function Buy.BuildFilterRow()
+    -- One frame holds the row, so an item's listings can put their buy bar in its place.
+    local filterRow = CreateFrame("Frame", nil, ui.buyPanel)
+    filterRow:SetAllPoints(ui.buyPanel)
+    ui.buyPanel.filterRow = filterRow
     --- A small edit box that filters as the player types.
     -- @param width the box width
     -- @param numeric true for an item level box
     -- @return the edit box
     local function FilterBox(width, numeric)
-        local box = CreateFrame("EditBox", nil, ui.buyPanel, "InputBoxTemplate")
+        local box = CreateFrame("EditBox", nil, filterRow, "InputBoxTemplate")
         box:SetSize(width, 20)
         box:SetAutoFocus(false)
         if numeric then
@@ -815,7 +843,7 @@ function Buy.BuildFilterRow()
     ui.buyPanel.filterNameBox = nameBox
 
     -- Blizzard's own dropdown, as its auction house filter uses on Forever.
-    local quality = CreateFrame("DropdownButton", nil, ui.buyPanel, "WowStyle1DropdownTemplate")
+    local quality = CreateFrame("DropdownButton", nil, filterRow, "WowStyle1DropdownTemplate")
     -- Wide enough for "Uncommon & up", the longest quality choice.
     quality:SetWidth(145)
     quality:SetPoint("LEFT", ui.frame, "TOPLEFT", 14, FILTER_ROW_Y)
@@ -832,12 +860,12 @@ function Buy.BuildFilterRow()
     end)
     ui.buyPanel.qualityDropdown = quality
 
-    local levelLabel = U.Cell(ui.buyPanel, "GameFontNormalSmall", "LEFT")
+    local levelLabel = U.Cell(filterRow, "GameFontNormalSmall", "LEFT")
     levelLabel:SetPoint("LEFT", quality, "RIGHT", 12, 0)
     levelLabel:SetText("ilvl")
     local minBox = FilterBox(34, true)
     minBox:SetPoint("LEFT", levelLabel, "RIGHT", 10, 0)
-    local dash = U.Cell(ui.buyPanel, "GameFontHighlightSmall", "LEFT")
+    local dash = U.Cell(filterRow, "GameFontHighlightSmall", "LEFT")
     dash:SetPoint("LEFT", minBox, "RIGHT", 2, 0)
     dash:SetText("-")
     local maxBox = FilterBox(34, true)
@@ -845,7 +873,7 @@ function Buy.BuildFilterRow()
     ui.buyPanel.minLevelBox, ui.buyPanel.maxLevelBox = minBox, maxBox
 
     -- Show (Buy only): what the search asks the house for. Picking one searches (SearchAfterPick).
-    local show = CreateFrame("DropdownButton", nil, ui.buyPanel, "WowStyle1DropdownTemplate")
+    local show = CreateFrame("DropdownButton", nil, filterRow, "WowStyle1DropdownTemplate")
     show:SetWidth(130)
     show:SetPoint("LEFT", maxBox, "RIGHT", 14, 0)
     show:SetupMenu(function(_, root)
@@ -863,7 +891,7 @@ function Buy.BuildFilterRow()
     table.insert(ui.buyPanel.searchControls, show)
 
     -- An orange note right of the filters, for something to act on (two short lines at most).
-    local notice = U.Cell(ui.buyPanel, "GameFontNormalSmall", "LEFT")
+    local notice = U.Cell(filterRow, "GameFontNormalSmall", "LEFT")
     notice:SetPoint("LEFT", show, "RIGHT", 12, 0)
     notice:SetPoint("RIGHT", ui.frame, "RIGHT", -14, 0)
     notice:SetWordWrap(true)

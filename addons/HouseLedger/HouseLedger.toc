@@ -16,6 +16,7 @@ Tooltip.lua
 Scan.lua
 Buy.lua
 Sell.lua
+Purchase.lua
 PriceCheck.lua
 Settings.lua
 Window.lua

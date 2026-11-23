@@ -31,7 +31,7 @@ scripts/check.sh           # the full gate: what the hooks and CI run
   - Bash: the function header from [Google's Shell Style Guide](https://google.github.io/styleguide/shellguide.html#function-comments). A summary, then `Globals:`, `Arguments:`, `Outputs:` and `Returns:` as they apply.
 - **Language style:** Lua 5.1 as the game runs it, `local` everywhere, and early returns over deep nesting. Bash per Google's Shell Style Guide: `set -euo pipefail`, quoted variables, `[[ ]]` tests, and clean `shellcheck`.
 - **No third-party code or libraries.** Write it yourself. Don't copy code, names or art from other addons or from Blizzard's interface files. Reading them to learn how something works is fine.
-- **One click, one action.** Nothing posts, buys, bids or cancels. Nothing sends a request on its own timer.
+- **One click, one action.** Nothing posts, bids or cancels. Buying happens only in HouseLedger's `Purchase.lua`, one step per click (`RULES.md`). Nothing sends a request on its own timer.
 
 ## Privacy
 

@@ -9,9 +9,10 @@
 #            (reads luac's SETGLOBAL listing, the core idea of luacheck, without the package)
 #   toc      each addon has a .toc with ## Interface, every listed file exists, test files are
 #            never listed, and every non-test .lua is listed
-#   policy   no call to an API that RULES.md forbids (post, buy, bid, cancel, run code from text,
-#            setfenv/getfenv, debug, RunMacro); chat, addon messages and setting changes only
-#            with a "-- reviewed: <why>" note; no change to Blizzard's auction window
+#   policy   no call to an API that RULES.md forbids (post, cancel, run code from text,
+#            setfenv/getfenv, debug, RunMacro); buying only in a Purchase.lua and with a
+#            "-- reviewed: <why>" note, like chat, addon messages and setting changes; no change
+#            to Blizzard's auction window
 #   version  each addon's <Name>.toc has a "## Version: X.Y.Z" (semver), and its CHANGELOG.md
 #            has a "## [X.Y.Z]" section for it, so every release has notes
 #   tests    each addon has at least one *_test.lua, and all of them pass under lua5.1
@@ -37,11 +38,11 @@ fi
 
 ALLOWED_GLOBALS="$ROOT/scripts/allowed-globals.txt"
 
-# RULES.md: never post, buy, bid or cancel, and no code run from text (it hides what runs).
+# RULES.md: never post or cancel (not built yet), and no code run from text (it hides what runs).
 # Also never: swapping a function's environment (setfenv, getfenv) hides what code does, the
 # debug library reaches into other code, and RunMacro plays the character. Casting and using bag
 # items happen only through Blizzard's secure button on a click (RULES.md, Disenchanting).
-readonly BANNED_API='C_AuctionHouse\.(PostItem|PostCommodity|PlaceBid|CancelAuction|CancelSell|StartCommoditiesPurchase|ConfirmCommoditiesPurchase)|C_Container\.(UseContainerItem|PickupContainerItem)|\b(CastSpellByName|CastSpellByID|SpellTargetItem|UseContainerItem|PickupContainerItem)\b|\b(PlaceAuctionBid|PostAuction|StartAuction|CancelAuction|loadstring|RunScript|RunMacroText|RunMacro|setfenv|getfenv)\b|(^|[^A-Za-z0-9_.:])debug\.[A-Za-z_]+'
+readonly BANNED_API='C_AuctionHouse\.(PostItem|PostCommodity|CancelAuction|CancelSell)|C_Container\.(UseContainerItem|PickupContainerItem)|\b(CastSpellByName|CastSpellByID|SpellTargetItem|UseContainerItem|PickupContainerItem)\b|\b(PlaceAuctionBid|PostAuction|StartAuction|CancelAuction|loadstring|RunScript|RunMacroText|RunMacro|setfenv|getfenv)\b|(^|[^A-Za-z0-9_.:])debug\.[A-Za-z_]+'
 
 # RULES.md: calls that send data out of the game (chat, addon messages, Battle.net) or change
 # the player's setup (keybindings, macros, settings) need a "-- reviewed: <why>" note on the
@@ -49,6 +50,12 @@ readonly BANNED_API='C_AuctionHouse\.(PostItem|PostCommodity|PlaceBid|CancelAuct
 # counts, not only a call, so keeping one in a local (local send = ...) can't hide it.
 readonly REVIEW_API='(C_ChatInfo\.(SendChatMessage|SendAddonMessage|SendAddonMessageLogged)|C_BattleNet\.(SendWhisper|SendGameData)|C_CVar\.SetCVar|(^|[^A-Za-z0-9_.:])(SendChatMessage|SendAddonMessage|SetCVar|SetBinding|SetBindingClick|SaveBindings|CreateMacro|EditMacro|DeleteMacro))([^A-Za-z0-9_]|$)'
 readonly REVIEW_NOTE='--[[:space:]]*reviewed:[[:space:]]*[^[:space:]]'
+
+# RULES.md: buying spends the player's gold, so it happens in one file per addon, Purchase.lua,
+# on the player's click, and each use has a "-- reviewed: <why>" note on the same line. Any use
+# counts, not only a call. Bids are not used (buyout only), so PlaceBid is the buyout call.
+readonly BUY_API='C_AuctionHouse\.(PlaceBid|StartCommoditiesPurchase|ConfirmCommoditiesPurchase)([^A-Za-z0-9_]|$)'
+readonly BUY_FILE='Purchase.lua'
 
 # RULES.md: Blizzard's auction window is read or followed (hooksecurefunc), never
 # changed. A method call on it or on one of its parts (AuctionHouseFrame.SearchBar,
@@ -232,7 +239,7 @@ check_toc() {
 # need a reviewed note and lack one (REVIEW_API, REVIEW_NOTE), and for method calls on
 # Blizzard's auction window that do more than read it (HOUSE_CALL, HOUSE_READS).
 # Globals:
-#   BANNED_API, REVIEW_API, REVIEW_NOTE, HOUSE_CALL, HOUSE_READS
+#   BANNED_API, REVIEW_API, REVIEW_NOTE, BUY_API, BUY_FILE, HOUSE_CALL, HOUSE_READS
 #   failures (counted through problem)
 # Outputs:
 #   Writes each hit, with file and line, to stdout.
@@ -252,6 +259,15 @@ check_policy() {
             problem "$(rel "$file"):${hit%%:*}" \
                 "uses '$name', which needs a '-- reviewed: <why>' note on the same line (RULES.md)"
         done < <(grep -n -E -- "$REVIEW_API" "$file" || true)
+        while IFS= read -r hit; do
+            name="$(grep -o -E -- "$BUY_API" <<<"${hit#*:}" | head -n 1 | sed -E 's/[^A-Za-z0-9_]$//')"
+            if [[ "$(basename "$file")" != "$BUY_FILE" ]]; then
+                problem "$(rel "$file"):${hit%%:*}" "buys with '$name' outside $BUY_FILE (RULES.md)"
+            elif ! grep -q -E -- "$REVIEW_NOTE" <<<"${hit#*:}"; then
+                problem "$(rel "$file"):${hit%%:*}" \
+                    "uses '$name', which needs a '-- reviewed: <why>' note on the same line (RULES.md)"
+            fi
+        done < <(grep -n -E -- "$BUY_API" "$file" || true)
         while IFS= read -r hit; do
             problem "$(rel "$file"):${hit%%:*}" "changes Blizzard's auction window ('${hit#*:}'); only read or hook it"
         done < <(grep -n -o -E -- "$HOUSE_CALL" "$file" | grep -v -E -- "$HOUSE_READS" || true)

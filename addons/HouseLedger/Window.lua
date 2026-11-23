@@ -4,7 +4,8 @@ and following Blizzard's window through hooksecurefunc (never calling its method
 ]]
 
 local _, ns = ...
-local C, ui, state, U, Chart, Scan, Tooltip, Buy, Sell, PC, Settings, Window = ns.C, ns.ui, ns.state, ns.U, ns.Chart, ns.Scan, ns.Tooltip, ns.Buy, ns.Sell, ns.PC, ns.Settings, ns.Window
+local C, ui, state, U, Chart, Scan, Tooltip, Buy, Sell, Purchase, PC, Settings, Window = ns.C, ns.ui, ns.state, ns.U,
+    ns.Chart, ns.Scan, ns.Tooltip, ns.Buy, ns.Sell, ns.Purchase, ns.PC, ns.Settings, ns.Window
 
 -- The Buy chart's height, beside the details block.
 local CHART_HEIGHT = 74
@@ -21,6 +22,10 @@ local tabsLinked = false
 --- Shows the Buy, Sell or Market tab.
 -- @param id BUY_TAB, SELL_TAB or MARKET_TAB
 local function SelectTab(id)
+    if id ~= state.currentTab then
+        -- Another tab leaves an item's listings and drops a price the house quoted.
+        Purchase.Close()
+    end
     state.currentTab = id
     -- The tab buttons are protected; in combat they are marked afterwards.
     -- The panels switch right away unless the game counts them as
@@ -272,6 +277,7 @@ function Window.Build()
     Sell.BuildPanel()
     Settings.BuildPanel()
     BuildTabs()
+    Purchase.Build()
 
     ui.scanText = ui.frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     ui.scanText:SetPoint("BOTTOMLEFT", 14, 8)
@@ -305,6 +311,7 @@ function Window.Build()
             return
         end
         tick = 0
+        Purchase.Tick()
         Scan.RefreshIdleLine()
         Scan.RefreshButton()
         if state.currentTab == C.MARKET_TAB and ui.buyPanel.marketMode then
