@@ -1062,14 +1062,15 @@ do
     local queries = #world.browseQueries
     box:GetScript("OnArrowPressed")(box, "DOWN")
     box:GetScript("OnArrowPressed")(box, "DOWN")
-    Check("recent: Down marks the next one, and sends nothing", Lines() == "silver rod,bolt of silk*"
-        and #world.browseQueries == queries and box.text == "si")
+    Check("recent: Down marks the next one and puts it in the box, and sends nothing",
+        Lines() == "silver rod,bolt of silk*" and #world.browseQueries == queries and box.text == "bolt of silk")
     box:GetScript("OnArrowPressed")(box, "DOWN")
-    Check("recent: past the end, back to what was typed", Lines() == "silver rod,bolt of silk")
+    Check("recent: past the end, the box gets back what was typed", Lines() == "silver rod,bolt of silk"
+        and box.text == "si")
     box:GetScript("OnArrowPressed")(box, "UP")
-    Check("recent: Up from there goes to the last", Lines() == "silver rod,bolt of silk*")
+    Check("recent: Up from there goes to the last", Lines() == "silver rod,bolt of silk*" and box.text == "bolt of silk")
     box:GetScript("OnEnterPressed")(box)
-    Check("recent: Enter searches the marked one: one search", #world.browseQueries == queries + 1
+    Check("recent: Enter searches what the box shows: one search", #world.browseQueries == queries + 1
         and world.browseQueries[#world.browseQueries].searchString == "bolt of silk" and not list.shown)
 
     box.focused = true
