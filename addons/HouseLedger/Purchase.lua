@@ -17,7 +17,8 @@ is checked against the buy started here (`buy`), and the quote is dropped
 ]]
 
 local _, ns = ...
-local C, ui, state, Price, U, Buy, Purchase = ns.C, ns.ui, ns.state, ns.Price, ns.U, ns.Buy, ns.Purchase
+local C, ui, state, Price, U, Buy, Purchase, History = ns.C, ns.ui, ns.state, ns.Price, ns.U, ns.Buy,
+    ns.Purchase, ns.History
 
 -- The sorts Blizzard's own buy window sends: stackables by price; gear by buyout, then bid, so the
 -- first page of a big list holds the cheapest buyouts.
@@ -540,7 +541,8 @@ function Purchase.OnBuyClick()
         if row == nil or row.buyout > GetMoney() then
             return
         end
-        buy = { step = "armed", auctionID = row.auctionID, buyout = row.buyout, name = ListingLabel(row) }
+        buy = { step = "armed", auctionID = row.auctionID, buyout = row.buyout, name = ListingLabel(row),
+            itemID = listing.itemID, plainName = listing.name }
         if HouseLedgerDB.settings.confirmItemBuys then
             local warning = Price.BuyWarningText(ListingStats(), row.unit)
             SetStatus(string.format("Buy %s for %s?%s Click Confirm.", buy.name, U.CopperToText(row.buyout),
@@ -623,6 +625,7 @@ function Purchase.OnPurchaseSucceeded()
     if buy == nil or not buy.commodity or buy.step ~= "buying" then
         return
     end
+    History.RecordBuy(buy.itemID, buy.name, buy.quantity, buy.total)
     EndBuy(string.format("Bought %d %s for %s. Check your mailbox. Click Back, then Buy, to see what's left.",
         buy.quantity, buy.name, U.CopperToText(buy.total)))
 end
@@ -652,6 +655,7 @@ function Purchase.OnAuctionBought(auctionID)
         listing.chosen, listing.picked = nil, nil
         Purchase.Render()
     end
+    History.RecordBuy(buy.itemID, buy.plainName, 1, buy.buyout)
     EndBuy(string.format("Bought %s for %s. Check your mailbox.", buy.name, U.CopperToText(buy.buyout)))
 end
 

@@ -653,6 +653,105 @@ do
         and #P.EnsureDB(nil).recentSearches == 0)
 end
 
+-- History: buys and sales
+do
+    local DAY = 86400
+    local ledger = P.CleanLedger(nil)
+    Check("history: empty to start", #ledger.entries == 0 and #ledger.seen == 0)
+    local function Mail(kind, name, count, bid, expires, extra)
+        local mail = { kind = kind, name = name, count = count, bid = bid, expires = expires }
+        for key, value in pairs(extra or {}) do
+            mail[key] = value
+        end
+        return mail
+    end
+    local now = 1000 * DAY
+    local sold = Mail("sold", "Linen Cloth", 20, 400, now + 30 * DAY, { deposit = 10, cut = 20 })
+    Check("history: a sale's mail is recorded", P.RecordMail(ledger, { sold }, now, "Mira Stone", "R") == 1
+        and ledger.entries[1].kind == "sold" and ledger.entries[1].who == "Mira Stone"
+        and ledger.entries[1].cut == 20 and ledger.entries[1].time == now and ledger.entries[1].estimated)
+    local older = P.CleanLedger({})
+    P.RecordMail(older, { Mail("sold", "A", 1, 5, now + 27 * DAY), Mail("sold", "B", 1, 5, now + 29 * DAY) }, now, "M", "R")
+    P.RecordMail(older, { Mail("sold", "C", 1, 5, now + 25 * DAY) }, now + 60, "M", "R")
+    Check("history: a mail's time is estimated from its days left, and entries stay in time order",
+        older.entries[1].name == "C" and older.entries[1].time == now - 5 * DAY
+        and older.entries[2].name == "A" and older.entries[2].time == now - 3 * DAY and older.entries[3].name == "B")
+    Check("history: the same mail looked at again later isn't counted twice",
+        P.RecordMail(ledger, { Mail("sold", "Linen Cloth", 20, 400, now + 30 * DAY + 4) }, now + 3600, "Mira Stone", "R") == 0
+        and #ledger.entries == 1)
+    Check("history: two identical mails in one look count as two", P.RecordMail(ledger,
+        { Mail("sold", "Linen Cloth", 20, 400, now + 30 * DAY), Mail("sold", "Linen Cloth", 20, 400, now + 30 * DAY) },
+        now + 7200, "Mira Stone", "R") == 1 and #ledger.entries == 2)
+    Check("history: a mail read or emptied, with fewer days left, is still the same mail",
+        P.RecordMail(ledger, { Mail("sold", "Linen Cloth", 20, 400, now + 2 * DAY) }, now + 7300, "Mira Stone", "R") == 0
+        and #ledger.entries == 2)
+    Check("history: a new identical mail expires later, so it is counted", P.RecordMail(ledger,
+        { Mail("sold", "Linen Cloth", 20, 400, now + 2 * DAY), Mail("sold", "Linen Cloth", 20, 400, now + 30 * DAY),
+          Mail("sold", "Linen Cloth", 20, 400, now + 31 * DAY) }, now + DAY, "Mira Stone", "R") == 1
+        and #ledger.entries == 3)
+    Check("history: another character's mailbox is its own", P.RecordMail(ledger, { sold }, now, "Alt Name", "R") == 1)
+
+    local hl = P.RecordBuy(ledger, { time = now, who = "Mira Stone", realm = "R", itemID = 2589, name = "Linen Cloth",
+        count = 20, bid = 460 })
+    Check("history: a HouseLedger buy is recorded at once", hl.kind == "bought" and hl.open == 20 and hl.source == "hl")
+    local before = #ledger.entries
+    Check("history: its mail, split by seller, is matched to it, not added", P.RecordMail(ledger, {
+        Mail("bought", "Linen Cloth", 12, 276, now + 30 * DAY, { itemID = 2589 }),
+        Mail("bought", "Linen Cloth", 8, 184, now + 30 * DAY, { itemID = 2589 }) }, now + 60, "Mira Stone", "R") == 0
+        and #ledger.entries == before and hl.open == 0)
+    Check("history: a buy from Blizzard's window comes from its mail", P.RecordMail(ledger,
+        { Mail("bought", "Linen Cloth", 5, 120, now + 31 * DAY, { itemID = 2589 }) }, now + 120, "Mira Stone", "R") == 1)
+    Check("history: an expired mail is remembered a day past expiry, then forgotten",
+        (function()
+            P.RecordMail(ledger, {}, now + 32 * DAY + 3600, "Mira Stone", "R")
+            return #ledger.seen == 0
+        end)())
+
+    local long = P.CleanLedger({})
+    for index = 1, P.LEDGER_KEPT + 3 do
+        P.RecordBuy(long, { time = index, who = "A", name = "X", count = 1, bid = 1 })
+    end
+    Check("history: at most LEDGER_KEPT, the oldest dropped", #long.entries == P.LEDGER_KEPT and long.entries[1].time == 4)
+    local repaired = P.CleanLedger({ entries = { { time = 1, kind = "sold", name = "A", count = 1 }, { kind = "sold" },
+        5, { time = 2, kind = "stolen", name = "B", count = 1 } }, seen = { { expires = 3 }, "x" } })
+    Check("history: a damaged saved history keeps only good entries", #repaired.entries == 1 and #repaired.seen == 1)
+    local early = P.CleanLedger({ entries = {
+        { time = 5 * DAY, who = "M", kind = "sold", name = "A", count = 1, bid = 9, source = "mail" },
+        { time = 5 * DAY, who = "M", kind = "sold", name = "B", count = 1, bid = 9, source = "mail" } },
+        seen = { { who = "M", kind = "sold", name = "A", count = 1, bid = 9, expires = 33 * DAY } } })
+    Check("history: an entry saved before times were estimated gets its time from its mail, once",
+        early.entries[1].name == "A" and early.entries[1].time == 3 * DAY and early.entries[1].estimated
+        and early.entries[2].time == 5 * DAY and not early.entries[2].estimated)
+    Check("history: EnsureDB gives one", type(P.EnsureDB(nil).ledger.entries) == "table")
+
+    Check("subject: the item from the game's format", P.SubjectItem("Auction expired: %s", "Auction expired: Silver Rod")
+        == "Silver Rod")
+    Check("subject: another subject, or no format: nil", P.SubjectItem("Auction expired: %s", "Auction won: Rod") == nil
+        and P.SubjectItem(nil, "Auction expired: Rod") == nil and P.SubjectItem("no slot", "no slot") == nil)
+    Check("subject: special characters in the format are plain", P.SubjectItem("(%s) 100%.", "(Rod) 100%.") == "Rod")
+
+    local entries = {
+        { time = 1, kind = "bought", name = "Rod", count = 2, bid = 1000 },
+        { time = 2, kind = "bought", name = "Rod", count = 2, bid = 1400 },
+        { time = 3, kind = "sold", name = "Rod", count = 1, bid = 1000, cut = 50, deposit = 20 },
+        { time = 4, kind = "sold", name = "Gem", count = 1, bid = 500, cut = 25 },
+        { time = 5, kind = "expired", name = "Rod", count = 1 },
+    }
+    local profits = P.LedgerProfits(entries)
+    Check("profit: proceeds less the average paid (600 each), the deposit not counted", profits[entries[3]] == 350)
+    Check("profit: none without a recorded buy", profits[entries[4]] == nil)
+    local view = P.LedgerView(entries)
+    Check("view: newest first", view[1].time == 5 and #view == 5)
+    Check("view: by kind, returned is expired and cancelled", #P.LedgerView(entries, nil, "sold") == 2
+        and #P.LedgerView(entries, nil, "returned") == 1)
+    local totals = P.LedgerTotals(view, profits)
+    Check("totals: bought, sold after the cut, returned, profit", totals.boughtCount == 4 and totals.boughtCopper == 2400
+        and totals.soldCount == 2 and totals.soldCopper == 1425 and totals.returnedCount == 1 and totals.profit == 350
+        and totals.profitSales == 1)
+    Check("characters: A to Z, once each", table.concat(P.LedgerCharacters({ { who = "b" }, { who = "a" }, { who = "b" } }),
+        ",") == "a,b")
+end
+
 -- Chart: one slot per day from the oldest saved day (at least 7), up to the history length
 do
     local db = P.EmptyDB()

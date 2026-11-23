@@ -23,7 +23,7 @@ A step over about 16 ms freezes a 60 frames per second game for at least one fra
 
 The game loads a saved file as one Lua function. A Lua 5.1 function holds at most 262,143 constants, and each different number or string in the file is one constant. A file over the limit fails to load. Addon authors report that the game can then lose that addon's saved data. Blizzard doesn't document WoW's own limit; this is stock Lua 5.1's.
 
-Day keys, prices that repeat and item names are shared, so a real file holds far fewer constants than values: a real 7-day file with 6,661 items had 41,351. Any change to the saved format or to how many days are kept must keep the `different values` line well under the limit, at 20,000 items too.
+Day keys, prices that repeat and item names are shared, so a real file holds far fewer constants than values: a real 7-day file with 6,661 items had 41,351. Any change to the saved format or to how many days are kept must keep the `different values` line well under the limit, at 20,000 items too. The smoke data also holds a full History tab (2,000 entries, each with its own time and amounts): about 5,500 more values.
 
 Version 3 saved each day's exact sum and sum of squares, and those were nearly all different numbers. With about 5.5 scans a day they passed the limit at 20,000 items x 14 days or 10,000 x 30. Version 4 saves each day's average (4 significant digits, or the exact low or high when it equals one) and spread (2 digits) instead, which repeat. The `--full` run's heavy case (20,000 x 30, 1 to 10 scans a day) is now at 16%.
 

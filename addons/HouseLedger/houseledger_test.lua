@@ -233,6 +233,15 @@ local function Setup(opts)
         end,
         GetActiveWindow = function() return world.chatOpen and {} or nil end,
     }
+    -- Forever gives a surname as UnitName's second value.
+    _G.UnitName = function(unit) if unit == "player" then return "Tester", "Vale" end end
+    -- The mailbox: world.mail is a list of { header = { ... }, invoice = { ... } }.
+    world.mail = {}
+    _G.GetInboxNumItems = function() return #world.mail end
+    _G.GetInboxHeaderInfo = function(index) return unpack(world.mail[index].header) end
+    _G.GetInboxInvoiceInfo = function(index) return unpack(world.mail[index].invoice or {}) end
+    _G.AUCTION_EXPIRED_MAIL_SUBJECT = "Auction expired: %s"
+    _G.AUCTION_REMOVED_MAIL_SUBJECT = "Auction cancelled: %s"
     _G.UnitFactionGroup = function(unit)
         if unit == "npc" then
             return opts.npcSide or "Alliance"
@@ -1566,7 +1575,8 @@ do
     Load()
     OpenHouse()
     local frame = MainFrame()
-    Check("window has Buy, Sell, Market and Settings tabs", TabNamed("Buy") ~= nil and TabNamed("Sell") ~= nil and frame.numTabs == 4)
+    Check("window has Buy, Sell, Market, History and Settings tabs", TabNamed("Buy") ~= nil and TabNamed("Sell") ~= nil
+        and TabNamed("History") ~= nil and frame.numTabs == 5)
     Check("Buy tab is open first", frame.selectedTab == 1 and frame.buyPanel.shown and not frame.sellPanel.shown)
     Click("Sell")
     Check("Sell tab click opens the Sell panel", frame.selectedTab == 2 and frame.sellPanel.shown and not frame.buyPanel.shown)
@@ -2041,7 +2051,7 @@ do
     local queries, scans = #world.browseQueries, world.replicateCalls
 
     local market = TabNamed("Market")
-    Check("the window has a Market tab", market ~= nil and frame.numTabs == 4)
+    Check("the window has a Market tab", market ~= nil and frame.numTabs == 5)
     Check("Market is a plain tab that presses nothing on Blizzard's window",
         market and not market.template:find("SecureActionButtonTemplate", 1, true)
         and market.attributes.clickbutton == nil)
@@ -2266,11 +2276,11 @@ do
     RunTimers()
     local frame = MainFrame()
     local tab = TabNamed("Settings")
-    Check("the window has a Settings tab, a plain one", tab ~= nil and frame.numTabs == 4
+    Check("the window has a Settings tab, a plain one", tab ~= nil and frame.numTabs == 5
         and not tab.template:find("SecureActionButtonTemplate", 1, true))
     Click("Settings")
     local panel = frame.settingsPanel
-    Check("Settings shows its own panel", frame.selectedTab == 4 and panel.shown and not frame.buyPanel.shown
+    Check("Settings shows its own panel", frame.selectedTab == 5 and panel.shown and not frame.buyPanel.shown
         and not frame.sellPanel.shown)
     local boxes = panel.boxes
     Check("each box shows its saved setting", boxes.tooltipPrices.checked == true and boxes.tooltipDetails.checked == false)
@@ -3747,6 +3757,118 @@ do
         end
     end
     Check("and stays marked when the list draws again", still == true)
+end
+
+do
+    -- The History tab: HouseLedger's own buys at once, and the auction house mail.
+    Setup()
+    Load()
+    local frame = MainFrame()
+    local tab = TabNamed("History")
+    tab:GetScript("OnClick")(tab)
+    local panel = frame.historyPanel
+    Check("history: a plain tab with its own panel", panel.shown and not frame.buyPanel.shown
+        and frame.selectedTab == 4)
+    Check("history: newest first by default, with the game's down arrow on When",
+        panel.headings.when.label.text:find("When |A:NPE_ArrowDown", 1, true) == 1)
+    Check("history: empty, it says where entries come from", panel.empty.shown
+        and panel.empty.text:find("Open your mailbox", 1, true))
+    local function Rows()
+        local texts = {}
+        for _, row in ipairs(panel.rows) do
+            if row.shown then
+                local cells = row.cells
+                texts[#texts + 1] = table.concat({ cells.name.text, cells.count.text, cells.amount.text,
+                    cells.profit.text, cells.who.text }, "|")
+            end
+        end
+        return texts
+    end
+
+    -- A HouseLedger buy: 50 at 12c, quoted 620.
+    TabNamed("Buy"):GetScript("PostClick")(TabNamed("Buy"))
+    world.commodities = { [2589] = true }
+    local buyPanel = PickFirstResult({ { itemKey = { itemID = 2589, itemLevel = 0, itemSuffix = 0 }, minPrice = 12,
+        totalQuantity = 245 } })
+    Press(buyPanel.listingsButton)
+    LinenListings()
+    Type(buyPanel.qtyBox, "50")
+    Press(buyPanel.buyButton)
+    Fire("COMMODITY_PRICE_UPDATED", 12, 620)
+    Press(buyPanel.buyButton)
+    Fire("COMMODITY_PURCHASE_SUCCEEDED")
+    local entries = HouseLedgerDB.ledger.entries
+    Check("history: a HouseLedger buy is recorded the moment it goes through", #entries == 1
+        and entries[1].kind == "bought" and entries[1].count == 50 and entries[1].bid == 620
+        and entries[1].itemID == 2589 and entries[1].name == "Item 2589" and entries[1].who == "Tester Vale")
+    tab:GetScript("OnClick")(tab)
+    local rows = Rows()
+    Check("history: the tab shows it", #rows == 1 and rows[1] == "Item 2589|50|<money 620>||Tester Vale")
+
+    -- The mailbox: the buy's own mail, a sale (with the buyer's name, never kept), and a returned auction.
+    local function Header(subject, daysLeft, quantity, link)
+        return { nil, nil, "Auction House", subject, 0, 0, daysLeft, 1, false, false, false, false, false, quantity, link }
+    end
+    world.mail = {
+        { header = Header("Auction won: Item 2589", 30, 50, "|Hitem:2589|h[Item 2589]|h"),
+            invoice = { "buyer", "Item 2589", "A Seller", 620, 620, 0, 0, 0, 0, 0, 50 } },
+        { header = Header("Auction successful: Item 2589", 30),
+            invoice = { "seller", "Item 2589", "Some Buyer", 1000, 1000, 15, 50, 0, 0, 0, 40 } },
+        { header = Header("Auction expired: Silver Rod", 29, 1, "|Hitem:6338|h[Silver Rod]|h") },
+        { header = Header("Hello", 3, 0) },
+    }
+    Fire("MAIL_INBOX_UPDATE")
+    -- In time order: the auction that came back a day ago (its mail has 29 days left), then the buy
+    -- and the sale, both now.
+    Check("history: the buy's mail is matched to it, a sale and a returned auction are added", #entries == 3
+        and entries[1].kind == "expired" and entries[1].name == "Silver Rod" and entries[1].itemID == 6338
+        and entries[1].time == world.now - 86400 and entries[2].kind == "bought"
+        and entries[3].kind == "sold" and entries[3].count == 40 and entries[3].cut == 50)
+    Fire("MAIL_INBOX_UPDATE")
+    Check("history: looking at the mailbox again adds nothing", #entries == 3)
+    Check("history: the other player's name is never saved", not SavedAnywhere(HouseLedgerDB, "Some Buyer")
+        and not SavedAnywhere(HouseLedgerDB, "A Seller"))
+    rows = Rows()
+    -- Sold 40 for 1000 less 50 cut = 950; paid 620 for 50 = 12.4 each, 496 for 40: profit 454.
+    Check("history: newest first; a sale shows what came in and its profit", #rows == 3
+        and rows[1] == "Item 2589|40|<money 950>|<money 454>|Tester Vale" and rows[3] == "Silver Rod|1|Expired||Tester Vale")
+    Check("history: the totals line", panel.totals.text:find("Bought 50 for <money 620>", 1, true)
+        and panel.totals.text:find("sold 40 for <money 950> after the house's cut", 1, true)
+        and panel.totals.text:find("1 came back", 1, true) and panel.totals.text:find("Profit on 1 sale", 1, true))
+
+    Pick(panel.kindDropdown, "Sold")
+    rows = Rows()
+    Check("history: show only sales", #rows == 1 and rows[1]:find("<money 950>", 1, true))
+    Pick(panel.kindDropdown, "Came back")
+    Check("history: or only what came back", #Rows() == 1 and Rows()[1]:find("Expired", 1, true))
+    Pick(panel.kindDropdown, "Everything")
+    Check("history: the character list has this one", #MenuChoices(panel.whoDropdown) == 2)
+    Pick(panel.whoDropdown, "Tester Vale")
+    Check("history: one character's entries", #Rows() == 3)
+
+    panel.headings.amount:GetScript("OnClick")(panel.headings.amount)
+    rows = Rows()
+    Check("history: a heading sorts", rows[1]:find("<money 950>", 1, true) ~= nil)
+    panel.headings.amount:GetScript("OnClick")(panel.headings.amount)
+    Check("history: and again reverses", Rows()[1]:find("<money 620>", 1, true) ~= nil)
+
+    local lines = {}
+    _G.GameTooltip.AddLine = function(_, text) lines[#lines + 1] = text end
+    panel.headings.when:GetScript("OnClick")(panel.headings.when)
+    panel.headings.when:GetScript("OnClick")(panel.headings.when)
+    local row = panel.rows[2]
+    row:GetScript("OnEnter")(row)
+    local text = table.concat(lines, "\n")
+    Check("history: hovering a sale says the price, the cut, what came in and the profit",
+        text:find("Sold 40 for <money 1000> (<money 25> each)", 1, true)
+        and text:find("House cut <money 50>; you got <money 950>", 1, true)
+        and text:find("Profit: <money 454>", 1, true) and text:find("From the auction house mail", 1, true)
+        and text:find("Tester Vale, about ", 1, true))
+    lines = {}
+    row = panel.rows[3]
+    row:GetScript("OnEnter")(row)
+    Check("history: and a HouseLedger buy says so", table.concat(lines, "\n"):find("Bought in HouseLedger", 1, true))
+    Check("history: sends nothing", #world.buys == 2 and world.replicateCalls <= 1)
 end
 
 if failed > 0 then

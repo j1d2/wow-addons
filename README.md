@@ -57,6 +57,7 @@ Open the addon's CurseForge page, [HouseLedger](https://www.curseforge.com/wow/a
 - **Buying:** click a row, then the **Buy** button on it to see what's for sale, cheapest first. Type how many (or click a listing), click **Buy**, check the price and how it compares with your 7-day average, then click **Confirm**. Works from the Market tab's deals too. Settings can turn Confirm off for gear, stackables, or both.
 - **Sell tab:** drop an item in to see the lowest price now and its history. Then post it in Blizzard's window.
 - **Market tab:** the deals, biggest drops and biggest rises from your last scan, with no searching until you click **Buy** on one.
+- **History tab:** what each of your characters bought and sold, and auctions that came back. Buys made in HouseLedger show at once; sales, other buys and returned auctions are added when you open your mailbox. Their time is worked out from the mail, so it's about when the sale happened. Pick a character or Bought / Sold / Came back, and click a heading to sort. The totals line adds it up, and a sale shows its profit when you bought that item earlier (against the average you paid). HouseLedger only reads your mail: it never takes, opens or deletes it, and never saves the other player's name.
 - **Settings tab:** turn tooltip prices off, always show the day lines without Shift, turn off Confirm when buying (gear, stackables, or both; on by default), or keep 30 or 60 days of prices instead of 14.
 - **Price Check:** type `/pc` anywhere, or click **Price Check** above your bags, to look up a saved price by name. Shift-click an item in your bags or a chat link to look it up, scroll through every match, and click a heading to sort.
 - **Never** buys, posts or scans by itself: every step is your click.
@@ -149,7 +150,8 @@ Its Buy and Sell tabs switch Blizzard's tabs too, and the reverse.
 - After a buy it doesn't search again by itself; click Back, then Buy, to see what's left. What you buy arrives in your mailbox.
 - It does not scan when the auction house opens. A full scan needs your click, at most once each 15 minutes, which is the game's limit.
 - Search, a row's Buy and Sell send one request per click. Scrolling, hovering and clicking a row send nothing.
-- It does not save seller names or send anything to other players.
+- It does not save seller or buyer names, or send anything to other players.
+- It only reads your auction house mail, for the History tab. It never takes, opens, returns or deletes mail.
 
 [`RULES.md`](RULES.md) lists everything these addons may and may not do.
 

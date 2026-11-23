@@ -157,7 +157,8 @@ if [[ $status -eq 1 && "$out" == *"has no '## Interface:' number"* ]]; then rc=0
 check "toc: missing Interface line is caught" "$rc"
 
 for call in "C_AuctionHouse.PostCommodity(loc, 1, 1, 1)" "C_AuctionHouse.PostItem(loc, 1, 1)" \
-    "C_AuctionHouse.CancelAuction(id)" "loadstring(text)"; do
+    "C_AuctionHouse.CancelAuction(id)" "loadstring(text)" "TakeInboxMoney(1)" "DeleteInboxItem(1)" \
+    "ReturnInboxItem(1)" "GetInboxText(1)"; do
     good_addon
     printf 'local function Go()\n    %s\nend\n' "$call" >>"$ROOT/addons/Demo/Demo.lua"
     run_check policy

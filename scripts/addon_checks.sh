@@ -42,7 +42,7 @@ ALLOWED_GLOBALS="$ROOT/scripts/allowed-globals.txt"
 # Also never: swapping a function's environment (setfenv, getfenv) hides what code does, the
 # debug library reaches into other code, and RunMacro plays the character. Casting and using bag
 # items happen only through Blizzard's secure button on a click (RULES.md, Disenchanting).
-readonly BANNED_API='C_AuctionHouse\.(PostItem|PostCommodity|CancelAuction|CancelSell)|C_Container\.(UseContainerItem|PickupContainerItem)|\b(CastSpellByName|CastSpellByID|SpellTargetItem|UseContainerItem|PickupContainerItem)\b|\b(PlaceAuctionBid|PostAuction|StartAuction|CancelAuction|loadstring|RunScript|RunMacroText|RunMacro|setfenv|getfenv)\b|(^|[^A-Za-z0-9_.:])debug\.[A-Za-z_]+'
+readonly BANNED_API='C_AuctionHouse\.(PostItem|PostCommodity|CancelAuction|CancelSell)|C_Container\.(UseContainerItem|PickupContainerItem)|\b(CastSpellByName|CastSpellByID|SpellTargetItem|UseContainerItem|PickupContainerItem)\b|\b(PlaceAuctionBid|PostAuction|StartAuction|CancelAuction|loadstring|RunScript|RunMacroText|RunMacro|setfenv|getfenv)\b|\b(TakeInboxItem|TakeInboxMoney|DeleteInboxItem|ReturnInboxItem|AutoLootMailItem|SendMail|CheckInbox|GetInboxText)\b|(^|[^A-Za-z0-9_.:])debug\.[A-Za-z_]+'
 
 # RULES.md: calls that send data out of the game (chat, addon messages, Battle.net) or change
 # the player's setup (keybindings, macros, settings) need a "-- reviewed: <why>" note on the

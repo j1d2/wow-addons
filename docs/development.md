@@ -89,6 +89,7 @@ HouseLedger loads in this order:
 | `Sell.lua` | The Sell tab (`ns.Sell`). |
 | `Purchase.lua` | Buying from Buy and Market: the picked row's Buy (one item search), the listings, Buy and Confirm (`ns.Purchase`). Settings `confirmItemBuys`/`confirmStackBuys` (default on) skip Confirm: gear buys on Buy, a stackable confirms on a quote not above the listings. The only file the `policy` check lets buy. |
 | `PriceCheck.lua` | The `/pc` window and its bag button (`ns.PC`). |
+| `History.lua` | The History tab: buys and sales from HouseLedger's own buys and the auction house mail (`ns.History`; the pure records are in `PriceLedger`). Reads the mailbox only. |
 | `Settings.lua` | The Settings tab (`ns.Settings`). |
 | `Window.lua` | The window, its tabs, its place beside the auction house, and following Blizzard's window (`ns.Window`). |
 | `HouseLedger.lua` | Events. It loads last. |
