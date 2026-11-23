@@ -715,6 +715,13 @@ do
     local repaired = P.CleanLedger({ entries = { { time = 1, kind = "sold", name = "A", count = 1 }, { kind = "sold" },
         5, { time = 2, kind = "stolen", name = "B", count = 1 } }, seen = { { expires = 3 }, "x" } })
     Check("history: a damaged saved history keeps only good entries", #repaired.entries == 1 and #repaired.seen == 1)
+    local early = P.CleanLedger({ entries = {
+        { time = 5 * DAY, who = "M", kind = "sold", name = "A", count = 1, bid = 9, source = "mail" },
+        { time = 5 * DAY, who = "M", kind = "sold", name = "B", count = 1, bid = 9, source = "mail" } },
+        seen = { { who = "M", kind = "sold", name = "A", count = 1, bid = 9, expires = 33 * DAY } } })
+    Check("history: an entry saved before times were estimated gets its time from its mail, once",
+        early.entries[1].name == "A" and early.entries[1].time == 3 * DAY and early.entries[1].estimated
+        and early.entries[2].time == 5 * DAY and not early.entries[2].estimated)
     Check("history: EnsureDB gives one", type(P.EnsureDB(nil).ledger.entries) == "table")
 
     Check("subject: the item from the game's format", P.SubjectItem("Auction expired: %s", "Auction expired: Silver Rod")

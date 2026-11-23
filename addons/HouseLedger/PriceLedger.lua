@@ -2272,6 +2272,30 @@ function PriceLedger.CleanLedger(ledger)
             seen[#seen + 1] = mail
         end
     end
+    -- Mail entries saved before times were estimated (first version of the tab) get theirs from
+    -- the mail they came from, while it is still remembered. Once only: they are marked.
+    for _, entry in ipairs(entries) do
+        if entry.source == "mail" and not entry.estimated then
+            for _, mail in ipairs(seen) do
+                if mail.who == entry.who and mail.kind == entry.kind and mail.name == entry.name
+                    and mail.count == entry.count and mail.bid == entry.bid then
+                    entry.time, entry.estimated = math.min(entry.time, mail.expires - PriceLedger.MAIL_LIFE), true
+                    break
+                end
+            end
+        end
+    end
+    -- Time order, equal times kept as they were (table.sort alone isn't stable).
+    local place = {}
+    for index, entry in ipairs(entries) do
+        place[entry] = index
+    end
+    table.sort(entries, function(a, b)
+        if a.time ~= b.time then
+            return a.time < b.time
+        end
+        return place[a] < place[b]
+    end)
     ledger.entries, ledger.seen = entries, seen
     return ledger
 end
