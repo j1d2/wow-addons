@@ -97,15 +97,11 @@ local function ListingStatus()
     return text
 end
 
---- How a listing reads in the status line: "50 x [Silver Rod]" for a stack, else its name.
+--- How a listing reads in the status line: its link, or the item's name.
 -- @param row a listing row
 -- @return the text
 local function ListingLabel(row)
-    local name = row.link or listing.name
-    if row.quantity > 1 then
-        return row.quantity .. " x " .. name
-    end
-    return name
+    return row.link or listing.name
 end
 
 --- The gear row the player picked, or nil.
@@ -177,8 +173,7 @@ local function RefreshBuy()
         local row = ChosenRow()
         if row then
             local warning = Price.BuyWarningText(ListingStats(), row.unit)
-            local each = row.quantity > 1 and (" (" .. U.CopperToText(row.unit) .. " each)") or ""
-            text = string.format("%s for %s%s%s.", ListingLabel(row), U.CopperToText(row.buyout), each,
+            text = string.format("%s for %s%s.", ListingLabel(row), U.CopperToText(row.buyout),
                 warning ~= "" and (", " .. warning) or "")
             ready = row.buyout <= money
             if not ready then
@@ -201,13 +196,7 @@ function Purchase.Render()
         if entry then
             row.listingKey = listing.readKey
             row.icon:SetTexture(icon)
-            -- A stack of gear-like items costs its whole buyout, as in Blizzard's window; its price
-            -- each shows after the name.
-            local name = entry.link or listing.name
-            if not listing.commodity and entry.quantity > 1 then
-                name = name .. " |cff9d9d9d" .. U.CopperToText(entry.unit) .. " each|r"
-            end
-            row.nameText:SetText(name)
+            row.nameText:SetText(entry.link or listing.name)
             row.nameText:SetTextColor(1, 1, 1)
             row.ilvlText:SetText(entry.level and entry.level > 0 and tostring(entry.level) or "")
             row.priceText:SetText(U.CopperToText(listing.commodity and entry.unit or entry.buyout))
@@ -428,6 +417,9 @@ end
 
 --- Item search results came in: shows them if they are for the open listings.
 -- A listing with no buyout is bid-only and is left out; owners stay in the result.
+-- On Forever, one buy of a listing gets one item for its whole buyout (tested in game: a Silver
+-- Rod listing of "quantity" 50 delivered 1 rod), so the buyout is the price, never divided by the
+-- quantity, which reads as how many are up at that price.
 -- @param itemKey the item key the results are for
 function Purchase.OnItemResults(itemKey)
     if listing == nil or listing.commodity or type(itemKey) ~= "table" or itemKey.itemID ~= listing.itemID then
@@ -439,7 +431,7 @@ function Purchase.OnItemResults(itemKey)
         local result = C_AuctionHouse.GetItemSearchResultInfo(key, index)
         if result and result.buyoutAmount and result.quantity and result.quantity > 0 then
             raw[#raw + 1] = {
-                unit = Price.UnitCopper(result.buyoutAmount, result.quantity), quantity = result.quantity,
+                unit = result.buyoutAmount, quantity = result.quantity,
                 own = result.containsOwnerItem == true, buyout = result.buyoutAmount, auctionID = result.auctionID,
                 link = result.itemLink, level = result.itemKey and result.itemKey.itemLevel, timeLeft = result.timeLeft,
             }
@@ -522,8 +514,7 @@ function Purchase.OnBuyClick()
         end
         buy = { step = "armed", auctionID = row.auctionID, buyout = row.buyout, name = ListingLabel(row) }
         local warning = Price.BuyWarningText(ListingStats(), row.unit)
-        local each = row.quantity > 1 and (" (" .. U.CopperToText(row.unit) .. " each)") or ""
-        SetStatus(string.format("Buy %s for %s%s?%s Click Confirm.", buy.name, U.CopperToText(row.buyout), each,
+        SetStatus(string.format("Buy %s for %s?%s Click Confirm.", buy.name, U.CopperToText(row.buyout),
             warning ~= "" and (" " .. warning .. ".") or ""))
     elseif step == "armed" then
         buy.step, buy.sentAt = "buying", U.Clock()
