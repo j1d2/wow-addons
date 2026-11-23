@@ -66,7 +66,12 @@ D.MATERIALS = {
     nexusCrystal = { id = 20725, name = "Nexus Crystal" },
 }
 
--- The published tables (warcraft.wiki.gg). A row: { lowest item level, highest, then one
+-- The published tables, from warcraft.wiki.gg, "Disenchanting tables"
+-- (https://warcraft.wiki.gg/wiki/Disenchanting_tables), by its contributors, licensed under
+-- CC BY-SA 4.0 (https://creativecommons.org/licenses/by-sa/4.0/). The table data below
+-- (GREEN_ARMOR, GREEN_WEAPON, BLUE, EPIC_ROWS) is shared under that license; the rest of this
+-- file is Apache-2.0 like the project. Changed here: restricted to the item levels Forever uses.
+-- A row: { lowest item level, highest, then one
 -- { material, percent, fewest, most } per result }. Each row's first result is its dust, the
 -- second its essence, the third its shard.
 local GREEN_ARMOR = {

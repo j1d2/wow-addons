@@ -258,4 +258,6 @@ The code is original addon code. It does not include Blizzard's client files, in
 
 ## License
 
-[Apache License 2.0](LICENSE). A pull request is a contribution under that license. The license covers this project's own code. It does not cover Blizzard's games, art, or trademarks. Blizzard's addon policy also applies to any shared copy: it must stay free and readable.
+[Apache License 2.0](LICENSE). A pull request is a contribution under that license. The license covers this project's own code.
+
+One exception: the disenchant table data in `addons/Unmaker/UnmakerResults.lua` (marked in the file) comes from [warcraft.wiki.gg's Disenchanting tables](https://warcraft.wiki.gg/wiki/Disenchanting_tables) and is shared under [CC BY-SA 4.0](https://creativecommons.org/licenses/by-sa/4.0/), as that page is. It does not cover Blizzard's games, art, or trademarks. Blizzard's addon policy also applies to any shared copy: it must stay free and readable.
