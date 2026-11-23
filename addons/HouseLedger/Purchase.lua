@@ -254,14 +254,22 @@ local function ShownRow(test)
     end
 end
 
---- Puts a button at the right end of a row, or hides it when there is no row.
+--- Puts a button at the right end of a row, or hides it when there is no row. The row's last
+-- column (trend or vs avg) sits under the button, so it is hidden there and shown again when the
+-- button moves on.
 -- @param button the button
 -- @param row the row, or nil
 local function PlaceOn(button, row)
+    if button.covered then
+        button.covered:SetAlpha(1)
+        button.covered = nil
+    end
     if row == nil then
         button:Hide()
         return
     end
+    row.trendText:SetAlpha(0)
+    button.covered = row.trendText
     -- A child of the row, so it draws over the row and its clicks reach it.
     button:SetParent(row)
     button:ClearAllPoints()

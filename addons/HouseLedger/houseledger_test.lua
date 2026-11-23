@@ -83,6 +83,7 @@ function FrameMethods:GetWidth() return self.width end
 function FrameMethods:GetRight() return self.right end
 function FrameMethods:GetHeight() return self.height end
 function FrameMethods:SetTextColor(r, g, b) self.color = { r, g, b } end
+function FrameMethods:SetAlpha(alpha) self.alpha = alpha end
 function FrameMethods:SetTexture(texture) self.texture = texture end
 function FrameMethods:SetMinMaxValues(min, max) self.min, self.max = min, max end
 -- A dropdown keeps the menu generator it was given, as Blizzard's DropdownButton does.
@@ -3498,6 +3499,8 @@ do
     rows[3]:GetScript("OnClick")(rows[3])
     Check("another click moves the mark and the button", rows[3].selection.shown and not rows[1].selection.shown
         and panel.listingsButton.points[1][2] == rows[3])
+    Check("the button hides the trend under it, and gives it back when it moves", rows[3].trendText.alpha == 0
+        and rows[1].trendText.alpha == 1)
     WheelDown()
     Check("scrolled out of sight: no button, and no row marked by mistake", not panel.listingsButton.shown
         and not ResultRows()[3].selection.shown)
@@ -3505,6 +3508,7 @@ do
     Check("scrolled back: both return", panel.listingsButton.shown and ResultRows()[3].selection.shown)
     Click("Clear")
     Check("Clear unmarks it", not panel.listingsButton.shown and not ResultRows()[3].selection.shown)
+    Check("and shows the trend again", ResultRows()[3].trendText.alpha == 1)
 
     panel = PickFirstResult({ { itemKey = { itemID = 2589, itemLevel = 0, itemSuffix = 0 }, minPrice = 12,
         totalQuantity = 245 } })
