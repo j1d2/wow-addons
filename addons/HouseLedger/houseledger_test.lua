@@ -3792,6 +3792,8 @@ do
     local panel = frame.historyPanel
     Check("history: a plain tab with its own panel", panel.shown and not frame.buyPanel.shown
         and frame.selectedTab == 4)
+    Check("history: newest first by default, with the game's down arrow on When",
+        panel.headings.when.label.text:find("When |A:NPE_ArrowDown", 1, true) == 1)
     Check("history: empty, it says where entries come from", panel.empty.shown
         and panel.empty.text:find("Open your mailbox", 1, true))
     local function Rows()

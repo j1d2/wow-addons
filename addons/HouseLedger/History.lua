@@ -279,7 +279,8 @@ function History.Render()
     for key, heading in pairs(panel.headings) do
         local label = heading.labelText
         if sort.key == key or (sort.key == nil and key == "when") then
-            label = label .. (sort.ascending and " ^" or " v")
+            -- The game's arrow, as on the Buy tab and Price Check: down for newest or most first.
+            label = label .. " |A:" .. (sort.ascending and "NPE_ArrowUp" or "NPE_ArrowDown") .. ":10:10|a"
         end
         heading.label:SetText(label)
     end
