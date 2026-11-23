@@ -33,6 +33,8 @@ local NO_ANSWER_WAIT = 10
 local BACK_WIDTH, QTY_WIDTH, MAX_WIDTH, BUY_WIDTH = 60, 52, 44, 96
 -- The Buy button on the picked row, at its right end (over the Trend cell).
 local ROW_BUTTON_WIDTH, ROW_BUTTON_HEIGHT = 64, 16
+-- A click on the row Buy button this soon (seconds) after picking that row is a double click: ignored.
+local ROW_BUY_GUARD = 0.5
 
 -- The row picked on Buy or Market (a browse result or Market row), which Listings searches for.
 local picked
@@ -459,7 +461,7 @@ function Purchase.PickRow(row)
         return
     end
     DropQuote()
-    listing.picked = entry
+    listing.picked, listing.pickedAt = entry, U.Clock()
     if listing.commodity then
         ui.buyPanel.qtyBox:SetText(tostring(entry.upTo))
     else
@@ -493,8 +495,26 @@ local function OnQuantityChanged(userInput)
     RefreshBuy()
 end
 
+--- Buys at the house's quoted price: the player's Confirm click, or the quote itself when
+-- Settings turns Confirm off for stackables and the price hasn't gone up.
+local function ConfirmQuote()
+    buy.step, buy.sentAt = "buying", U.Clock()
+    C_AuctionHouse.ConfirmCommoditiesPurchase(buy.itemID, buy.quantity) -- reviewed: buys at the house's quote for the player's own Buy click; the game doesn't restrict it, and a rise always waits for Confirm
+    SetStatus("Buying...")
+end
+
+--- Buys the armed listing at its buyout: the player's Confirm click, or their Buy click when
+-- Settings turns Confirm off for items.
+local function BuyListing()
+    buy.step, buy.sentAt = "buying", U.Clock()
+    C_AuctionHouse.PlaceBid(buy.auctionID, buy.buyout) -- reviewed: the player's own Buy or Confirm click buys this listing at its buyout
+    SetStatus("Buying...")
+end
+
 --- Buy, then Confirm. Each click is one step, and only when the step before it is done:
 -- a stackable item asks the house's price, then buys at it; gear asks to confirm, then buys.
+-- Settings can turn either Confirm off: gear then buys on the Buy click, and a stackable buys
+-- as soon as the house's price comes back no higher than the listings showed.
 function Purchase.OnBuyClick()
     if listing == nil then
         return
@@ -514,22 +534,23 @@ function Purchase.OnBuyClick()
         C_AuctionHouse.StartCommoditiesPurchase(listing.itemID, cost.count) -- reviewed: the player's Buy click asks the house's price
         SetStatus("Asking the house for its price...")
     elseif listing.commodity and step == "quoted" then
-        buy.step, buy.sentAt = "buying", U.Clock()
-        C_AuctionHouse.ConfirmCommoditiesPurchase(buy.itemID, buy.quantity) -- reviewed: the player's Confirm click buys at the house's quoted price
-        SetStatus("Buying...")
+        ConfirmQuote()
     elseif not listing.commodity and step == nil then
         local row = ChosenRow()
         if row == nil or row.buyout > GetMoney() then
             return
         end
         buy = { step = "armed", auctionID = row.auctionID, buyout = row.buyout, name = ListingLabel(row) }
-        local warning = Price.BuyWarningText(ListingStats(), row.unit)
-        SetStatus(string.format("Buy %s for %s?%s Click Confirm.", buy.name, U.CopperToText(row.buyout),
-            warning ~= "" and (" " .. warning .. ".") or ""))
+        if HouseLedgerDB.settings.confirmItemBuys then
+            local warning = Price.BuyWarningText(ListingStats(), row.unit)
+            SetStatus(string.format("Buy %s for %s?%s Click Confirm.", buy.name, U.CopperToText(row.buyout),
+                warning ~= "" and (" " .. warning .. ".") or ""))
+        else
+            -- Confirm is off in Settings: this Buy click is the buying click.
+            BuyListing()
+        end
     elseif step == "armed" then
-        buy.step, buy.sentAt = "buying", U.Clock()
-        C_AuctionHouse.PlaceBid(buy.auctionID, buy.buyout) -- reviewed: the player's Confirm click buys this listing at its buyout
-        SetStatus("Buying...")
+        BuyListing()
     end
     ShowBuyButton(false)
 end
@@ -559,7 +580,17 @@ function Purchase.OnPriceUpdated(unit, total)
             quantity, U.CopperToText(total)))
         return
     end
+    local firstAnswer = buy.step == "quoting"
     buy.step, buy.total, buy.unit = "quoted", total, unit
+    -- The price events carry no item ID, so a quote buys by itself only when it is the first answer
+    -- to our own Buy click and its unit price fits our amount; anything else waits for Confirm.
+    local fits = type(unit) == "number" and math.abs(unit * quantity - total) <= quantity
+    if firstAnswer and fits and verdict ~= "rose" and not HouseLedgerDB.settings.confirmStackBuys then
+        -- Confirm is off in Settings and the price is what the listings showed: buy now.
+        ConfirmQuote()
+        ShowBuyButton(false)
+        return
+    end
     if verdict == "rose" then
         SetStatus(string.format("The price went up by %s since the listings: now %d for %s. "
             .. "Click Confirm to buy at this price.", U.CopperToText(rise), buy.quantity, U.CopperToText(total)))
@@ -667,7 +698,14 @@ function Purchase.Build()
     local rowBuy = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
     rowBuy:SetSize(ROW_BUTTON_WIDTH, ROW_BUTTON_HEIGHT)
     rowBuy:SetText("Buy")
-    rowBuy:SetScript("OnClick", Purchase.OnBuyClick)
+    rowBuy:SetScript("OnClick", function()
+        -- It appears under the pointer on the row just clicked: a double click on the row picks it,
+        -- and must not buy too (with Confirm off in Settings, Buy buys).
+        if listing and listing.pickedAt and U.Clock() - listing.pickedAt < ROW_BUY_GUARD then
+            return
+        end
+        Purchase.OnBuyClick()
+    end)
     rowBuy:Hide()
     panel.rowBuyButton = rowBuy
 

@@ -54,10 +54,10 @@ Open the addon's CurseForge page, [HouseLedger](https://www.curseforge.com/wow/a
 - **Scan** at the auction house saves today's prices. Scan as often as every 15 minutes; every scan adds to your history.
 - **Hover any item:** the last price, a trend arrow and a ⭐ for a deal. Hold **Shift** for the 1, 3, 7 and 14-day averages and ranges.
 - **Buy tab:** search, then compare today's price with your 7-day average. Click a row for 1, 3, 7 and 14 days. Before you click one, a house overview shows how many items are listed each day, the trend and a next-day estimate.
-- **Buying:** click a row, then the **Buy** button on it to see what's for sale, cheapest first. Type how many (or click a listing), click **Buy**, check the price and how it compares with your 7-day average, then click **Confirm**. Works from the Market tab's deals too.
+- **Buying:** click a row, then the **Buy** button on it to see what's for sale, cheapest first. Type how many (or click a listing), click **Buy**, check the price and how it compares with your 7-day average, then click **Confirm**. Works from the Market tab's deals too. Settings can turn Confirm off for gear, stackables, or both.
 - **Sell tab:** drop an item in to see the lowest price now and its history. Then post it in Blizzard's window.
 - **Market tab:** the deals, biggest drops and biggest rises from your last scan, with no searching until you click **Buy** on one.
-- **Settings tab:** turn tooltip prices off, always show the day lines without Shift, or keep 30 or 60 days of prices instead of 14.
+- **Settings tab:** turn tooltip prices off, always show the day lines without Shift, turn off Confirm when buying (gear, stackables, or both; on by default), or keep 30 or 60 days of prices instead of 14.
 - **Price Check:** type `/pc` anywhere, or click **Price Check** above your bags, to look up a saved price by name. Shift-click an item in your bags or a chat link to look it up, scroll through every match, and click a heading to sort.
 - **Never** buys, posts or scans by itself: every step is your click.
 
@@ -120,7 +120,8 @@ Scroll with the mouse wheel; the line at the bottom says which matches show and 
 1. **Tooltip prices** on or off.
 2. **Day lines on tooltips** without holding Shift.
 3. **The Price Check button** above your bags (right) on or off.
-4. **Price history:** keep 14, 30 or 60 days. Longer history uses more memory and makes a bigger saved file: 60 days takes about three times as much as 14. Going back to 14 drops the older days right away.
+4. **Confirm before buying**, for gear and for stackables: on by default. Off, **Buy** buys at once; a stackable whose price went up still asks.
+5. **Price history:** keep 14, 30 or 60 days. Longer history uses more memory and makes a bigger saved file: 60 days takes about three times as much as 14. Going back to 14 drops the older days right away.
 
 <p align="center"><sub>Game art in the screenshots © Blizzard Entertainment, Inc.</sub></p>
 
@@ -144,7 +145,7 @@ Its Buy and Sell tabs switch Blizzard's tabs too, and the reverse.
 
 ### What it does not do
 
-- It buys only at the buyout price, and only when you click Buy and then Confirm. It does not post, bid or cancel. You do that in Blizzard's window.
+- It buys only at the buyout price, and only when you click Buy and then Confirm (or just Buy, if you turn Confirm off in Settings). It does not post, bid or cancel. You do that in Blizzard's window.
 - After a buy it doesn't search again by itself; click Back, then Buy, to see what's left. What you buy arrives in your mailbox.
 - It does not scan when the auction house opens. A full scan needs your click, at most once each 15 minutes, which is the game's limit.
 - Search, a row's Buy and Sell send one request per click. Scrolling, hovering and clicking a row send nothing.

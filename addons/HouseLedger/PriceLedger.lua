@@ -37,6 +37,11 @@ PriceLedger.SETTINGS = {
     { key = "tooltipPrices", label = "Show prices on item tooltips", default = true },
     { key = "tooltipDetails", label = "Show the day lines on tooltips without holding Shift", default = false },
     { key = "priceCheckButton", label = "Show a Price Check button above the bags", default = true },
+    -- Off: Buy buys at once, as one click (PlaceBid needs only that click).
+    { key = "confirmItemBuys", label = "Confirm before buying gear and other single items", default = true },
+    -- Off: Buy asks the house's price and buys at it when it hasn't gone up; a rise still asks.
+    { key = "confirmStackBuys", label = "Confirm before buying stackables (a rise always asks)",
+        default = true },
 }
 PriceLedger.SCAN_INTERVAL = 15 * 60
 
