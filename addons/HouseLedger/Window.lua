@@ -25,6 +25,7 @@ local function SelectTab(id)
     if id ~= state.currentTab then
         -- Another tab leaves an item's listings and drops a price the house quoted.
         Purchase.Close()
+        Buy.HideRecent()
     end
     state.currentTab = id
     -- The tab buttons are protected; in combat they are marked afterwards.
@@ -183,11 +184,9 @@ function Window.Build()
     ui.searchBox:SetPoint("LEFT", ui.frame, "TOPLEFT", 72, -41)
     ui.searchBox:SetPoint("RIGHT", clear, "LEFT", -10, 0)
     ui.searchBox:SetAutoFocus(false)
-    ui.searchBox:SetScript("OnEnterPressed", function(box)
-        Buy.SendSearch()
-        box:ClearFocus()
-    end)
     ui.buyPanel.searchControls = { ui.searchBox, clear, button }
+    -- Enter searches; the recent-searches list under the box adds its keys (Buy.BuildRecent).
+    Buy.BuildRecent()
 
     -- The Market tab's view dropdown, in the search box's place: [Deals v] at last scan (12 min ago).
     -- The same Blizzard dropdown as the quality filter.

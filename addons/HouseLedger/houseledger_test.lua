@@ -55,6 +55,13 @@ end
 function FrameMethods:SetScript(name, fn) self.scripts[name] = fn end
 function FrameMethods:GetScript(name) return self.scripts[name] end
 function FrameMethods:RegisterEvent(event) self.events[event] = true end
+function FrameMethods:UnregisterEvent(event) self.events[event] = nil end
+--- Like the game's: runs the new handler after the one already set.
+function FrameMethods:HookScript(name, fn)
+    local old = self.scripts[name]
+    self.scripts[name] = old and function(...) old(...) fn(...) end or fn
+end
+function FrameMethods:IsMouseOver() return self.mouseOver == true end
 function FrameMethods:Show() NoteIfBlocked(self) self.shown = true end
 function FrameMethods:Hide() NoteIfBlocked(self) self.shown = false end
 function FrameMethods:IsShown() return self.shown end
@@ -1015,6 +1022,103 @@ end
 -- ---------------------------------------------------------------------
 -- Search
 -- ---------------------------------------------------------------------
+
+do
+    -- Recent searches under the search box: shown on focus, filtered as you type, picked with a
+    -- click or the arrow keys and Enter. Only a search that went out is remembered.
+    Setup()
+    Load()
+    OpenHouse()
+    local box = SearchBox()
+    local list = MainFrame().buyPanel.recentList
+    local function Lines()
+        local texts = {}
+        for _, line in ipairs(list.lines) do
+            if line.shown then
+                texts[#texts + 1] = line.label.text .. (line.selection and line.selection.shown and "*" or "")
+            end
+        end
+        return table.concat(texts, ",")
+    end
+    box:GetScript("OnEditFocusGained")(box)
+    Check("recent: nothing searched yet, no list", not list.shown)
+    for _, text in ipairs({ "linen cloth", "silver rod", "bolt of silk" }) do
+        box:SetText(text)
+        box:GetScript("OnEnterPressed")(box)
+    end
+    box:SetText("x")
+    world.throttleReady = false
+    box:GetScript("OnEnterPressed")(box)
+    world.throttleReady = true
+    Check("recent: each search that went out is saved, newest first; a refused one isn't",
+        table.concat(HouseLedgerDB.recentSearches, ",") == "bolt of silk,silver rod,linen cloth")
+    box:SetText("")
+    box.focused = true
+    box:GetScript("OnEditFocusGained")(box)
+    Check("recent: clicking into the box shows them, none marked", list.shown
+        and Lines() == "bolt of silk,silver rod,linen cloth" and list.events.GLOBAL_MOUSE_DOWN)
+    Type(box, "si")
+    Check("recent: typing filters, starting-with first", Lines() == "silver rod,bolt of silk")
+    local queries = #world.browseQueries
+    box:GetScript("OnArrowPressed")(box, "DOWN")
+    box:GetScript("OnArrowPressed")(box, "DOWN")
+    Check("recent: Down marks the next one and puts it in the box, and sends nothing",
+        Lines() == "silver rod,bolt of silk*" and #world.browseQueries == queries and box.text == "bolt of silk")
+    box:GetScript("OnArrowPressed")(box, "DOWN")
+    Check("recent: past the end, the box gets back what was typed", Lines() == "silver rod,bolt of silk"
+        and box.text == "si")
+    box:GetScript("OnArrowPressed")(box, "UP")
+    Check("recent: Up from there goes to the last", Lines() == "silver rod,bolt of silk*" and box.text == "bolt of silk")
+    box:GetScript("OnEnterPressed")(box)
+    Check("recent: Enter searches what the box shows: one search", #world.browseQueries == queries + 1
+        and world.browseQueries[#world.browseQueries].searchString == "bolt of silk" and not list.shown)
+
+    box.focused = true
+    Type(box, "rod")
+    Check("recent: typing shows it again", list.shown and Lines() == "silver rod")
+    box:GetScript("OnEnterPressed")(box)
+    Check("recent: Enter with nothing marked searches what was typed", world.browseQueries[#world.browseQueries]
+        .searchString == "rod" and HouseLedgerDB.recentSearches[1] == "rod")
+
+    box:SetText("")
+    box:GetScript("OnEditFocusGained")(box)
+    queries = #world.browseQueries
+    list.lines[3]:GetScript("OnClick")(list.lines[3], "LeftButton")
+    Check("recent: a click searches it: one click, one search", #world.browseQueries == queries + 1
+        and world.browseQueries[queries + 1].searchString == "silver rod" and box.text == "silver rod"
+        and not list.shown and not list.events.GLOBAL_MOUSE_DOWN)
+
+    box:SetText("")
+    box:GetScript("OnEditFocusGained")(box)
+    queries = #world.browseQueries
+    list.lines[2]:GetScript("OnClick")(list.lines[2], "RightButton")
+    Check("recent: a right-click forgets one and searches nothing", #world.browseQueries == queries
+        and table.concat(HouseLedgerDB.recentSearches, ",") == "silver rod,bolt of silk,linen cloth"
+        and list.shown)
+
+    list:GetScript("OnEvent")(list, "GLOBAL_MOUSE_DOWN", "LeftButton")
+    Check("recent: a click anywhere else closes it", not list.shown)
+    box:GetScript("OnEditFocusGained")(box)
+    list.mouseOver = true
+    list:GetScript("OnEvent")(list, "GLOBAL_MOUSE_DOWN", "LeftButton")
+    box:GetScript("OnEditFocusLost")(box)
+    Check("recent: a click on the list itself keeps it open", list.shown)
+    list.mouseOver = false
+    box:GetScript("OnEditFocusLost")(box)
+    Check("recent: losing focus closes it", not list.shown)
+    box:GetScript("OnEditFocusGained")(box)
+    box:GetScript("OnEscapePressed")(box)
+    Check("recent: Escape closes it", not list.shown)
+    box:GetScript("OnEditFocusGained")(box)
+    Click("Clear")
+    Check("recent: Clear closes it", not list.shown)
+    box:GetScript("OnEditFocusGained")(box)
+    MainFrame().buyPanel.marketMode = true
+    box:GetScript("OnEditFocusGained")(box)
+    MainFrame().buyPanel.marketMode = false
+    CloseHouse()
+    Check("recent: leaving the house closes it", not list.shown)
+end
 
 do
     Setup()

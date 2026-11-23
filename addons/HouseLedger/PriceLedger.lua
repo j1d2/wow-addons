@@ -202,6 +202,92 @@ function PriceLedger.EmptyDB()
     }
 end
 
+-- How many recent Buy searches are kept, newest first, and shown under the search box at most.
+PriceLedger.RECENT_KEPT = 15
+PriceLedger.RECENT_SHOWN = 8
+
+--- A saved recent-searches list made safe: text only, trimmed, no blanks or repeats (any case),
+-- at most RECENT_KEPT.
+-- @param list the saved list, or anything
+-- @return a new list
+function PriceLedger.CleanRecent(list)
+    local clean, seen = {}, {}
+    if type(list) ~= "table" then
+        return clean
+    end
+    for _, text in ipairs(list) do
+        if type(text) == "string" then
+            text = text:match("^%s*(.-)%s*$")
+            local lower = text:lower()
+            if text ~= "" and not seen[lower] and #clean < PriceLedger.RECENT_KEPT then
+                clean[#clean + 1], seen[lower] = text, true
+            end
+        end
+    end
+    return clean
+end
+
+--- A recent-searches list with one more search: newest first, an earlier copy (any case) moved up,
+-- at most RECENT_KEPT. The list given is not changed.
+-- @param list the current list
+-- @param text what was searched
+-- @return a new list
+function PriceLedger.AddRecent(list, text)
+    text = (text or ""):match("^%s*(.-)%s*$")
+    local result = {}
+    if text ~= "" then
+        result[1] = text
+    end
+    local lower = text:lower()
+    for _, old in ipairs(list or {}) do
+        if old:lower() ~= lower and #result < PriceLedger.RECENT_KEPT then
+            result[#result + 1] = old
+        end
+    end
+    return result
+end
+
+--- A recent-searches list without one search (any case). The list given is not changed.
+-- @param list the current list
+-- @param text the search to forget
+-- @return a new list
+function PriceLedger.ForgetRecent(list, text)
+    local result, lower = {}, (text or ""):lower()
+    for _, old in ipairs(list or {}) do
+        if old:lower() ~= lower then
+            result[#result + 1] = old
+        end
+    end
+    return result
+end
+
+--- The recent searches that match what's typed: those starting with it first, then those with
+-- it anywhere, each newest first; all of them when nothing is typed. At most RECENT_SHOWN.
+-- @param list the recent searches, newest first
+-- @param typed what's in the search box
+-- @return a new list
+function PriceLedger.MatchRecent(list, typed)
+    local wanted = (typed or ""):match("^%s*(.-)%s*$"):lower()
+    local starts, contains = {}, {}
+    for _, text in ipairs(list or {}) do
+        local at = text:lower():find(wanted, 1, true)
+        if at == 1 then
+            starts[#starts + 1] = text
+        elseif at then
+            contains[#contains + 1] = text
+        end
+    end
+    local result = {}
+    for _, group in ipairs({ starts, contains }) do
+        for _, text in ipairs(group) do
+            if #result < PriceLedger.RECENT_SHOWN then
+                result[#result + 1] = text
+            end
+        end
+    end
+    return result
+end
+
 --- Rounds a number to a number of significant digits: 123456 to 4 digits is 123500, and 9.16667
 -- is 9.167, so a price of a few copper keeps its fraction. Going through text gives each rounded
 -- value one exact number, so equal values save as one constant.
@@ -398,6 +484,7 @@ function PriceLedger.EnsureDB(db)
     if not PriceLedger.IsHistoryChoice(db.settings.historyDays) then
         db.settings.historyDays = nil
     end
+    db.recentSearches = PriceLedger.CleanRecent(db.recentSearches)
     PriceLedger.DAYS_KEPT = db.settings.historyDays or PriceLedger.HISTORY_CHOICES[1]
     if db.settings.chartView ~= nil and PriceLedger.ChartView(db) ~= db.settings.chartView then
         db.settings.chartView = nil

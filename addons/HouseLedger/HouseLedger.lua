@@ -123,6 +123,7 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1, arg2)
         state.openHouseKey = nil
         -- Leaving the house ends its listings and drops a price it quoted.
         Purchase.Close()
+        Buy.HideRecent()
         if U.InCombat() then
             state.afterCombat = true
         else

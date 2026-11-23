@@ -99,6 +99,166 @@ local function SetListMessage(text)
 end
 Buy.SetListMessage = SetListMessage
 
+-- Recent searches: a list under the Buy search box of what was searched before (saved in
+-- HouseLedgerDB.recentSearches), filtered as you type. Picking one searches it: one click, or one
+-- Enter press, sends one search. Typing and the arrow keys send nothing.
+local recent = { buttons = {}, matches = {}, selected = 0 }
+local RECENT_ROW_HEIGHT = 18
+
+--- Hides the recent-searches list and stops listening for clicks elsewhere.
+local function HideRecent()
+    recent.selected = 0
+    if recent.frame and recent.frame:IsShown() then
+        recent.frame:Hide()
+        recent.frame:UnregisterEvent("GLOBAL_MOUSE_DOWN")
+    end
+end
+Buy.HideRecent = HideRecent
+
+--- Writes the matching searches into the list's lines, the one picked with the arrow keys marked.
+local function DrawRecent()
+    for index, button in ipairs(recent.buttons) do
+        local text = recent.matches[index]
+        button.searchText = text
+        if text then
+            button.label:SetText(text)
+            U.MarkRow(button, index == recent.selected)
+            button:Show()
+        else
+            button:Hide()
+        end
+    end
+end
+
+--- Shows the recent searches that match the search box, or hides the list when none do.
+local function ShowRecent()
+    if recent.frame == nil or ui.buyPanel.marketMode then
+        return
+    end
+    recent.matches = Price.MatchRecent(HouseLedgerDB.recentSearches, ui.searchBox:GetText())
+    if #recent.matches == 0 then
+        HideRecent()
+        return
+    end
+    if recent.selected > #recent.matches then
+        recent.selected = 0
+    end
+    DrawRecent()
+    recent.frame:SetHeight(#recent.matches * RECENT_ROW_HEIGHT + 30)
+    recent.frame:Show()
+    -- Blizzard's own menus close the same way: any click outside them.
+    recent.frame:RegisterEvent("GLOBAL_MOUSE_DOWN")
+end
+
+--- Puts a recent search in the box and searches it: the player's click or Enter press.
+-- @param text the search
+local function PickRecent(text)
+    ui.searchBox:SetText(text)
+    HideRecent()
+    ui.searchBox:ClearFocus()
+    Buy.SendSearch()
+end
+
+--- Up and Down: moves the mark through the list and puts the marked search in the box, so Enter
+-- or Search searches what the box shows; past either end the box gets back what was typed.
+-- @param step -1 for up, 1 for down
+local function MoveRecent(step)
+    if not recent.frame:IsShown() then
+        recent.typed = ui.searchBox:GetText()
+        ShowRecent()
+        return
+    end
+    recent.selected = (recent.selected + step) % (#recent.matches + 1)
+    -- Not typing, so the list stays as it is (OnTextChanged filters only on typing).
+    ui.searchBox:SetText(recent.matches[recent.selected] or recent.typed or "")
+    DrawRecent()
+end
+
+--- Makes the recent-searches list under the search box and gives the box its keys: the list
+-- opens when the box is clicked, filters as you type, Up and Down fill the box with one, Enter
+-- searches what the box shows, Escape or a click elsewhere closes it.
+function Buy.BuildRecent()
+    local box = ui.searchBox
+    local frame = CreateFrame("Frame", nil, ui.buyPanel, "TooltipBackdropTemplate")
+    frame:SetPoint("TOPLEFT", box, "BOTTOMLEFT", -6, 0)
+    frame:SetPoint("TOPRIGHT", box, "BOTTOMRIGHT", 0, 0)
+    frame:SetFrameStrata("DIALOG")
+    -- The whole list takes the mouse, so a click between its lines never reaches the rows or
+    -- the Buy button under it.
+    frame:EnableMouse(true)
+    frame:Hide()
+    frame:SetScript("OnEvent", function(self, event)
+        if event == "GLOBAL_MOUSE_DOWN" and not self:IsMouseOver() and not box:IsMouseOver() then
+            HideRecent()
+        end
+    end)
+    for index = 1, Price.RECENT_SHOWN do
+        local button = CreateFrame("Button", nil, frame)
+        button:SetHeight(RECENT_ROW_HEIGHT)
+        button:SetPoint("TOPLEFT", frame, "TOPLEFT", 6, -6 - (index - 1) * RECENT_ROW_HEIGHT)
+        button:SetPoint("RIGHT", frame, "RIGHT", -6, 0)
+        button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+        button:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
+        button.label = button:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        button.label:SetPoint("LEFT", button, "LEFT", 4, 0)
+        button.label:SetPoint("RIGHT", button, "RIGHT", -4, 0)
+        button.label:SetJustifyH("LEFT")
+        button.label:SetWordWrap(false)
+        U.AddSelection(button)
+        button:SetScript("OnClick", function(self, mouseButton)
+            if mouseButton == "RightButton" then
+                HouseLedgerDB.recentSearches = Price.ForgetRecent(HouseLedgerDB.recentSearches, self.searchText)
+                recent.selected = 0
+                ShowRecent()
+            else
+                PickRecent(self.searchText)
+            end
+        end)
+        recent.buttons[index] = button
+    end
+    local hint = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    hint:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 10, 7)
+    hint:SetText("Recent searches. Right-click one to forget it.")
+    recent.frame = frame
+    frame.lines = recent.buttons
+    ui.buyPanel.recentList = frame
+
+    -- The arrow keys reach the box's OnArrowPressed only with this off.
+    box:SetAltArrowKeyMode(false)
+    box:HookScript("OnEditFocusGained", function(self)
+        recent.typed = self:GetText()
+        ShowRecent()
+    end)
+    box:HookScript("OnEditFocusLost", function()
+        if not frame:IsMouseOver() then
+            HideRecent()
+        end
+    end)
+    box:HookScript("OnTextChanged", function(self, userInput)
+        -- Only the player's typing filters; text put in by a pick doesn't.
+        if userInput then
+            recent.selected, recent.typed = 0, self:GetText()
+            if self:HasFocus() then
+                ShowRecent()
+            end
+        end
+    end)
+    box:SetScript("OnArrowPressed", function(_, key)
+        if key == "UP" then
+            MoveRecent(-1)
+        elseif key == "DOWN" then
+            MoveRecent(1)
+        end
+    end)
+    box:HookScript("OnEscapePressed", HideRecent)
+    -- Enter searches what the box shows: typed, or filled in from the list.
+    box:SetScript("OnEnterPressed", function(self)
+        HideRecent()
+        self:ClearFocus()
+        Buy.SendSearch()
+    end)
+end
+
 --- Shows a note in orange beside the filters, for something the player needs to act on; nil
 -- hides it.
 -- @param text the note, or nil
@@ -507,6 +667,7 @@ end
 -- @param market true for the Market tab
 function Buy.SetMarketMode(market)
     ui.buyPanel.marketMode = market
+    HideRecent()
     for _, control in ipairs(ui.buyPanel.searchControls) do
         if market then control:Hide() else control:Show() end
     end
@@ -584,6 +745,7 @@ end
 -- The house is not asked anything; a result that still arrives shows as usual.
 function Buy.ClearSearch()
     Purchase.Close()
+    HideRecent()
     ui.searchBox:SetText("")
     ui.searchBox:ClearFocus()
     state.results = {}
@@ -681,6 +843,11 @@ function Buy.SendSearch()
         itemClassFilters = classes,
     })
     searchedQuality = state.filter.minQuality or 0
+    -- Only a search that went out is remembered.
+    if text ~= "" then
+        HouseLedgerDB.recentSearches = Price.AddRecent(HouseLedgerDB.recentSearches, text)
+    end
+    HideRecent()
     for _, choice in ipairs(SHOW_CHOICES) do
         if choice.key == showKey and searching == nil then
             searching = choice.searching
