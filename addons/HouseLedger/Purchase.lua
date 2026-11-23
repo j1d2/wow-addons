@@ -419,7 +419,8 @@ end
 -- A listing with no buyout is bid-only and is left out; owners stay in the result.
 -- On Forever, one buy of a listing gets one item for its whole buyout (tested in game: a Silver
 -- Rod listing of "quantity" 50 delivered 1 rod), so the buyout is the price, never divided by the
--- quantity, which reads as how many are up at that price.
+-- quantity. The scans agree: an item's saved price matched the lowest listing buyout and the
+-- browse price exactly. What the quantity counts is not known yet; it is shown as it comes.
 -- @param itemKey the item key the results are for
 function Purchase.OnItemResults(itemKey)
     if listing == nil or listing.commodity or type(itemKey) ~= "table" or itemKey.itemID ~= listing.itemID then
