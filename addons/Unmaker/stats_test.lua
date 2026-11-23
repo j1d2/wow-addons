@@ -4,9 +4,8 @@ Run: lua5.1 stats_test.lua
 ]]
 
 local folder = arg[0]:match("^(.*)/") or "."
-dofile(folder .. "/UnmakerStats.lua")
+local S = dofile(folder .. "/UnmakerStats.lua")
 
-local S = UnmakerStats
 local failed = 0
 
 --- Records one check: prints "ok  <name>", or "FAIL  <name>" and counts the failure.

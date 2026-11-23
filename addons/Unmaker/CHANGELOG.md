@@ -12,6 +12,7 @@ All notable changes to Unmaker. The format follows [Keep a Changelog](https://ke
 
 - "Open with my bags" is now "Open and close with my bags": when the bags opened Unmaker, closing the bags closes it too. A window you opened yourself, with `/um` or the bag button, stays open.
 - Characters show with their full Forever name, first name and surname ("Mira Stone"), in the History tab and the Stats character list, so two characters with the same first name are counted apart. Your older disenchants move to the full name the next time each character logs in.
+- Unmaker's files now share their code privately instead of through game-wide names, like HouseLedger. Nothing looks or works differently.
 
 ### Fixed
 

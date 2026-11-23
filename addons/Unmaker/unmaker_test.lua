@@ -287,11 +287,12 @@ local function Load(setup)
     -- Blizzard's own check, true while any bag window is open (world.bagsOpen).
     _G.IsAnyBagOpen = function() return world.bagsOpen == true end
     _G.SlashCmdList = {}
-    _G.UnmakerRules = nil
-    _G.UnmakerStats = nil
-    dofile(folder .. "/UnmakerRules.lua")
-    dofile(folder .. "/UnmakerStats.lua")
-    dofile(folder .. "/Unmaker.lua")
+    -- Like the game: the .toc's files in order, each given the addon's name and one shared table.
+    local ns = {}
+    for _, file in ipairs({ "UnmakerRules.lua", "UnmakerStats.lua", "Unmaker.lua" }) do
+        assert(loadfile(folder .. "/" .. file))("Unmaker", ns)
+    end
+    world.ns = ns
     for _, f in ipairs(world.frames) do
         if f.events.ADDON_LOADED then
             world.events = f
@@ -573,6 +574,12 @@ do
     Fire("PLAYER_REGEN_ENABLED")
     Check("after the fight it closes as asked", not _G.UnmakerFrame.shown)
     Check("nothing touched a protected button in combat", world.blocked == 0)
+end
+
+do
+    Load({})
+    Check("the rules and stats share the addon's table, not globals", world.ns.Rules and world.ns.Stats
+        and _G.UnmakerRules == nil and _G.UnmakerStats == nil)
 end
 
 do

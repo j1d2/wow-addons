@@ -7,8 +7,14 @@ Items here are plain tables that Unmaker.lua fills from the game:
   { bag, slot, itemID, link, name, quality, classID, equipLoc, cosmetic, bound, level, icon }
 ]]
 
+-- The game hands each addon file its name and the addon's own table; Unmaker.lua reads this
+-- module as ns.Rules. Offline (lua5.1 and dofile) there is no table, and dofile returns the
+-- module instead (the return at the end).
+local _, ns = ...
 local R = {}
-_G.UnmakerRules = R
+if type(ns) == "table" then
+    ns.Rules = R
+end
 
 R.DB_VERSION = 1
 R.CHAR_DB_VERSION = 1
@@ -342,3 +348,5 @@ function R.SetSetting(db, key, value)
     db.settings[key] = value
     return true
 end
+
+return R
