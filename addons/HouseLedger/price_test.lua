@@ -609,8 +609,9 @@ do
     for index, setting in ipairs(P.SETTINGS) do
         keys[index] = setting.key .. "=" .. tostring(setting.default)
     end
-    Check("settings: tooltip prices on, details without Shift off, the bag button on",
-        table.concat(keys, ",") == "tooltipPrices=true,tooltipDetails=false,priceCheckButton=true")
+    Check("settings: tooltip prices on, details without Shift off, the bag button on, both buy confirms on",
+        table.concat(keys, ",") == "tooltipPrices=true,tooltipDetails=false,priceCheckButton=true,"
+        .. "confirmItemBuys=true,confirmStackBuys=true")
     local db = P.EnsureDB(nil)
     Check("new saved data gets every default", db.settings.tooltipPrices == true and db.settings.tooltipDetails == false)
     db = P.EnsureDB({ version = 3, houses = {}, settings = { tooltipPrices = false, tooltipDetails = "yes" } })

@@ -3351,6 +3351,58 @@ do
 end
 
 do
+    -- Settings can turn Confirm off: on by default for both kinds.
+    Setup()
+    Load()
+    Check("both buy confirms are on by default", HouseLedgerDB.settings.confirmItemBuys == true
+        and HouseLedgerDB.settings.confirmStackBuys == true)
+    world.commodities = { [2589] = true }
+    HouseLedgerDB.settings.confirmStackBuys = false
+    local panel = PickFirstResult({ { itemKey = { itemID = 2589, itemLevel = 0, itemSuffix = 0 }, minPrice = 12,
+        totalQuantity = 245 } })
+    Press(panel.listingsButton)
+    LinenListings()
+    Type(panel.qtyBox, "50")
+    Press(panel.buyButton)
+    Check("stackables, Confirm off: Buy still only asks the price first", BuyCalls("start") == 1
+        and BuyCalls("confirm") == 0)
+    Fire("COMMODITY_PRICE_UPDATED", 12, 620)
+    Check("the house's price is as shown: it buys at once", BuyCalls("confirm") == 1
+        and panel.buyButton.text == "Buying..." and panel.buyButton.enabled == false)
+    Fire("COMMODITY_PURCHASE_SUCCEEDED")
+    Press(panel.buyButton)
+    Fire("COMMODITY_PRICE_UPDATED", 13, 650)
+    Check("a rise still waits for Confirm", BuyCalls("confirm") == 1 and panel.buyButton.text == "Confirm"
+        and StatusLine():find("went up", 1, true))
+    Press(panel.buyButton)
+    Check("and Confirm then buys", BuyCalls("confirm") == 2)
+    Fire("COMMODITY_PURCHASE_SUCCEEDED")
+    Press(panel.buyButton)
+    Fire("COMMODITY_PRICE_UPDATED", 20, 1000)
+    Check("over 5% more is still refused", BuyCalls("confirm") == 2 and BuyCalls("cancel") >= 1
+        and StatusLine():find("Nothing was bought", 1, true))
+
+    Press(panel.backButton)
+    HouseLedgerDB.settings.confirmItemBuys = false
+    local key = { itemID = 5000, itemLevel = 20, itemSuffix = 0 }
+    world.commodities = {}
+    panel = PickFirstResult({ { itemKey = key, minPrice = 300, totalQuantity = 1 } })
+    Press(panel.listingsButton)
+    world.itemResults = {
+        { itemKey = key, auctionID = 12, quantity = 1, buyoutAmount = 300, itemLink = "|Hitem:5000|h[Sword]|h",
+            timeLeft = 0, containsOwnerItem = false },
+    }
+    Fire("ITEM_SEARCH_RESULTS_UPDATED", key)
+    local rows = ResultRows()
+    rows[1]:GetScript("OnClick")(rows[1])
+    Press(panel.buyButton)
+    Check("items, Confirm off: one Buy click buys that listing", BuyCalls("bid") == 1
+        and world.buys[#world.buys].auctionID == 12 and panel.buyButton.text == "Buying...")
+    Press(panel.buyButton)
+    Check("and a double click still can't buy twice", BuyCalls("bid") == 1)
+end
+
+do
     -- Market rows get Listings too: one click, one search, as on Buy.
     Setup()
     local P = HouseLedgerPrice
