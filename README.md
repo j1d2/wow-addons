@@ -106,7 +106,7 @@ Open the addon's CurseForge page, [HouseLedger](https://www.curseforge.com/wow/a
 6. **Its chart.** **Reset** empties the tab.
 
 **Price Check** (right): type `/pc` (or `/pricecheck`) anywhere, no auction house needed.
-1. **Search** your saved prices by name.
+1. **Search** your saved prices by name. Click into the box for your recent searches, the same list as the Buy tab's.
 2. **Results:** the last price and trend.
 3. **Click a result** for its day lines and (4) its chart.
 

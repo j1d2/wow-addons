@@ -577,3 +577,163 @@ function U.BestGearFilters()
     end
     return classes, best
 end
+
+-- ---------------------------------------------------------------------
+-- Recent searches: one list (HouseLedgerDB.recentSearches) shown under the Buy tab's search box
+-- and Price Check's. Clicking into a box shows it, typing narrows it, Up and Down put one in the
+-- box, Enter or a click searches. Typing and the arrow keys send nothing.
+-- ---------------------------------------------------------------------
+
+local RECENT_ROW_HEIGHT = 18
+
+--- Remembers a search in the shared recent list (newest first).
+-- @param text what was searched
+function U.RememberSearch(text)
+    HouseLedgerDB.recentSearches = Price.AddRecent(HouseLedgerDB.recentSearches, text)
+end
+
+--- Puts a recent-searches list under a search box and gives the box its keys: the list opens when
+-- the box is clicked, narrows as you type, Up and Down put a search in the box (past either end,
+-- what was typed), Enter searches what the box shows, a click on a line searches it, a right-click
+-- forgets it, and Escape or a click anywhere else closes it.
+-- @param box the search box
+-- @param parent the frame the list belongs to
+-- @param search function() that searches what the box holds (Enter, or a click on a line)
+-- @param allowed optional function() returning false while the list must not show
+-- @return { frame, Hide = function() }
+function U.AttachRecent(box, parent, search, allowed)
+    local recent = { buttons = {}, matches = {}, selected = 0 }
+    local frame = CreateFrame("Frame", nil, parent, "TooltipBackdropTemplate")
+
+    local function Hide()
+        recent.selected = 0
+        if frame:IsShown() then
+            frame:Hide()
+            frame:UnregisterEvent("GLOBAL_MOUSE_DOWN")
+        end
+    end
+
+    local function Draw()
+        for index, button in ipairs(recent.buttons) do
+            local text = recent.matches[index]
+            button.searchText = text
+            if text then
+                button.label:SetText(text)
+                U.MarkRow(button, index == recent.selected)
+                button:Show()
+            else
+                button:Hide()
+            end
+        end
+    end
+
+    local function Show()
+        if allowed and not allowed() then
+            return
+        end
+        recent.matches = Price.MatchRecent(HouseLedgerDB.recentSearches, recent.typed or box:GetText())
+        if #recent.matches == 0 then
+            Hide()
+            return
+        end
+        if recent.selected > #recent.matches then
+            recent.selected = 0
+        end
+        Draw()
+        frame:SetHeight(#recent.matches * RECENT_ROW_HEIGHT + 30)
+        frame:Show()
+        -- Blizzard's own menus close the same way: any click outside them.
+        frame:RegisterEvent("GLOBAL_MOUSE_DOWN")
+    end
+
+    local function Search()
+        Hide()
+        box:ClearFocus()
+        search()
+    end
+
+    local function Move(step)
+        if not frame:IsShown() then
+            recent.typed = box:GetText()
+            Show()
+            return
+        end
+        recent.selected = (recent.selected + step) % (#recent.matches + 1)
+        -- Not typing, so the list stays as it is (OnTextChanged narrows only on typing).
+        box:SetText(recent.matches[recent.selected] or recent.typed or "")
+        Draw()
+    end
+
+    frame:SetPoint("TOPLEFT", box, "BOTTOMLEFT", -6, 0)
+    frame:SetPoint("TOPRIGHT", box, "BOTTOMRIGHT", 0, 0)
+    frame:SetFrameStrata("DIALOG")
+    -- The whole list takes the mouse, so a click between its lines never reaches what is under it.
+    frame:EnableMouse(true)
+    frame:Hide()
+    frame:SetScript("OnEvent", function(self, event)
+        if event == "GLOBAL_MOUSE_DOWN" and not self:IsMouseOver() and not box:IsMouseOver() then
+            Hide()
+        end
+    end)
+    for index = 1, Price.RECENT_SHOWN do
+        local button = CreateFrame("Button", nil, frame)
+        button:SetHeight(RECENT_ROW_HEIGHT)
+        button:SetPoint("TOPLEFT", frame, "TOPLEFT", 6, -6 - (index - 1) * RECENT_ROW_HEIGHT)
+        button:SetPoint("RIGHT", frame, "RIGHT", -6, 0)
+        button:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+        button:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
+        button.label = button:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+        button.label:SetPoint("LEFT", button, "LEFT", 4, 0)
+        button.label:SetPoint("RIGHT", button, "RIGHT", -4, 0)
+        button.label:SetJustifyH("LEFT")
+        button.label:SetWordWrap(false)
+        U.AddSelection(button)
+        button:SetScript("OnClick", function(self, mouseButton)
+            if mouseButton == "RightButton" then
+                HouseLedgerDB.recentSearches = Price.ForgetRecent(HouseLedgerDB.recentSearches, self.searchText)
+                recent.selected = 0
+                Show()
+            else
+                box:SetText(self.searchText)
+                Search()
+            end
+        end)
+        recent.buttons[index] = button
+    end
+    local hint = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    hint:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 10, 7)
+    hint:SetText("Recent searches. Right-click one to forget it.")
+    frame.lines = recent.buttons
+
+    -- The arrow keys reach the box's OnArrowPressed only with this off.
+    box:SetAltArrowKeyMode(false)
+    box:HookScript("OnEditFocusGained", function(self)
+        recent.typed = self:GetText()
+        Show()
+    end)
+    box:HookScript("OnEditFocusLost", function()
+        if not frame:IsMouseOver() then
+            Hide()
+        end
+    end)
+    box:HookScript("OnTextChanged", function(self, userInput)
+        -- Only the player's typing narrows the list; text put in from it doesn't.
+        if userInput then
+            recent.selected, recent.typed = 0, self:GetText()
+            if self:HasFocus() then
+                Show()
+            end
+        end
+    end)
+    box:SetScript("OnArrowPressed", function(_, key)
+        if key == "UP" then
+            Move(-1)
+        elseif key == "DOWN" then
+            Move(1)
+        end
+    end)
+    box:HookScript("OnEscapePressed", Hide)
+    -- Enter searches what the box shows: typed, or put in from the list.
+    box:SetScript("OnEnterPressed", Search)
+    return { frame = frame, Hide = Hide }
+end

@@ -173,6 +173,8 @@ function PC.ShowDetails(row)
         return
     end
     ui.priceCheck.picked = entry.itemID
+    -- An item looked at is a search worth finding again, here and on the Buy tab.
+    U.RememberSearch(entry.name)
     for _, shown in ipairs(ui.priceCheck.rows) do
         U.MarkRow(shown, shown.entry ~= nil and shown.entry.itemID == entry.itemID)
     end
@@ -275,9 +277,17 @@ function PC.Build()
             PC.Refresh()
         end
     end)
-    box:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
     box:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     ui.priceCheck.searchBox = box
+    -- The recent searches the Buy tab uses too. Enter, or a click on one, shows its matches and
+    -- remembers it; saved data only, nothing is sent.
+    ui.priceCheck.recentList = U.AttachRecent(box, ui.priceCheck, function()
+        PC.Refresh()
+        local text = strtrim(box:GetText() or "")
+        if strlenutf8(text) >= C.MIN_SEARCH_LENGTH then
+            U.RememberSearch(text)
+        end
+    end).frame
 
     -- Headings over the rows' columns; each is a button that sorts the matches.
     local headerRow = CreateFrame("Frame", nil, ui.priceCheck)
