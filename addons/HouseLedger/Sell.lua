@@ -4,7 +4,7 @@ and the lowest price, quantity and saved history show. Nothing is saved or poste
 ]]
 
 local _, ns = ...
-local C, ui, Price, U, Chart, Sell = ns.C, ns.ui, ns.Price, ns.U, ns.Chart, ns.Sell
+local C, ui, Price, U, Chart, Sell, Post = ns.C, ns.ui, ns.Price, ns.U, ns.Chart, ns.Sell, ns.Post
 
 -- The Sell tab's chart, under its lines.
 local SELL_CHART_WIDTH = 260
@@ -28,7 +28,8 @@ local SELL_LINES = {
     { "trend", "Trend vs 7-day avg" },
     { "typical", "Typical (7-day avg)" },
 }
-local SELL_LINE_HEIGHT = 20
+-- Lines a little tight, so the post controls fit under the chart.
+local SELL_LINE_HEIGHT = 17
 
 -- The Sell lines filled in order from PriceLedger.WindowLines.
 local WINDOW_KEYS = { "w1", "w3", "w7", "w14", "spread" }
@@ -109,16 +110,19 @@ function Sell.OnCommodityResults(itemID)
     if pendingSell == nil or not pendingSell.commodity or itemID ~= pendingSell.itemID then
         return
     end
-    local listings = {}
+    local listings, tiers = {}, {}
     for index = 1, C_AuctionHouse.GetNumCommoditySearchResults(itemID) or 0 do
-        -- Only price and quantity are read; owners stay in the result.
+        -- Only price, quantity and whether it is the player's own are read; owners stay in the result.
         local result = C_AuctionHouse.GetCommoditySearchResultInfo(itemID, index)
         if result then
             listings[#listings + 1] = { result.unitPrice, result.quantity }
+            tiers[#tiers + 1] = { price = result.unitPrice, quantity = result.quantity,
+                own = result.containsOwnerItem == true and (result.numOwnerItems or 0) >= result.quantity }
         end
     end
     ShowSellResults(Price.LowestListing(listings),
         U.IsComplete(C_AuctionHouse.HasFullCommoditySearchResults, itemID))
+    Post.OnListings(tiers)
 end
 
 --- Item search results came in: shows them if they are for the Sell item.
@@ -135,7 +139,7 @@ function Sell.OnItemResults(itemKey)
     -- own (after a post) with another key, so read with the key these
     -- results came back for.
     local searchKey = pendingSell.followed and itemKey or pendingSell.itemKey
-    local listings = {}
+    local listings, tiers = {}, {}
     for index = 1, C_AuctionHouse.GetNumItemSearchResults(searchKey) or 0 do
         local result = C_AuctionHouse.GetItemSearchResultInfo(searchKey, index)
         -- A listing with no buyout is bid-only and is left out. On Forever an item listing can
@@ -143,10 +147,13 @@ function Sell.OnItemResults(itemKey)
         -- never divided by the quantity.
         if result and result.buyoutAmount and result.quantity and result.quantity > 0 then
             listings[#listings + 1] = { result.buyoutAmount, result.quantity }
+            tiers[#tiers + 1] = { price = result.buyoutAmount, quantity = result.quantity,
+                own = result.containsOwnerItem == true }
         end
     end
     ShowSellResults(Price.LowestListing(listings),
         U.IsComplete(C_AuctionHouse.HasFullItemSearchResults, searchKey))
+    Post.OnListings(tiers)
 end
 
 --- Puts an item on the Sell tab with empty values until its prices come in.
@@ -163,6 +170,7 @@ function Sell.StartPendingSell(readKey, name, icon, commodity, followed)
     ui.sellPanel.itemName:SetText(name)
     ui.sellPanel.icon:SetTexture(icon)
     ClearSellValues()
+    Post.OnNewItem(pendingSell)
 end
 
 --- An item dropped on the Sell slot: one drop, one search for that item.
@@ -216,6 +224,9 @@ local function DropItem()
     gear = gear and not commodity
     local searchKey = gear and U.AnyVariantKey(itemKey) or itemKey
     Sell.StartPendingSell(searchKey, name, icon, commodity)
+    -- Post needs the bag slot; an item followed from Blizzard's Sell window has none here.
+    pendingSell.location = location
+    Post.OnNewItem(pendingSell)
     if gear then
         C_AuctionHouse.SendSellSearchQuery(searchKey, SELL_SORT, false)
     else
@@ -228,6 +239,7 @@ end
 -- Results that still arrive for that item are ignored. Blizzard's window is left as is.
 local function ResetSell()
     pendingSell = nil
+    Post.OnNewItem(nil)
     ui.sellPanel.itemName:SetText(SELL_PROMPT)
     ui.sellPanel.icon:SetTexture(nil)
     ClearSellValues()
@@ -274,10 +286,10 @@ function Sell.BuildPanel()
         ui.sellPanel.values[line[1]] = value
     end
     ui.sellPanel.chart = Chart.Build(ui.sellPanel, SELL_CHART_WIDTH, SELL_CHART_HEIGHT)
-    ui.sellPanel.chart:SetPoint("TOPLEFT", ui.sellPanel, "TOPLEFT", 24,
-        -C.LIST_TOP - 72 - #SELL_LINES * SELL_LINE_HEIGHT - 48)
+    local linesBottom = -C.LIST_TOP - 72 - #SELL_LINES * SELL_LINE_HEIGHT
+    ui.sellPanel.chart:SetPoint("TOPLEFT", ui.sellPanel, "TOPLEFT", 24, linesBottom - 28)
     ui.sellPanel.hint = U.Cell(ui.sellPanel, "GameFontHighlight", "LEFT")
-    ui.sellPanel.hint:SetPoint("TOPLEFT", ui.sellPanel, "TOPLEFT", 24, -C.LIST_TOP - 72 - #SELL_LINES * SELL_LINE_HEIGHT - 10)
+    ui.sellPanel.hint:SetPoint("TOPLEFT", ui.sellPanel, "TOPLEFT", 24, linesBottom - 4)
     ui.sellPanel.hint:SetPoint("RIGHT", ui.sellPanel, "RIGHT", -16, 0)
     ClearSellValues()
 
@@ -291,4 +303,7 @@ function Sell.BuildPanel()
     reset:SetPoint("RIGHT", ui.scanButton, "LEFT", -8, 0)
     reset:SetText("Reset")
     reset:SetScript("OnClick", ResetSell)
+
+    -- Posting, under the chart.
+    Post.Build(linesBottom - 28 - SELL_CHART_HEIGHT - 4)
 end

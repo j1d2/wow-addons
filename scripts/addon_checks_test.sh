@@ -156,8 +156,7 @@ run_check toc
 if [[ $status -eq 1 && "$out" == *"has no '## Interface:' number"* ]]; then rc=0; else rc=1; fi
 check "toc: missing Interface line is caught" "$rc"
 
-for call in "C_AuctionHouse.PostCommodity(loc, 1, 1, 1)" "C_AuctionHouse.PostItem(loc, 1, 1)" \
-    "C_AuctionHouse.CancelAuction(id)" "loadstring(text)" "TakeInboxMoney(1)" "DeleteInboxItem(1)" \
+for call in "C_AuctionHouse.CancelAuction(id)" "C_AuctionHouse.CancelSell(id)" "loadstring(text)" "TakeInboxMoney(1)" "DeleteInboxItem(1)" \
     "ReturnInboxItem(1)" "GetInboxText(1)"; do
     good_addon
     printf 'local function Go()\n    %s\nend\n' "$call" >>"$ROOT/addons/Demo/Demo.lua"
@@ -176,6 +175,29 @@ for call in "C_AuctionHouse.PlaceBid(id, 1)" "C_AuctionHouse.StartCommoditiesPur
     if [[ $status -eq 1 && "$out" == *"Demo.lua:5: buys with '${name%%(*}' outside Purchase.lua"* ]]; then rc=0; else rc=1; fi
     check "policy: '${name%%(*}' outside Purchase.lua is caught" "$rc"
 done
+
+# Posting happens only in Post.lua, on the player's click, each use with a reviewed note.
+for call in "C_AuctionHouse.PostCommodity(loc, 1, 1, 1)" "C_AuctionHouse.PostItem(loc, 1, 1)" \
+    "C_AuctionHouse.ConfirmPostCommodity(loc, 1, 1, 1)" "C_AuctionHouse.ConfirmPostItem(loc, 1, 1)"; do
+    good_addon
+    printf 'local function Go()\n    %s -- reviewed: the Post click\nend\n' "$call" >>"$ROOT/addons/Demo/Demo.lua"
+    run_check policy
+    if [[ $status -eq 1 && "$out" == *"Demo.lua:5: posts with '${call%%(*}' outside Post.lua"* ]]; then rc=0; else rc=1; fi
+    check "policy: '${call%%(*}' outside Post.lua is caught" "$rc"
+done
+
+good_addon
+printf 'local function Go()\n    %s\nend\n' 'C_AuctionHouse.PostCommodity(loc, 1, 1, 1)' >"$ROOT/addons/Demo/Post.lua"
+run_check policy
+if [[ $status -eq 1 && "$out" == *"Post.lua:2: uses 'C_AuctionHouse.PostCommodity', which needs a '-- reviewed: <why>' note"* ]]; then rc=0; else rc=1; fi
+check "policy: a post in Post.lua still needs a reviewed note" "$rc"
+
+good_addon
+printf 'local function Go()\n    %s\nend\n' 'C_AuctionHouse.PostCommodity(loc, 1, 1, 1) -- reviewed: the Post click' \
+    >"$ROOT/addons/Demo/Post.lua"
+run_check policy
+if [[ $status -eq 0 ]]; then rc=0; else rc=1; fi
+check "policy: a post in Post.lua with a reviewed note passes" "$rc"
 
 good_addon
 printf 'local function Go()\n    %s\nend\n' 'C_AuctionHouse.PlaceBid(id, 1)' >"$ROOT/addons/Demo/Purchase.lua"

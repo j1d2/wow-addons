@@ -7,7 +7,7 @@ item looks, font-string cells).
 local _, ns = ...
 ns.C, ns.ui, ns.state = {}, {}, {}
 -- One table per file, made here so any file can name another's before it loads.
-for _, name in ipairs({ "U", "Chart", "Scan", "Tooltip", "Buy", "Sell", "Purchase", "PC", "History", "Settings", "Window" }) do
+for _, name in ipairs({ "U", "Chart", "Scan", "Tooltip", "Buy", "Sell", "Purchase", "Post", "PC", "History", "Settings", "Window" }) do
     ns[name] = {}
 end
 local C, ui, state, Price, U = ns.C, ns.ui, ns.state, ns.Price, ns.U

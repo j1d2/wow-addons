@@ -70,6 +70,8 @@ function FrameMethods:SetFocus() self.focused = true end
 function FrameMethods:ClearFocus() self.focused = false end
 function FrameMethods:Enable() NoteIfBlocked(self) self.enabled = true end
 function FrameMethods:Disable() NoteIfBlocked(self) self.enabled = false end
+function FrameMethods:SetEnabled(on) NoteIfBlocked(self) self.enabled = on and true or false end
+function FrameMethods:SetShown(on) NoteIfBlocked(self) self.shown = on and true or false end
 function FrameMethods:IsProtected() return self.protected == true, false end
 function FrameMethods:StartMoving() NoteIfBlocked(self) end
 function FrameMethods:StopMovingOrSizing() NoteIfBlocked(self) end
@@ -192,7 +194,7 @@ local function Setup(opts)
         houseOpen = false,
         listings = opts.listings or {},
         tooltipHooks = {},
-        buys = {},
+        posts = {}, buys = {},
     }
     -- The character's money in copper (GetMoney); plenty unless a test sets it.
     _G.GetMoney = function() return world.money or 100000000 end
@@ -336,6 +338,9 @@ local function Setup(opts)
         world.tooltip.items[#world.tooltip.items + 1] = itemID
     end
     _G.C_Item = {
+        -- A dropped item's bag slot: gone once world.itemGone is set.
+        DoesItemExist = function(location) return location ~= nil and not world.itemGone end,
+        GetItemID = function(location) return world.itemMoved and 1 or location.itemID end,
         -- The item cache: world.itemInfo[itemID] = { name, quality, level }, or nil until loaded.
         GetItemInfo = function(itemID)
             world.itemInfoCalls = (world.itemInfoCalls or 0) + 1
@@ -343,7 +348,8 @@ local function Setup(opts)
             if info == nil then
                 return nil
             end
-            return info.name, "|Hitem:" .. itemID .. "|h", info.quality, info.level
+            return info.name, "|Hitem:" .. itemID .. "|h", info.quality, info.level, nil, nil, nil, nil, nil, nil,
+                info.sell
         end,
         -- Like the game: a quality outside 0 to 8 (the scan's -1 for "not known yet") is a usage error.
         GetItemQualityColor = function(quality)
@@ -433,6 +439,30 @@ local function Setup(opts)
             world.browseQueries[#world.browseQueries + 1] = query
         end,
         IsSellItemValid = function(location) return location.sellable ~= false end,
+        -- Posting: world.posts records each call; world.postNeedsConfirm is the game's answer.
+        GetAvailablePostCount = function(location) return location.count or 1 end,
+        CalculateCommodityDeposit = function(_, duration, quantity) return quantity * duration end,
+        CalculateItemDeposit = function(_, duration) return 5 * duration end,
+        PostCommodity = function(location, duration, quantity, price)
+            world.posts[#world.posts + 1] = { kind = "commodity", itemID = location.itemID, duration = duration,
+                quantity = quantity, price = price }
+            -- With world.postTakes, a post takes the items out of the bags, as one that went up does.
+            if world.postTakes and not world.postNeedsConfirm and location.count then
+                location.count = location.count - quantity
+            end
+            return world.postNeedsConfirm == true
+        end,
+        PostItem = function(location, duration, quantity, bid, buyout)
+            world.posts[#world.posts + 1] = { kind = "item", itemID = location.itemID, duration = duration,
+                quantity = quantity, bid = bid, price = buyout }
+            return world.postNeedsConfirm == true
+        end,
+        ConfirmPostCommodity = function(location, duration, quantity, price)
+            world.posts[#world.posts + 1] = { kind = "confirm", itemID = location.itemID, quantity = quantity, price = price }
+        end,
+        ConfirmPostItem = function(location, duration, quantity, bid, buyout)
+            world.posts[#world.posts + 1] = { kind = "confirmItem", itemID = location.itemID, price = buyout }
+        end,
         GetItemKeyFromItem = function(location)
             return {
                 itemID = location.itemID, itemLevel = location.itemLevel or 0,
@@ -3895,6 +3925,138 @@ do
     row:GetScript("OnEnter")(row)
     Check("history: and a HouseLedger buy says so", table.concat(lines, "\n"):find("Bought in HouseLedger", 1, true))
     Check("history: sends nothing", #world.buys == 2 and world.replicateCalls <= 1)
+end
+
+do
+    -- Posting from the Sell tab: the price filled in, warnings and Confirm, one post per click.
+    Setup()
+    Load()
+    SaveDailyHistory(7, 2589) -- 100c a day: the 7-day typical
+    OpenHouse()
+    Click("Sell")
+    local sell = MainFrame().sellPanel
+    local panel = sell.postPanel
+    Check("post: nothing to post until an item is dropped", not panel.postButton.enabled)
+    Drop({ itemID = 2589, commodity = true, count = 60 })
+    Check("post: how many starts at all in the bags", panel.qtyBox.text == "60" and panel.qtyBox.shown)
+    world.commodityResults = {
+        { itemID = 2589, unitPrice = 98, quantity = 50, containsOwnerItem = false },
+        { itemID = 2589, unitPrice = 101, quantity = 400, containsOwnerItem = false },
+    }
+    Fire("COMMODITY_SEARCH_RESULTS_UPDATED", 2589)
+    local boxes = panel.priceBoxes
+    Check("post: the price is filled in from the listings, matching the cheapest stackable",
+        boxes.gold.text == "" and boxes.silver.text == "" and boxes.copper.text == "98"
+        and panel.reasonText.text == "Matching 50 listed at 98c.")
+    Check("post: the deposit and what the sale brings after the 5% cut", panel.moneyText.text
+        == "Deposit <money 120>, you get <money 5586> after the cut")
+    Check("post: Post can be clicked", panel.postButton.enabled and panel.postButton.text == "Post")
+
+    Press(panel.postButton)
+    Check("post: with Confirm on (the default), Post asks first and sends nothing", #world.posts == 0
+        and panel.postButton.text == "Confirm" and SellStatus():find("Post 60 Item 2589 at <money 98> each", 1, true))
+    Type(boxes.copper, "97")
+    Check("post: a change means a fresh look: back to Post", panel.postButton.text == "Post" and #world.posts == 0)
+    Press(panel.postButton)
+    Press(panel.postButton)
+    Check("post: Confirm posts once, with the player's price and amount", #world.posts == 1
+        and world.posts[1].kind == "commodity" and world.posts[1].price == 97 and world.posts[1].quantity == 60
+        and world.posts[1].duration == 2 and panel.postButton.text == "Posting..." and not panel.postButton.enabled)
+    Press(panel.postButton)
+    Check("post: a double click can't post twice", #world.posts == 1)
+    Fire("AUCTION_HOUSE_AUCTION_CREATED", 77)
+    Check("post: the house made it: says so and remembers the price", SellStatus():find("Posted 60 Item 2589", 1, true)
+        and HouseLedgerDB.lastPosts["Alliance|TestRealm"][2589][1] == 97 and panel.postButton.text == "Post")
+
+    Fire("COMMODITY_SEARCH_RESULTS_UPDATED", 2589)
+    Check("post: new listings never change a price already there", boxes.copper.text == "97")
+
+    Type(boxes.copper, "30")
+    Press(panel.postButton)
+    Check("post: a risky price asks first, saying why", #world.posts == 1 and panel.postButton.text == "Post anyway"
+        and SellStatus():find("under half the usual price", 1, true))
+    Press(panel.postButton)
+    Check("post: the warning click counts as the confirm: the next click posts", #world.posts == 2
+        and world.posts[2].price == 30)
+    Fire("AUCTION_HOUSE_POST_ERROR")
+    Check("post: the house refused: says so, nothing remembered", SellStatus():find("refused", 1, true)
+        and HouseLedgerDB.lastPosts["Alliance|TestRealm"][2589][1] == 97)
+
+    HouseLedgerDB.settings.confirmPosts = false
+    Type(boxes.copper, "99")
+    Type(panel.qtyBox, "20")
+    world.postTakes = true
+    Press(panel.postButton)
+    world.postTakes = false
+    Check("post: Confirm off: one click posts", #world.posts == 3 and world.posts[3].price == 99)
+    world.now = world.now + 6
+    MainFrame():GetScript("OnUpdate")(MainFrame(), 6)
+    Check("post: no answer, but the items left the bags: posted, and remembered", panel.postButton.text == "Post"
+        and SellStatus():find("Posted 20", 1, true) and HouseLedgerDB.lastPosts["Alliance|TestRealm"][2589][1] == 99)
+    Type(boxes.copper, "95")
+    Press(panel.postButton)
+    world.now = world.now + 6
+    MainFrame():GetScript("OnUpdate")(MainFrame(), 6)
+    Check("post: no answer and still in the bags: not called posted, not remembered",
+        SellStatus():find("may not have posted", 1, true) and HouseLedgerDB.lastPosts["Alliance|TestRealm"][2589][1] == 99)
+    Press(panel.postButton)
+    Fire("AUCTION_HOUSE_SHOW_ERROR", 3)
+    Check("post: the house's error while posting: refused", SellStatus():find("refused", 1, true)
+        and panel.postButton.text == "Post")
+
+    world.postNeedsConfirm = true
+    Press(panel.postButton)
+    Check("post: the game asks to confirm: Confirm shows", panel.postButton.text == "Confirm"
+        and SellStatus():find("The game asks", 1, true))
+    world.postNeedsConfirm = false
+    world.itemMoved = true
+    local sent = #world.posts
+    Press(panel.postButton)
+    Check("post: the game's Confirm still checks the item first", #world.posts == sent
+        and SellStatus():find("moved in your bags", 1, true))
+    world.itemMoved = false
+    Type(boxes.copper, "96")
+    Check("post: a change drops the game's Confirm too", panel.postButton.text == "Post")
+    world.postNeedsConfirm = true
+    Press(panel.postButton)
+    world.postNeedsConfirm = false
+    Press(panel.postButton)
+    Check("post: and the next click confirms it", world.posts[#world.posts].kind == "confirm"
+        and world.posts[#world.posts].price == 96)
+    Fire("AUCTION_HOUSE_AUCTION_CREATED", 78)
+
+    world.itemMoved = true
+    Press(panel.postButton)
+    Check("post: an item that moved in the bags isn't posted", world.posts[#world.posts].kind == "confirm"
+        and SellStatus():find("moved in your bags", 1, true))
+    world.itemMoved = false
+
+    Pick(panel.pricingDropdown, "My last price")
+    Check("post: my last price", boxes.copper.text == "96" and panel.reasonText.text:find("Your last price", 1, true)
+        and HouseLedgerDB.settings.postPricing == "last")
+    Pick(panel.durationDropdown, "Long")
+    Check("post: the duration is remembered", HouseLedgerDB.settings.postDuration == 3)
+
+    -- Gear: one copy per post, 1c under the cheapest other listing.
+    world.equipment = true
+    Drop({ itemID = 7005, itemLevel = 24, itemSuffix = 0, count = 3 })
+    world.itemResults = {
+        { itemKey = { itemID = 7005 }, buyoutAmount = 500, quantity = 1, containsOwnerItem = true },
+        { itemKey = { itemID = 7005 }, buyoutAmount = 900, quantity = 1, containsOwnerItem = false },
+    }
+    Pick(panel.pricingDropdown, "Best price")
+    Fire("ITEM_SEARCH_RESULTS_UPDATED", { itemID = 7005, itemLevel = 0, itemSuffix = 0 })
+    Check("post: gear goes 1c under the cheapest that isn't yours, one copy per post", boxes.copper.text == "99"
+        and boxes.silver.text == "8" and not panel.qtyBox.shown and panel.qtyLabel.text == "One copy per post")
+    local posts = #world.posts
+    Press(panel.postButton)
+    Check("post: gear posts one copy at a buyout, no bid", #world.posts == posts + 1
+        and world.posts[#world.posts].kind == "item" and world.posts[#world.posts].quantity == 1
+        and world.posts[#world.posts].price == 899 and world.posts[#world.posts].bid == nil)
+    Check("post: never touches Blizzard's window", (world.houseCalls or 0) == 0)
+
+    Click("Reset")
+    Check("post: Reset empties it", not panel.postButton.enabled and boxes.copper.text == "")
 end
 
 if failed > 0 then

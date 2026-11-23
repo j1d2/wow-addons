@@ -88,6 +88,7 @@ HouseLedger loads in this order:
 | `Buy.lua` | The Buy and Market tabs: list, headings, filters, details, the browse search (`ns.Buy`). |
 | `Sell.lua` | The Sell tab (`ns.Sell`). |
 | `Purchase.lua` | Buying from Buy and Market: the picked row's Buy (one item search), the listings, Buy and Confirm (`ns.Purchase`). Settings `confirmItemBuys`/`confirmStackBuys` (default on) skip Confirm: gear buys on Buy, a stackable confirms on a quote not above the listings. The only file the `policy` check lets buy. |
+| `Post.lua` | Posting from the Sell tab (`ns.Post`): price, how many, how long, warnings, Confirm, Post. The only file the `policy` check lets post. |
 | `PriceCheck.lua` | The `/pc` window and its bag button (`ns.PC`). |
 | `History.lua` | The History tab: buys and sales from HouseLedger's own buys and the auction house mail (`ns.History`; the pure records are in `PriceLedger`). Reads the mailbox only. |
 | `Settings.lua` | The Settings tab (`ns.Settings`). |

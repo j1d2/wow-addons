@@ -42,6 +42,8 @@ PriceLedger.SETTINGS = {
     -- Off: Buy asks the house's price and buys at it when it hasn't gone up; a rise still asks.
     { key = "confirmStackBuys", label = "Confirm before buying stackables (a rise always asks)",
         default = true },
+    -- Off: Post posts on its click; a price warning still asks for a second click.
+    { key = "confirmPosts", label = "Confirm before posting (a price warning always asks)", default = true },
 }
 PriceLedger.SCAN_INTERVAL = 15 * 60
 
@@ -484,6 +486,13 @@ function PriceLedger.EnsureDB(db)
     if not PriceLedger.IsHistoryChoice(db.settings.historyDays) then
         db.settings.historyDays = nil
     end
+    if db.settings.postDuration ~= 1 and db.settings.postDuration ~= 2 and db.settings.postDuration ~= 3 then
+        db.settings.postDuration = nil
+    end
+    if not PriceLedger.POST_PRICINGS[db.settings.postPricing] then
+        db.settings.postPricing = nil
+    end
+    db.lastPosts = PriceLedger.CleanLastPosts(db.lastPosts)
     db.recentSearches = PriceLedger.CleanRecent(db.recentSearches)
     db.ledger = PriceLedger.CleanLedger(db.ledger)
     PriceLedger.DAYS_KEPT = db.settings.historyDays or PriceLedger.HISTORY_CHOICES[1]
@@ -2527,6 +2536,163 @@ function PriceLedger.LedgerCharacters(entries)
     end
     table.sort(names)
     return names
+end
+
+-- ---------------------------------------------------------------------
+-- Posting: the price Post starts from, its warnings, and the house's cut
+-- ---------------------------------------------------------------------
+
+-- Ways Post fills in the price, in the dropdown's order; the first is the default.
+PriceLedger.POST_PRICING_ORDER = { "best", "fast", "last" }
+PriceLedger.POST_PRICINGS = { best = "Best price", fast = "Sell fast", last = "My last price" }
+-- The house's cut of a sale, by side. Measured from sale mail at the Horde house (2026-11-23):
+-- 5%, rounded down; the Alliance house is taken to be the same (not measured). The goblin
+-- house's cut isn't known yet, so it has none here.
+PriceLedger.HOUSE_CUT = { Alliance = 0.05, Horde = 0.05 }
+-- Best price passes over at most this many cheap listings that look like bait.
+PriceLedger.POST_SKIP_MAX = 3
+
+--- The house's cut for a house key ("Horde|Realm"), or nil when it isn't known.
+-- @param houseKey the house
+-- @return the share, such as 0.05, or nil
+function PriceLedger.HouseCut(houseKey)
+    local side = type(houseKey) == "string" and houseKey:match("^([^|]+)") or nil
+    return side and PriceLedger.HOUSE_CUT[side] or nil
+end
+
+--- What a sale brings in after the house's cut (rounded down, as the house takes it).
+-- @param total the sale in copper
+-- @param cut the share, such as 0.05
+-- @return copper
+function PriceLedger.AfterCut(total, cut)
+    return total - math.floor(total * (cut or 0))
+end
+
+--- Saved last post prices made safe: lastPosts[houseKey][itemID] = { price, time }.
+-- @param lastPosts the saved value, or anything
+-- @return the table, repaired
+function PriceLedger.CleanLastPosts(lastPosts)
+    local clean = {}
+    if type(lastPosts) ~= "table" then
+        return clean
+    end
+    for houseKey, items in pairs(lastPosts) do
+        if type(houseKey) == "string" and type(items) == "table" then
+            local kept = {}
+            for itemID, post in pairs(items) do
+                if type(itemID) == "number" and type(post) == "table" and type(post[1]) == "number" and post[1] > 0
+                    and type(post[2]) == "number" then
+                    kept[itemID] = post
+                end
+            end
+            if next(kept) then
+                clean[houseKey] = kept
+            end
+        end
+    end
+    return clean
+end
+
+--- Remembers the price an item was posted at, for My last price.
+-- @param db the saved table
+-- @param houseKey the house
+-- @param itemID the item
+-- @param price copper each
+-- @param time when
+function PriceLedger.RememberPost(db, houseKey, itemID, price, time)
+    db.lastPosts[houseKey] = db.lastPosts[houseKey] or {}
+    db.lastPosts[houseKey][itemID] = { price, time }
+end
+
+--- True when the cheapest listing looks like bait rather than the price: a deal by the saved
+-- prices, a thin listing far under a much bigger one, or (with no saved prices) under half the
+-- next one.
+-- @param tier the listing { price, quantity }
+-- @param nextTier the next one up
+-- @param stats the item's saved stats, or nil
+-- @return true when it should be passed over
+local function LooksLikeBait(tier, nextTier, stats)
+    if stats and PriceLedger.Judge(stats, tier.price).deal then
+        return true
+    end
+    if tier.quantity * 5 < nextTier.quantity and tier.price < nextTier.price * 0.9 then
+        return true
+    end
+    return not (stats and stats.typical) and tier.price < nextTier.price * 0.5
+end
+
+--- The price Post fills in, and a line saying why. Stackables match the listing they start from;
+-- other items go 1 copper under it. The player's own listings are never the price to beat.
+-- @param pricing "best", "fast" or "last"
+-- @param tiers listings cheapest first: { price, quantity, own }
+-- @param stats the item's saved stats, or nil
+-- @param last { price, time } from My last price, or nil
+-- @param stackable true for a stackable item
+-- @return copper each or nil (the player types one), and the reason
+function PriceLedger.PostPrice(pricing, tiers, stats, last, stackable)
+    if pricing == "last" then
+        if last then
+            return last[1], "Your last price, from " .. (PriceLedger.WhenText(last[2]) or "before") .. "."
+        end
+        local price, reason = PriceLedger.PostPrice("best", tiers, stats, nil, stackable)
+        return price, "No last price yet. " .. reason
+    end
+    local others = {}
+    for _, tier in ipairs(tiers) do
+        if not tier.own then
+            others[#others + 1] = tier
+        end
+    end
+    if #others == 0 then
+        if stats and stats.typical then
+            return stats.typical, "Nobody else is selling this. This is your 7-day typical price."
+        end
+        return nil, "Nobody else is selling this, and there are no saved prices. Type a price."
+    end
+    local index, skipped = 1, nil
+    if pricing == "best" then
+        while index <= PriceLedger.POST_SKIP_MAX and others[index + 1]
+            and LooksLikeBait(others[index], others[index + 1], stats) do
+            skipped = skipped or others[index]
+            index = index + 1
+        end
+    end
+    local chosen = others[index]
+    local coins = PriceLedger.CoinText
+    local reason
+    if stackable then
+        reason = string.format("Matching %d listed at %s.", chosen.quantity, coins(chosen.price))
+    else
+        reason = string.format("1c under the cheapest at %s (any item level).", coins(chosen.price))
+    end
+    if skipped then
+        reason = string.format("Skipping the cheapest (%s): it looks far too cheap. ", coins(skipped.price)) .. reason
+    end
+    return stackable and chosen.price or math.max(1, chosen.price - 1), reason
+end
+
+--- What's risky about a post price; each warning makes Post ask for a second click.
+-- @param price copper each
+-- @param stats the item's saved stats, or nil
+-- @param cheapestOther the cheapest listing that isn't the player's, or nil
+-- @param vendor what a vendor pays for one, or nil
+-- @param cut the house's cut (nil: 5% is assumed for the vendor check)
+-- @return list of warning texts (empty when none)
+function PriceLedger.PostWarnings(price, stats, cheapestOther, vendor, cut)
+    local warnings, coins = {}, PriceLedger.CoinText
+    local typical = stats and stats.typical
+    if typical and price < typical * 0.5 then
+        warnings[#warnings + 1] = "under half the usual price (" .. coins(typical) .. ")"
+    elseif typical and price > typical * 3 then
+        warnings[#warnings + 1] = "over 3 times the usual price (" .. coins(typical) .. ")"
+    end
+    if cheapestOther and price < cheapestOther * 0.5 then
+        warnings[#warnings + 1] = "under half the cheapest listing (" .. coins(cheapestOther) .. ")"
+    end
+    if vendor and vendor > 0 and PriceLedger.AfterCut(price, cut or 0.05) < vendor then
+        warnings[#warnings + 1] = "under what a vendor pays (" .. coins(vendor) .. ")"
+    end
+    return warnings
 end
 
 return PriceLedger

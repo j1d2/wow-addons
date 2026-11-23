@@ -611,7 +611,7 @@ do
     end
     Check("settings: tooltip prices on, details without Shift off, the bag button on, both buy confirms on",
         table.concat(keys, ",") == "tooltipPrices=true,tooltipDetails=false,priceCheckButton=true,"
-        .. "confirmItemBuys=true,confirmStackBuys=true")
+        .. "confirmItemBuys=true,confirmStackBuys=true,confirmPosts=true")
     local db = P.EnsureDB(nil)
     Check("new saved data gets every default", db.settings.tooltipPrices == true and db.settings.tooltipDetails == false)
     db = P.EnsureDB({ version = 3, houses = {}, settings = { tooltipPrices = false, tooltipDetails = "yes" } })
@@ -750,6 +750,63 @@ do
         and totals.profitSales == 1)
     Check("characters: A to Z, once each", table.concat(P.LedgerCharacters({ { who = "b" }, { who = "a" }, { who = "b" } }),
         ",") == "a,b")
+end
+
+-- Posting: the price Post starts from, its warnings and the house's cut
+do
+    local function Tier(price, quantity, own) return { price = price, quantity = quantity, own = own } end
+    local tiers = { Tier(20, 50), Tier(21, 200), Tier(25, 1000) }
+    local price, reason = P.PostPrice("best", tiers, nil, nil, true)
+    Check("post: best price matches the cheapest stackable listing", price == 20 and reason == "Matching 50 listed at 20c.")
+    price, reason = P.PostPrice("best", tiers, nil, nil, false)
+    Check("post: other items go 1c under", price == 19 and reason == "1c under the cheapest at 20c (any item level).")
+    price, reason = P.PostPrice("best", { Tier(5, 1), Tier(20, 50), Tier(21, 200) }, nil, nil, true)
+    Check("post: a thin listing far under a bigger one is passed over, and the reason says so", price == 20
+        and reason:find("Skipping the cheapest (5c)", 1, true) and reason:find("Matching 50 listed at 20c.", 1, true))
+    price = P.PostPrice("fast", { Tier(5, 1), Tier(20, 50) }, nil, nil, true)
+    Check("post: sell fast takes the cheapest, bait and all", price == 5)
+    price = P.PostPrice("best", { Tier(8, 40, true), Tier(20, 50) }, nil, nil, false)
+    Check("post: your own listing is never the one to beat", price == 19)
+    local stats = { typical = 100 }
+    price, reason = P.PostPrice("best", { Tier(8, 40, true) }, stats, nil, true)
+    Check("post: nobody else selling: the 7-day typical", price == 100 and reason:find("Nobody else", 1, true))
+    price, reason = P.PostPrice("best", {}, nil, nil, true)
+    Check("post: nobody selling and no saved prices: nothing filled in", price == nil and reason:find("Type a price", 1, true))
+    price, reason = P.PostPrice("last", tiers, nil, { 33, 1762900000 }, true)
+    Check("post: my last price", price == 33 and reason:find("Your last price", 1, true))
+    price, reason = P.PostPrice("last", tiers, nil, nil, true)
+    Check("post: no last price falls back to best, and says so", price == 20 and reason:find("No last price yet.", 1, true))
+    local bait = {}
+    for index = 1, 6 do
+        bait[index] = Tier(index, 10 ^ (index - 1))
+    end
+    bait[7] = Tier(100, 10 ^ 7)
+    Check("post: at most 3 cheap listings are passed over", P.PostPrice("best", bait, nil, nil, true) == 4)
+
+    Check("cut: 5% at the faction houses, unknown at the goblin house", P.HouseCut("Horde|R") == 0.05
+        and P.HouseCut("Alliance|R") == 0.05 and P.HouseCut("Neutral|R") == nil)
+    Check("cut: rounded down, as the house takes it (Silver Bar: 1154 less 57)", P.AfterCut(1154, 0.05) == 1097
+        and P.AfterCut(19, 0.05) == 19)
+
+    local warnings = P.PostWarnings(40, { typical = 100 }, nil, nil, 0.05)
+    Check("warn: under half the usual price", #warnings == 1 and warnings[1]:find("under half the usual", 1, true))
+    Check("warn: over 3 times the usual price", P.PostWarnings(301, { typical = 100 })[1]:find("over 3 times", 1, true))
+    Check("warn: under half the cheapest listing", P.PostWarnings(9, nil, 20)[1]:find("cheapest listing", 1, true))
+    Check("warn: under what a vendor pays after the cut", P.PostWarnings(20, nil, nil, 20, 0.05)[1]:find("vendor", 1, true)
+        and #P.PostWarnings(20, nil, nil, 19, 0.05) == 0)
+    Check("warn: a fair price has none", #P.PostWarnings(100, { typical = 100 }, 95, 10, 0.05) == 0)
+
+    local db = P.EnsureDB(nil)
+    Check("post settings: confirm on by default, no duration or pricing saved yet", db.settings.confirmPosts == true
+        and db.settings.postDuration == nil and db.settings.postPricing == nil)
+    db = P.EnsureDB({ settings = { postDuration = 7, postPricing = "magic" }, lastPosts = { ["Horde|R"] = { [5] = { 20, 1 },
+        [6] = "x" }, bad = 5 } })
+    Check("post settings: a damaged one goes back to the default", db.settings.postDuration == nil
+        and db.settings.postPricing == nil)
+    Check("last posts: only good ones are kept", db.lastPosts["Horde|R"][5][1] == 20 and db.lastPosts["Horde|R"][6] == nil
+        and db.lastPosts.bad == nil)
+    P.RememberPost(db, "Horde|R", 7, 44, 99)
+    Check("last posts: remembered per house and item", db.lastPosts["Horde|R"][7][1] == 44)
 end
 
 -- Chart: one slot per day from the oldest saved day (at least 7), up to the history length

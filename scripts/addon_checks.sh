@@ -42,7 +42,7 @@ ALLOWED_GLOBALS="$ROOT/scripts/allowed-globals.txt"
 # Also never: swapping a function's environment (setfenv, getfenv) hides what code does, the
 # debug library reaches into other code, and RunMacro plays the character. Casting and using bag
 # items happen only through Blizzard's secure button on a click (RULES.md, Disenchanting).
-readonly BANNED_API='C_AuctionHouse\.(PostItem|PostCommodity|CancelAuction|CancelSell)|C_Container\.(UseContainerItem|PickupContainerItem)|\b(CastSpellByName|CastSpellByID|SpellTargetItem|UseContainerItem|PickupContainerItem)\b|\b(PlaceAuctionBid|PostAuction|StartAuction|CancelAuction|loadstring|RunScript|RunMacroText|RunMacro|setfenv|getfenv)\b|\b(TakeInboxItem|TakeInboxMoney|DeleteInboxItem|ReturnInboxItem|AutoLootMailItem|SendMail|CheckInbox|GetInboxText)\b|(^|[^A-Za-z0-9_.:])debug\.[A-Za-z_]+'
+readonly BANNED_API='C_AuctionHouse\.(CancelAuction|CancelSell)|C_Container\.(UseContainerItem|PickupContainerItem)|\b(CastSpellByName|CastSpellByID|SpellTargetItem|UseContainerItem|PickupContainerItem)\b|\b(PlaceAuctionBid|PostAuction|StartAuction|CancelAuction|loadstring|RunScript|RunMacroText|RunMacro|setfenv|getfenv)\b|\b(TakeInboxItem|TakeInboxMoney|DeleteInboxItem|ReturnInboxItem|AutoLootMailItem|SendMail|CheckInbox|GetInboxText)\b|(^|[^A-Za-z0-9_.:])debug\.[A-Za-z_]+'
 
 # RULES.md: calls that send data out of the game (chat, addon messages, Battle.net) or change
 # the player's setup (keybindings, macros, settings) need a "-- reviewed: <why>" note on the
@@ -56,6 +56,8 @@ readonly REVIEW_NOTE='--[[:space:]]*reviewed:[[:space:]]*[^[:space:]]'
 # counts, not only a call. Bids are not used (buyout only), so PlaceBid is the buyout call.
 readonly BUY_API='C_AuctionHouse\.(PlaceBid|StartCommoditiesPurchase|ConfirmCommoditiesPurchase)([^A-Za-z0-9_]|$)'
 readonly BUY_FILE='Purchase.lua'
+readonly POST_API='C_AuctionHouse\.(PostCommodity|PostItem|ConfirmPostCommodity|ConfirmPostItem)([^A-Za-z0-9_]|$)'
+readonly POST_FILE='Post.lua'
 
 # RULES.md: Blizzard's auction window is read or followed (hooksecurefunc), never
 # changed. A method call on it or on one of its parts (AuctionHouseFrame.SearchBar,
@@ -239,7 +241,7 @@ check_toc() {
 # need a reviewed note and lack one (REVIEW_API, REVIEW_NOTE), and for method calls on
 # Blizzard's auction window that do more than read it (HOUSE_CALL, HOUSE_READS).
 # Globals:
-#   BANNED_API, REVIEW_API, REVIEW_NOTE, BUY_API, BUY_FILE, HOUSE_CALL, HOUSE_READS
+#   BANNED_API, REVIEW_API, REVIEW_NOTE, BUY_API, BUY_FILE, POST_API, POST_FILE, HOUSE_CALL, HOUSE_READS
 #   failures (counted through problem)
 # Outputs:
 #   Writes each hit, with file and line, to stdout.
@@ -268,6 +270,15 @@ check_policy() {
                     "uses '$name', which needs a '-- reviewed: <why>' note on the same line (RULES.md)"
             fi
         done < <(grep -n -E -- "$BUY_API" "$file" || true)
+        while IFS= read -r hit; do
+            name="$(grep -o -E -- "$POST_API" <<<"${hit#*:}" | head -n 1 | sed -E 's/[^A-Za-z0-9_]$//')"
+            if [[ "$(basename "$file")" != "$POST_FILE" ]]; then
+                problem "$(rel "$file"):${hit%%:*}" "posts with '$name' outside $POST_FILE (RULES.md)"
+            elif ! grep -q -E -- "$REVIEW_NOTE" <<<"${hit#*:}"; then
+                problem "$(rel "$file"):${hit%%:*}" \
+                    "uses '$name', which needs a '-- reviewed: <why>' note on the same line (RULES.md)"
+            fi
+        done < <(grep -n -E -- "$POST_API" "$file" || true)
         while IFS= read -r hit; do
             problem "$(rel "$file"):${hit%%:*}" "changes Blizzard's auction window ('${hit#*:}'); only read or hook it"
         done < <(grep -n -o -E -- "$HOUSE_CALL" "$file" | grep -v -E -- "$HOUSE_READS" || true)
