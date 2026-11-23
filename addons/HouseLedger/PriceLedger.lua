@@ -2328,12 +2328,29 @@ end
 -- @param realm the realm
 -- @return how many entries were added
 function PriceLedger.RecordMail(ledger, mails, now, who, realm)
-    local used, added = {}, 0
+    local used, added, fresh = {}, 0, {}
+    -- First the mails whose expiry is as remembered.
     for _, mail in ipairs(mails) do
         local known = false
         for index, old in ipairs(ledger.seen) do
             if not used[index] and SameMail(old, mail, who) then
                 used[index], known = true, true
+                break
+            end
+        end
+        if not known then
+            fresh[#fresh + 1] = mail
+        end
+    end
+    -- Then the rest. A mail read or emptied may come back with fewer days left, so an earlier
+    -- expiry than one remembered, with everything else the same, is that mail. A new mail always
+    -- expires later than the ones before it, so it is never taken for an old one.
+    for _, mail in ipairs(fresh) do
+        local known = false
+        for index, old in ipairs(ledger.seen) do
+            if not used[index] and old.who == who and old.kind == mail.kind and old.name == mail.name
+                and old.count == mail.count and old.bid == mail.bid and mail.expires < old.expires then
+                used[index], known, old.expires = true, true, mail.expires
                 break
             end
         end

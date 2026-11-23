@@ -676,6 +676,13 @@ do
     Check("history: two identical mails in one look count as two", P.RecordMail(ledger,
         { Mail("sold", "Linen Cloth", 20, 400, now + 30 * DAY), Mail("sold", "Linen Cloth", 20, 400, now + 30 * DAY) },
         now + 7200, "Mira Stone", "R") == 1 and #ledger.entries == 2)
+    Check("history: a mail read or emptied, with fewer days left, is still the same mail",
+        P.RecordMail(ledger, { Mail("sold", "Linen Cloth", 20, 400, now + 2 * DAY) }, now + 7300, "Mira Stone", "R") == 0
+        and #ledger.entries == 2)
+    Check("history: a new identical mail expires later, so it is counted", P.RecordMail(ledger,
+        { Mail("sold", "Linen Cloth", 20, 400, now + 2 * DAY), Mail("sold", "Linen Cloth", 20, 400, now + 30 * DAY),
+          Mail("sold", "Linen Cloth", 20, 400, now + 31 * DAY) }, now + DAY, "Mira Stone", "R") == 1
+        and #ledger.entries == 3)
     Check("history: another character's mailbox is its own", P.RecordMail(ledger, { sold }, now, "Alt Name", "R") == 1)
 
     local hl = P.RecordBuy(ledger, { time = now, who = "Mira Stone", realm = "R", itemID = 2589, name = "Linen Cloth",

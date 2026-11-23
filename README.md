@@ -150,7 +150,8 @@ Its Buy and Sell tabs switch Blizzard's tabs too, and the reverse.
 - After a buy it doesn't search again by itself; click Back, then Buy, to see what's left. What you buy arrives in your mailbox.
 - It does not scan when the auction house opens. A full scan needs your click, at most once each 15 minutes, which is the game's limit.
 - Search, a row's Buy and Sell send one request per click. Scrolling, hovering and clicking a row send nothing.
-- It does not save seller names or send anything to other players.
+- It does not save seller or buyer names, or send anything to other players.
+- It only reads your auction house mail, for the History tab. It never takes, opens, returns or deletes mail.
 
 [`RULES.md`](RULES.md) lists everything these addons may and may not do.
 
