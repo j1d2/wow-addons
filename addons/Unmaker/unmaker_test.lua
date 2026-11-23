@@ -260,6 +260,11 @@ local function Load(setup)
             return record and record.level or 20
         end,
         GetItemInfo = function(itemID)
+            -- Items not in the bags, once the game has loaded them (world.itemInfo).
+            local loaded = world.itemInfo and world.itemInfo[itemID]
+            if loaded then
+                return loaded.name, loaded.link, loaded.quality, loaded.level, 1, "", "", 1, "", loaded.icon
+            end
             for _, bag in pairs(world.bags) do
                 for _, record in pairs(bag) do
                     if record.itemID == itemID then
@@ -531,6 +536,67 @@ do
     Check("after a reload the kept item is still unchecked", ShownRows()[4].check.checked == false)
 end
 
+--- The Kept tab's rows that are shown, top first.
+-- @return list of row frames
+local function KeptRows()
+    local shown = {}
+    for _, f in ipairs(world.frames) do
+        if f.keptRow and f.shown then
+            shown[#shown + 1] = f
+        end
+    end
+    return shown
+end
+
+--- The first font string whose text starts with the given text.
+-- @param prefix the start of the text
+-- @return the font string, or nil
+local function TextStarting(prefix)
+    for _, f in ipairs(world.frames) do
+        if f.kind == "FontString" and type(f.text) == "string" and f.text:sub(1, #prefix) == prefix then
+            return f
+        end
+    end
+end
+
+do
+    -- The Kept tab: every kept item, in the bags or not, each with Forget.
+    Start({ bags = StandardBags(), db = { kept = { [77] = true, [88] = true } } })
+    world.itemInfo = { [77] = { name = "Old Cloak", link = "|Hitem:77|h[Old Cloak]|h", quality = 3, level = 25, icon = 9 } }
+    _G.SlashCmdList.UNMAKER("")
+    local green = ShownRows()[4]
+    green.check:SetChecked(false)
+    green.check:GetScript("OnClick")(green.check)
+    _G.UnmakerFrameTab4:GetScript("OnClick")(_G.UnmakerFrameTab4)
+    Check("tab 4 is Kept, and Settings moved to tab 5", world.tab == 4 and _G.UnmakerFrameTab5 ~= nil)
+    local rows = KeptRows()
+    Check("Kept lists every kept item, A to Z, one the game hasn't loaded last", #rows == 3
+        and rows[1].itemText.text:find("Green Vest", 1, true) and rows[2].itemText.text:find("Old Cloak", 1, true)
+        and rows[3].itemText.text == "Item 88")
+    Check("it says which are in the bags", rows[1].bagText.text == "In bags" and rows[2].bagText.text == "")
+    Check("and how many there are", TextStarting("Kept items") and TextStarting("Kept items").text == "Kept items (3)")
+    world.itemInfo[88] = { name = "Zed Helm", link = "|Hitem:88|h[Zed Helm]|h", quality = 2, level = 30, icon = 4 }
+    Fire("GET_ITEM_INFO_RECEIVED", 88, true)
+    Check("when the game loads an item, its name shows", KeptRows()[3].itemText.text:find("Zed Helm", 1, true))
+    rows[2]:GetScript("OnEnter")(rows[2])
+    Check("hovering a row shows the item's tooltip", world.tooltip == "|Hitem:77|h[Old Cloak]|h")
+    rows[2]:GetScript("OnLeave")(rows[2])
+
+    rows[1].forget:GetScript("OnClick")(rows[1].forget)
+    Check("Forget takes it off the list", _G.UnmakerDB.kept[11] == nil and #KeptRows() == 2
+        and TextStarting("Kept items").text == "Kept items (2)")
+    _G.UnmakerFrameTab1:GetScript("OnClick")(_G.UnmakerFrameTab1)
+    Check("and it is checked again on the Items tab", ShownRows()[4].check.checked == true
+        and _G.UnmakerNextButton.text == "Disenchant next (2)")
+    _G.UnmakerFrameTab4:GetScript("OnClick")(_G.UnmakerFrameTab4)
+    for _ = 1, 2 do
+        local row = KeptRows()[1]
+        row.forget:GetScript("OnClick")(row.forget)
+    end
+    Check("with nothing kept, the tab says how to keep something", #KeptRows() == 0
+        and TextStarting("Nothing kept") ~= nil and TextStarting("Nothing kept").shown)
+end
+
 do
     Start({ bags = StandardBags() })
     _G.SlashCmdList.UNMAKER("")
@@ -619,8 +685,8 @@ end
 do
     Start({ bags = StandardBags() })
     _G.SlashCmdList.UNMAKER("")
-    _G.UnmakerFrameTab4:GetScript("OnClick")(_G.UnmakerFrameTab4)
-    Check("the Settings tab shows its checkboxes", world.tab == 4)
+    _G.UnmakerFrameTab5:GetScript("OnClick")(_G.UnmakerFrameTab5)
+    Check("the Settings tab shows its checkboxes", world.tab == 5)
     local countLine
     for _, f in ipairs(world.frames) do
         if f.kind == "FontString" and f.text and f.text:find("of %d+ checked") then
