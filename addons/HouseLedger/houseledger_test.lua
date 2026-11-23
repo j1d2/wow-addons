@@ -3374,12 +3374,22 @@ do
     Fire("COMMODITY_PRICE_UPDATED", 13, 650)
     Check("a rise still waits for Confirm", BuyCalls("confirm") == 1 and panel.buyButton.text == "Confirm"
         and StatusLine():find("went up", 1, true))
+    Fire("COMMODITY_PRICE_UPDATED", 12, 620)
+    Check("a later answer at the shown price still waits: only the first answer can buy by itself",
+        BuyCalls("confirm") == 1 and panel.buyButton.text == "Confirm")
     Press(panel.buyButton)
     Check("and Confirm then buys", BuyCalls("confirm") == 2)
     Fire("COMMODITY_PURCHASE_SUCCEEDED")
     Press(panel.buyButton)
+    Fire("COMMODITY_PRICE_UPDATED", 3, 600)
+    Check("a quote whose unit price doesn't fit our amount isn't ours to buy: it waits", BuyCalls("confirm") == 2
+        and panel.buyButton.text == "Confirm")
+    Press(panel.buyButton)
+    Check("Confirm buys it", BuyCalls("confirm") == 3)
+    Fire("COMMODITY_PURCHASE_SUCCEEDED")
+    Press(panel.buyButton)
     Fire("COMMODITY_PRICE_UPDATED", 20, 1000)
-    Check("over 5% more is still refused", BuyCalls("confirm") == 2 and BuyCalls("cancel") >= 1
+    Check("over 5% more is still refused", BuyCalls("confirm") == 3 and BuyCalls("cancel") >= 1
         and StatusLine():find("Nothing was bought", 1, true))
 
     Press(panel.backButton)
@@ -3572,6 +3582,9 @@ do
     Check("a picked listing is marked, with its own Buy button", rows[2].selection.shown and not rows[1].selection.shown
         and panel.rowBuyButton.shown and panel.rowBuyButton.points[1][2] == rows[2] and panel.rowBuyButton.enabled)
     Press(panel.rowBuyButton)
+    Check("a click on it right after picking the row is a double click: ignored", BuyCalls("start") == 0)
+    world.now = world.now + 1
+    Press(panel.rowBuyButton)
     Check("the row's Buy does what the bar's does", BuyCalls("start") == 1 and world.buys[1].quantity == 240
         and panel.rowBuyButton.text == "Waiting..." and panel.rowBuyButton.enabled == false)
     Fire("COMMODITY_PRICE_UPDATED", 14, 3280)
@@ -3604,6 +3617,7 @@ do
     local rod = "|Hitem:6338|h[Silver Rod]|h"
     Check("picking it says what one buy costs", StatusLine():find(rod .. " for <money 1300>", 1, true)
         and not StatusLine():find("each", 1, true))
+    world.now = world.now + 1
     Press(panel.rowBuyButton)
     Check("Buy asks to confirm that price", StatusLine():find("Buy " .. rod .. " for <money 1300>?", 1, true))
     Press(panel.rowBuyButton)

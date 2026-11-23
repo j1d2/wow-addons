@@ -33,6 +33,8 @@ local NO_ANSWER_WAIT = 10
 local BACK_WIDTH, QTY_WIDTH, MAX_WIDTH, BUY_WIDTH = 60, 52, 44, 96
 -- The Buy button on the picked row, at its right end (over the Trend cell).
 local ROW_BUTTON_WIDTH, ROW_BUTTON_HEIGHT = 64, 16
+-- A click on the row Buy button this soon (seconds) after picking that row is a double click: ignored.
+local ROW_BUY_GUARD = 0.5
 
 -- The row picked on Buy or Market (a browse result or Market row), which Listings searches for.
 local picked
@@ -459,7 +461,7 @@ function Purchase.PickRow(row)
         return
     end
     DropQuote()
-    listing.picked = entry
+    listing.picked, listing.pickedAt = entry, U.Clock()
     if listing.commodity then
         ui.buyPanel.qtyBox:SetText(tostring(entry.upTo))
     else
@@ -578,8 +580,12 @@ function Purchase.OnPriceUpdated(unit, total)
             quantity, U.CopperToText(total)))
         return
     end
+    local firstAnswer = buy.step == "quoting"
     buy.step, buy.total, buy.unit = "quoted", total, unit
-    if verdict ~= "rose" and not HouseLedgerDB.settings.confirmStackBuys then
+    -- The price events carry no item ID, so a quote buys by itself only when it is the first answer
+    -- to our own Buy click and its unit price fits our amount; anything else waits for Confirm.
+    local fits = type(unit) == "number" and math.abs(unit * quantity - total) <= quantity
+    if firstAnswer and fits and verdict ~= "rose" and not HouseLedgerDB.settings.confirmStackBuys then
         -- Confirm is off in Settings and the price is what the listings showed: buy now.
         ConfirmQuote()
         ShowBuyButton(false)
@@ -692,7 +698,14 @@ function Purchase.Build()
     local rowBuy = CreateFrame("Button", nil, panel, "UIPanelButtonTemplate")
     rowBuy:SetSize(ROW_BUTTON_WIDTH, ROW_BUTTON_HEIGHT)
     rowBuy:SetText("Buy")
-    rowBuy:SetScript("OnClick", Purchase.OnBuyClick)
+    rowBuy:SetScript("OnClick", function()
+        -- It appears under the pointer on the row just clicked: a double click on the row picks it,
+        -- and must not buy too (with Confirm off in Settings, Buy buys).
+        if listing and listing.pickedAt and U.Clock() - listing.pickedAt < ROW_BUY_GUARD then
+            return
+        end
+        Purchase.OnBuyClick()
+    end)
     rowBuy:Hide()
     panel.rowBuyButton = rowBuy
 
