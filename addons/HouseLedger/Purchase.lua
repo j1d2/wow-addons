@@ -428,7 +428,8 @@ end
 -- On Forever, one buy of a listing gets one item for its whole buyout (tested in game: a Silver
 -- Rod listing of "quantity" 50 delivered 1 rod), so the buyout is the price, never divided by the
 -- quantity. The scans agree: an item's saved price matched the lowest listing buyout and the
--- browse price exactly. What the quantity counts is not known yet; it is shown as it comes.
+-- browse price exactly. The quantity is how many copies that listing holds: Blizzard's own window
+-- shows the same numbers beside the same buyouts, and its "Available" is their sum.
 -- @param itemKey the item key the results are for
 function Purchase.OnItemResults(itemKey)
     if listing == nil or listing.commodity or type(itemKey) ~= "table" or itemKey.itemID ~= listing.itemID then
