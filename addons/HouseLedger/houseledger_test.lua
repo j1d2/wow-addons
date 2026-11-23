@@ -247,7 +247,7 @@ local function Setup(opts)
             Cooking = 5, Alchemy = 6, FirstAid = 7, Enchanting = 8, Fishing = 9, Jewelcrafting = 10, Inscription = 11 },
         Profession = { FirstAid = 0, Blacksmithing = 1, Leatherworking = 2, Alchemy = 3, Herbalism = 4, Cooking = 5,
             Mining = 6, Tailoring = 7, Engineering = 8, Enchanting = 9, Fishing = 10, Skinning = 11 },
-        AuctionHouseSortOrder = { Price = 0, Name = 1 },
+        AuctionHouseSortOrder = { Price = 0, Name = 1, Bid = 3, Buyout = 4 },
         TooltipDataType = { Item = 0 },
         ItemCommodityStatus = { Unknown = 0, Item = 1, Commodity = 2 },
     }
@@ -3227,8 +3227,24 @@ do
     Fire("COMMODITY_PRICE_UPDATED", 12, 620)
     Press(panel.buyButton)
     Advance(11)
-    Check("no answer: unlocks and says to check the mailbox", panel.buyButton.text == "Buy"
+    Check("no answer: stays locked, so a late answer can't let a second buy through",
+        panel.buyButton.text == "Buying..." and panel.buyButton.enabled == false
         and BuyCalls("confirm") == confirms + 1 and StatusLine():find("mailbox", 1, true))
+    local starts = BuyCalls("start")
+    Press(panel.buyButton)
+    Check("and a click does nothing", BuyCalls("confirm") == confirms + 1 and BuyCalls("start") == starts)
+    Fire("COMMODITY_PURCHASE_SUCCEEDED")
+    Check("a late answer still shows", StatusLine():find("Bought 50", 1, true) and panel.buyButton.text == "Buy")
+    Press(panel.buyButton)
+    Fire("COMMODITY_PRICE_UPDATED", 12, 620)
+    Press(panel.buyButton)
+    Advance(11)
+    Press(panel.backButton)
+    Check("still locked after Back", panel.listingsButton.shown)
+    Press(panel.listingsButton)
+    LinenListings()
+    Type(panel.qtyBox, "50")
+    Check("fresh listings after no answer unlock Buy", panel.buyButton.text == "Buy" and panel.buyButton.enabled)
 
     local before = #world.buys
     Fire("COMMODITY_PRICE_UPDATED", 12, 620)

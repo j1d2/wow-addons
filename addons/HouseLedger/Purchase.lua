@@ -19,8 +19,15 @@ is checked against the buy started here (`buy`), and the quote is dropped
 local _, ns = ...
 local C, ui, state, Price, U, Buy, Purchase = ns.C, ns.ui, ns.state, ns.Price, ns.U, ns.Buy, ns.Purchase
 
-local LISTING_SORT = { { sortOrder = Enum.AuctionHouseSortOrder.Price, reverseSort = false } }
--- Seconds to wait for the house's answer to Buy or Confirm before unlocking.
+-- The sorts Blizzard's own buy window sends: stackables by price; gear by buyout, then bid, so the
+-- first page of a big list holds the cheapest buyouts.
+local COMMODITY_SORT = { { sortOrder = Enum.AuctionHouseSortOrder.Price, reverseSort = false } }
+local GEAR_SORT = {
+    { sortOrder = Enum.AuctionHouseSortOrder.Buyout, reverseSort = false },
+    { sortOrder = Enum.AuctionHouseSortOrder.Bid, reverseSort = false },
+}
+-- Seconds to wait for the house's answer. A price that doesn't come is given up; a buy already
+-- sent stays locked (a late answer may still buy), and only says it is still waiting.
 local NO_ANSWER_WAIT = 10
 -- The bar's widths, in the filter row's place.
 local BACK_WIDTH, QTY_WIDTH, MAX_WIDTH, BUY_WIDTH = 60, 52, 44, 96
@@ -32,8 +39,9 @@ local picked
 -- ownCount, complete, offset, waiting (no answer yet), chosen (a gear row's auctionID) }.
 local listing
 -- A buy under way, or nil: { step, commodity, itemID, quantity, estimate, total, auctionID,
--- buyout, name, sentAt }. step is "quoting" (asked the house's price), "quoted" (Confirm buys),
--- "armed" (gear: Confirm buys) or "buying" (sent; locked until the answer).
+-- buyout, name, sentAt, late }. step is "quoting" (asked the house's price), "quoted" (Confirm
+-- buys), "armed" (gear: Confirm buys) or "buying" (sent; locked until the answer, or until the
+-- player opens the listings again after NO_ANSWER_WAIT, when late is true).
 local buy
 
 --- Sets the Buy panel's status line.
@@ -292,6 +300,10 @@ function Purchase.ShowListings()
     if picked == nil then
         return
     end
+    if buy and buy.step == "buying" and buy.late then
+        -- The house never answered that buy. Fresh listings show what it did; unlock.
+        buy = nil
+    end
     local itemKey = picked.itemKey
     local name = U.ItemLook(itemKey, picked)
     if not U.HouseIsOpen() then
@@ -327,10 +339,11 @@ function Purchase.ShowListings()
     ShowListingsButton()
     ListingHeader()
     -- One click, one search. Its answer comes as a results event; nothing follows up.
+    local sorts = commodity and COMMODITY_SORT or GEAR_SORT
     if sellSearch then
-        C_AuctionHouse.SendSellSearchQuery(readKey, LISTING_SORT, false)
+        C_AuctionHouse.SendSellSearchQuery(readKey, sorts, false)
     else
-        C_AuctionHouse.SendSearchQuery(readKey, LISTING_SORT, false)
+        C_AuctionHouse.SendSearchQuery(readKey, sorts, false)
     end
     Purchase.Render()
     RefreshBuy()
@@ -575,7 +588,9 @@ function Purchase.OnHouseError()
     EndBuy("The house refused the purchase. Nothing was bought.")
 end
 
---- Once a second: a quote that ran out is dropped, and a buy with no answer unlocks.
+--- Once a second: a quote that ran out is dropped, and a price that never came is given up. A
+-- buy already sent stays locked, so a late answer can't let a second one through; the status
+-- line says what to do.
 function Purchase.Tick()
     if buy == nil then
         return
@@ -583,11 +598,13 @@ function Purchase.Tick()
     if buy.step == "quoted" and C_AuctionHouse.GetQuoteDurationRemaining() <= 0 then
         DropQuote()
         EndBuy("The price quote ran out. Nothing was bought. Click Buy to ask again.")
-    elseif (buy.step == "quoting" or buy.step == "buying") and U.Clock() - buy.sentAt >= NO_ANSWER_WAIT then
-        local sent = buy.step == "buying"
+    elseif buy.step == "quoting" and U.Clock() - buy.sentAt >= NO_ANSWER_WAIT then
         DropQuote()
-        EndBuy(sent and "No answer from the house yet. Check your mailbox before buying again."
-            or "No price from the house. Nothing was bought. Click Buy to ask again.")
+        EndBuy("No price from the house. Nothing was bought. Click Buy to ask again.")
+    elseif buy.step == "buying" and not buy.late and U.Clock() - buy.sentAt >= NO_ANSWER_WAIT then
+        buy.late = true
+        SetStatus("No answer from the house yet. Check your mailbox, then click Back and Listings to see "
+            .. "what's left before buying again.")
     end
 end
 
