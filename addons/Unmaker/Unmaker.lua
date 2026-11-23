@@ -250,39 +250,35 @@ end
 
 --- A material's icon: from its link (the player's own results) or its item ID (the tables).
 -- @param result one result of a prediction
--- @return the icon
-local function MaterialIcon(result)
+-- @return the icon, or nil when the material has neither (an old history entry)
+local function KnownIcon(result)
     local item = result.id or result.link
     if item == nil then
-        return UNKNOWN_ICON
+        return nil
     end
     local _, _, _, _, icon = C_Item.GetItemInfoInstant(item)
-    return icon or UNKNOWN_ICON
+    return icon
 end
 
---- A material's name in the game's language, once the game has the item; else the table's.
+--- A material's icon for the Gives column, with the question mark when it has none.
 -- @param result one result of a prediction
--- @return the name
-local function MaterialName(result)
-    local name = result.id and C_Item.GetItemInfo(result.id)
-    return name or result.name
+-- @return the icon
+local function MaterialIcon(result)
+    return KnownIcon(result) or UNKNOWN_ICON
 end
 
---- Adds a prediction's lines to a tooltip: a gold title, each material with its chance, and a
--- grey line saying where the numbers come from.
+--- Adds a prediction's two lines to a tooltip: a gold title with a grey note on where the
+-- numbers come from, then the materials as icons with their chances.
 -- @param tooltip the tooltip
 -- @param prediction from Prediction, or nil
 -- @return true when lines were added
 local function AddPredictionLines(tooltip, prediction)
-    local lines = D.TooltipLines(prediction, MaterialName)
+    local lines = D.TooltipLines(prediction, KnownIcon)
     if lines == nil then
         return false
     end
-    tooltip:AddLine(lines[1].left, 1, 0.82, 0)
-    for index = 2, #lines - 1 do
-        tooltip:AddDoubleLine(lines[index].left, lines[index].right, 1, 1, 1, 1, 1, 1)
-    end
-    tooltip:AddLine(lines[#lines].left, 0.6, 0.6, 0.6)
+    tooltip:AddDoubleLine(lines[1].left, lines[1].right, 1, 0.82, 0, 0.6, 0.6, 0.6)
+    tooltip:AddLine(lines[2].left, 1, 1, 1)
     return true
 end
 

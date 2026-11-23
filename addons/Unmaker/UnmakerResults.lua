@@ -298,44 +298,52 @@ function D.PercentText(pct)
     return math.floor(pct + 0.5) .. "%"
 end
 
---- How many of a material, as text: "", "3" or "1-2" after the name.
+--- How many of a material, as text: "" for one, else " (3)" or " (1-2)" after its chance.
 -- @param result one result
 -- @return the text, with a leading space, or ""
 local function CountText(result)
     if result.min == 1 and result.max == 1 then
         return ""
     elseif result.min == result.max then
-        return " " .. result.min
+        return " (" .. result.min .. ")"
     end
-    return " " .. result.min .. "-" .. result.max
+    return " (" .. result.min .. "-" .. result.max .. ")"
 end
 
---- The tooltip lines for a prediction.
+--- Where a prediction's numbers come from, short enough for the right side of a tooltip line.
+-- @param prediction from D.Predict
+-- @return text like "Guide (yours: 1 of 5)", "Forever rule" or "From 12 of yours"
+local function SourceText(prediction)
+    if prediction.source == "yours" then
+        return "From " .. prediction.count .. " of yours"
+    end
+    local source = prediction.source == "forever" and "Forever rule" or "Guide"
+    if (prediction.yours or 0) > 0 then
+        source = source .. " (yours: " .. prediction.yours .. " of " .. D.YOURS_MIN .. ")"
+    end
+    return source
+end
+
+--- The tooltip lines for a prediction, kept to two: a title with where the numbers come from,
+-- and one line of materials, each as its icon, its chance and how many when more than one.
 -- @param prediction from D.Predict, or nil
--- @param nameOf optional function(result) returning the game's own name for a material
--- @return list of { left, right } (the first is the title, the last where it comes from), or nil
-function D.TooltipLines(prediction, nameOf)
+-- @param iconOf optional function(result) returning a material's icon; without it (or with no
+--   icon) the material's name shows instead
+-- @return { { left = title, right = source }, { left = materials } }, or nil
+function D.TooltipLines(prediction, iconOf)
     if prediction == nil then
         return nil
     end
-    local lines = { { left = "Disenchants into:" } }
+    local parts = {}
     for _, result in ipairs(prediction.results) do
-        local name = nameOf and nameOf(result) or result.name
-        lines[#lines + 1] = { left = name .. CountText(result), right = D.PercentText(result.pct) }
+        local icon = iconOf and iconOf(result)
+        local label = icon and ("|T" .. icon .. ":0|t") or result.name
+        parts[#parts + 1] = label .. " " .. D.PercentText(result.pct) .. CountText(result)
     end
-    local source
-    if prediction.source == "yours" then
-        source = "From " .. prediction.count .. " of your disenchants"
-    elseif prediction.source == "forever" then
-        source = "Forever's own results (few seen yet)"
-    else
-        source = "Guide: warcraft.wiki.gg"
-    end
-    if (prediction.yours or 0) > 0 then
-        source = source .. "; " .. prediction.yours .. " of yours so far"
-    end
-    lines[#lines + 1] = { left = source }
-    return lines
+    return {
+        { left = "Disenchants into", right = SourceText(prediction) },
+        { left = table.concat(parts, "   ") },
+    }
 end
 
 return D

@@ -6,7 +6,7 @@ All notable changes to Unmaker. The format follows [Keep a Changelog](https://ke
 
 ### Added
 
-- **What it gives.** A **Gives** column on the Items tab shows each item's likely materials, with an icon and its chance, and item tooltips everywhere (bags, links, the auction house) say what an item disenchants into. Your own results take over once you've disenchanted 5 of that kind of item; until then the numbers come from warcraft.wiki.gg's tables, with Forever's own differences for blues below item level 20 and green weapons from 21 to 30. Turn the tooltip lines off in Settings. The window is a little wider to fit the column.
+- **What it gives.** A **Gives** column on the Items tab shows each item's likely materials, with an icon and its chance, and item tooltips everywhere (bags, links, the auction house) say what an item disenchants into, in two short lines: icons with their chances. Your own results take over once you've disenchanted 5 of that kind of item; until then the numbers come from warcraft.wiki.gg's tables, with Forever's own differences for blues below item level 20 and green weapons from 21 to 30. Turn the tooltip lines off in Settings. The window is a little wider to fit the column.
 - `/um`, a short way to type `/unmaker`.
 - A **Kept** tab: every item you've unchecked so Unmaker keeps it, whether it's in your bags or not. **Forget** puts one back, checked again unless a setting keeps it. Items you kept before this update show once the game has loaded them.
 - **History length** on the Settings tab: keep 500, 1,000, 5,000 or 10,000 disenchants in the History tab. A shorter one drops the oldest right away. The Stats totals count every disenchant either way.

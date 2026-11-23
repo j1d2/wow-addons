@@ -161,13 +161,21 @@ end
 do
     -- Text for the tooltip and the Items column.
     local p = D.Predict({ quality = 2, classID = ARMOR, level = 18 })
-    local lines = D.TooltipLines(p)
-    Check("tooltip: a title, one line per material, and where it comes from", lines[1].left == "Disenchants into:"
-        and lines[2].left == "Strange Dust 2-3" and lines[2].right == "75%"
-        and lines[4].left == "Small Glimmering Shard" and lines[4].right == "5%"
-        and lines[5].left:find("warcraft.wiki.gg", 1, true))
+    local icons = { [10940] = 132857, [10939] = 132858 }
+    local lines = D.TooltipLines(p, function(result) return icons[result.id] end)
+    Check("tooltip: two lines, a title with its source and the materials", #lines == 2
+        and lines[1].left == "Disenchants into" and lines[1].right == "Guide")
+    Check("tooltip: icons with chance and count, a name where there's no icon, no count for one",
+        lines[2].left == "|T132857:0|t 75% (2-3)   |T132858:0|t 20% (1-2)   Small Glimmering Shard 5%")
     lines = D.TooltipLines(D.Predict({ quality = 3, classID = WEAPON, level = 18 }))
-    Check("tooltip: Forever's own rule says so", lines[#lines].left:find("Forever", 1, true))
+    Check("tooltip: Forever's own rule says so", lines[1].right == "Forever rule")
+    Check("tooltip: without icons, names", lines[2].left:find("Greater Magic Essence 75% (2-3)", 1, true) == 1)
+    Check("tooltip: a fixed count shows once", D.TooltipLines({ source = "yours", count = 7,
+        results = { { name = "Dust", pct = 100, min = 3, max = 3 } } })[2].left == "Dust 100% (3)")
+    Check("tooltip: your own results say how many", D.TooltipLines({ source = "yours", count = 7,
+        results = {} })[1].right == "From 7 of yours")
+    Check("tooltip: the guide says how many of yours so far", D.TooltipLines({ source = "guide", yours = 2,
+        results = {} })[1].right == "Guide (yours: 2 of 5)")
     Check("tooltip: none without a prediction", D.TooltipLines(nil) == nil)
     Check("percent text: whole, or one decimal under 1", D.PercentText(80) == "80%" and D.PercentText(0.5) == "0.5%"
         and D.PercentText(99.5) == "99.5%" and D.PercentText(33.333) == "33%")

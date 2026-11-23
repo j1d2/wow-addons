@@ -23,6 +23,8 @@ end
 -- The fake game ------------------------------------------------------------------------------
 
 local world -- reset by Load() for each scenario
+-- A material the fake game knows an icon for (the tables give its item ID).
+local STRANGE_DUST, DUST_ICON = 10940, 132857
 
 local FrameMethods = {}
 FrameMethods.__index = FrameMethods
@@ -249,6 +251,9 @@ local function Load(setup)
             assert(itemID ~= nil, "Usage: GetItemInfoInstant(itemInfo)")
             if type(itemID) == "string" then
                 itemID = tonumber(itemID:match("item:(%d+)"))
+            end
+            if itemID == STRANGE_DUST then
+                return itemID, "", "", "", DUST_ICON, 7, 0
             end
             for _, bag in pairs(world.bags) do
                 for _, record in pairs(bag) do
@@ -1340,13 +1345,15 @@ do
 
     Check("the tooltip hook is added once loaded", type(world.tooltipHook) == "function")
     world.tooltipHook(_G.GameTooltip, { id = 11, hyperlink = "|Hitem:11|h[Green Vest]|h" })
-    Check("an item tooltip says what it disenchants into", TooltipHas("Disenchants into:")
-        and TooltipHas("Strange Dust 1-2 | 80%") and TooltipHas("Guide: warcraft.wiki.gg"))
+    Check("an item tooltip: a title with where the numbers come from, then one line of icons",
+        TooltipHas("Disenchants into | Guide") and #world.tooltipLines == 2
+        and TooltipHas("|T" .. DUST_ICON .. ":0|t 80% (1-2)   "))
+    Check("a material the game has no icon for shows its name", TooltipHas("|T" .. DUST_ICON .. ":0|t 80% (1-2)   Lesser Magic Essence 20% (1-2)"))
     world.tooltipLines = {}
     world.tooltipHook(_G.GameTooltip, { id = 15 })
     Check("not for an item that can't be disenchanted", #world.tooltipLines == 0)
     world.tooltipHook(_G.GameTooltip, { hyperlink = "|Hitem:11|h[Green Vest]|h" })
-    Check("an item known by its link only", TooltipHas("Disenchants into:"))
+    Check("an item known by its link only", TooltipHas("Disenchants into"))
     world.tooltipLines = {}
     world.tooltipHook(_G.GameTooltip, {})
     world.tooltipHook(nil, { id = 11 })
@@ -1358,7 +1365,7 @@ do
     world.tooltipHook(_G.GameTooltip, { id = 11 })
     Check("with the setting off, item tooltips don't show it", #world.tooltipLines == 0)
     vest:GetScript("OnEnter")(vest)
-    Check("but the Items tab still does", TooltipHas("Disenchants into:"))
+    Check("but the Items tab still does", TooltipHas("Disenchants into"))
 end
 
 do
@@ -1375,8 +1382,8 @@ do
     bags[0][1].level = 13
     Start({ bags = bags, db = { history = history } })
     world.tooltipHook(_G.GameTooltip, { id = 11 })
-    Check("5 of yours: the tooltip shows your results", TooltipHas("Strange Dust 2 | 100%")
-        and TooltipHas("From 5 of your disenchants"))
+    Check("5 of yours: the tooltip shows your results", TooltipHas("Disenchants into | From 5 of yours")
+        and TooltipHas("|T" .. DUST_ICON .. ":0|t 100% (2)   Odd Dust 20%"))
     _G.SlashCmdList.UNMAKER("")
     local vest
     for _, row in ipairs(ShownRows()) do
@@ -1400,7 +1407,7 @@ do
         end
     end
     Check("no tooltip hook: the row's tooltip adds the results itself", world.tooltipHook == nil
-        and TooltipHas("Disenchants into:"))
+        and TooltipHas("Disenchants into"))
 end
 
 if failed > 0 then
