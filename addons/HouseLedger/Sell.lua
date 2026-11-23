@@ -138,12 +138,11 @@ function Sell.OnItemResults(itemKey)
     local listings = {}
     for index = 1, C_AuctionHouse.GetNumItemSearchResults(searchKey) or 0 do
         local result = C_AuctionHouse.GetItemSearchResultInfo(searchKey, index)
-        -- A listing with no buyout is bid-only and is left out.
+        -- A listing with no buyout is bid-only and is left out. On Forever an item listing can
+        -- hold several copies; its buyout is the price of one (one buy gets one copy), so it is
+        -- never divided by the quantity.
         if result and result.buyoutAmount and result.quantity and result.quantity > 0 then
-            listings[#listings + 1] = {
-                Price.UnitCopper(result.buyoutAmount, result.quantity),
-                result.quantity,
-            }
+            listings[#listings + 1] = { result.buyoutAmount, result.quantity }
         end
     end
     ShowSellResults(Price.LowestListing(listings),

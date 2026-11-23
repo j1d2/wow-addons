@@ -1646,12 +1646,15 @@ do
         { itemKey = { itemID = 7005 }, buyoutAmount = 500, quantity = 1, owners = { "SellerBob" } },
         { itemKey = { itemID = 7005 }, buyoutAmount = nil, bidAmount = 50, quantity = 1, owners = {} },
         { itemKey = { itemID = 7005 }, buyoutAmount = 900, quantity = 3, owners = {} },
+        -- 50 copies at 260 each: the buyout is the price of one, never divided (a Silver Rod in game).
+        { itemKey = { itemID = 7005 }, buyoutAmount = 260, quantity = 50, owners = {} },
     }
     Fire("ITEM_SEARCH_RESULTS_UPDATED", { itemID = 7005, itemLevel = 0, itemSuffix = 0 })
     Check("results are read with the key that was sent",
         world.readKey.itemLevel == 0 and world.readKey.itemSuffix == 0)
-    Check("Sell works out a unit price from a stack buyout", SellValue("low") == "<money 300>")
-    Check("bid-only listings are left out", SellValue("total") == "4 in 2 listings")
+    Check("Sell's lowest is the cheapest buyout, the price of one copy", SellValue("low") == "<money 260>"
+        and SellValue("atLow") == "50")
+    Check("bid-only listings are left out", SellValue("total") == "54 in 3 listings")
     Check("no saved prices: the windows are dashes",
         SellValue("w7") == "-" and MainFrame().sellPanel.labels.w7.text == "7 days")
     Check("no saved prices: Sell says so", SellValue("based") == "No saved prices yet")
