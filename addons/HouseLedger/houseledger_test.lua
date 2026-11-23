@@ -233,12 +233,44 @@ local function Setup(opts)
 
     _G.Enum = {
         AuctionHouseFilter = {
-            PoorQuality = 6, CommonQuality = 7, UncommonQuality = 8,
+            UsableOnly = 2, PoorQuality = 6, CommonQuality = 7, UncommonQuality = 8,
             RareQuality = 9, EpicQuality = 10,
         },
+        ItemClass = { Weapon = 2, Armor = 4, Recipe = 9 },
+        ItemArmorSubclass = { Generic = 0, Cloth = 1, Leather = 2, Mail = 3, Plate = 4, Shield = 6, Libram = 7,
+            Idol = 8, Totem = 9 },
+        InventoryType = { IndexCloakType = 16 },
+        ItemRecipeSubclass = { Book = 0, Leatherworking = 1, Tailoring = 2, Engineering = 3, Blacksmithing = 4,
+            Cooking = 5, Alchemy = 6, FirstAid = 7, Enchanting = 8, Fishing = 9, Jewelcrafting = 10, Inscription = 11 },
+        Profession = { FirstAid = 0, Blacksmithing = 1, Leatherworking = 2, Alchemy = 3, Herbalism = 4, Cooking = 5,
+            Mining = 6, Tailoring = 7, Engineering = 8, Enchanting = 9, Fishing = 10, Skinning = 11 },
         AuctionHouseSortOrder = { Price = 0, Name = 1 },
         TooltipDataType = { Item = 0 },
         ItemCommodityStatus = { Unknown = 0, Item = 1, Commodity = 2 },
+    }
+
+    -- The character's professions, as Forever's GetProfessions gives them: prof1, prof2, first aid,
+    -- fishing, cooking (each a spellbook index or nil). world.professions lists
+    -- { skillLine, profession } per index; profession nil makes the code fall back on the skill line.
+    -- The character: world.class (a class file name like "PALADIN") and world.level.
+    _G.UnitClass = function() return "Class", world.class, 0 end
+    _G.UnitLevel = function() return world.level or 60 end
+    _G.GetProfessions = function()
+        local p = world.professions or {}
+        return p[1] and 1, p[2] and 2, p[3] and 3, p[4] and 4, p[5] and 5
+    end
+    _G.GetProfessionInfo = function(index)
+        local entry = (world.professions or {})[index]
+        return "Profession " .. index, 0, 1, 300, 0, 0, entry.skillLine
+    end
+    _G.C_TradeSkillUI = {
+        GetProfessionInfoBySkillLineID = function(skillLine)
+            for _, entry in pairs(world.professions or {}) do
+                if entry.skillLine == skillLine then
+                    return { profession = entry.profession, professionID = skillLine }
+                end
+            end
+        end,
     }
 
     _G.UIParent = NewObject("Frame", "UIParent")
@@ -1980,10 +2012,8 @@ do
         panel.listMessage.text == "Type at least 2 letters, or pick a quality."
         and panel.notice.shown and panel.notice.text == "Type at least 2 letters, or pick a quality.")
     Pick(panel.qualityDropdown, "Rare & up")
-    Check("picking a quality sends nothing", #world.browseQueries == 0 and Picked(panel.qualityDropdown) == "Rare & up")
-    Click("Search")
     local query = world.browseQueries[1]
-    Check("with a quality, an empty name searches once, asking for those qualities only",
+    Check("picking a quality searches at once; with no name, once, asking for those qualities only",
         #world.browseQueries == 1 and query.searchString == ""
         and table.concat(query.filters, ",") == "9,10")
 
@@ -2013,17 +2043,18 @@ do
         and ButtonNamed("Search").highlightLocked == true
         and StatusLine():find("Click Search again to include lower qualities.", 1, true) ~= nil)
     Pick(panel.qualityDropdown, "Epic & up")
-    Check("a tighter quality just filters the page", StatusLine():find("Search again", 1, true) == nil
-        and not panel.notice.shown and ButtonNamed("Search").highlightLocked == false)
+    Check("picking another quality searches again, for that quality", #world.browseQueries == 2
+        and table.concat(world.browseQueries[2].filters, ",") == "10")
     Pick(panel.qualityDropdown, "Any quality")
+    Check("Any quality with no name has nothing to search, so the pick only filters", #world.browseQueries == 2)
     Click("Search")
     Check("an empty name with only an item level sends nothing: the house never sees item level",
-        #world.browseQueries == 1 and StatusLine() == "Type at least 2 letters, or pick a quality."
+        #world.browseQueries == 2 and StatusLine() == "Type at least 2 letters, or pick a quality."
         and panel.notice.text == "Type at least 2 letters, or pick a quality.")
     SearchBox():SetText("linen")
     Click("Search")
-    Check("a name with a level filter asks for every quality", #world.browseQueries == 2
-        and table.concat(world.browseQueries[2].filters, ",") == "6,7,8,9,10")
+    Check("a name with a level filter asks for every quality", #world.browseQueries == 3
+        and table.concat(world.browseQueries[3].filters, ",") == "6,7,8,9,10")
     Fire("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
     Check("after the new search the lower-quality note goes away", StatusLine():find("Search again", 1, true) == nil)
 
@@ -2148,6 +2179,101 @@ do
     Check("Buy hides the Settings panel", frame.buyPanel.shown and not panel.shown)
 end
 
+
+-- ---------------------------------------------------------------------
+-- Show: everything, gear this character can use, or recipes for its professions
+-- ---------------------------------------------------------------------
+
+do
+    Setup()
+    Load()
+    OpenHouse()
+    local panel = MainFrame().buyPanel
+    local show = panel.showDropdown
+    Check("the Show dropdown starts at everything, with four choices", Picked(show) == "Everything"
+        and #MenuChoices(show) == 4 and show.shown)
+    world.class, world.level = "PALADIN", 45
+    Pick(show, "Gear for me")
+    Check("picking a choice searches at once, one search", #world.browseQueries == 1)
+    local query = world.browseQueries[1]
+    --- The query's class filters as text, like "2 4/4 4/0 4/1/16 4/6 4/7".
+    local function Classes(sent)
+        local parts = {}
+        for _, class in ipairs(sent.itemClassFilters or {}) do
+            parts[#parts + 1] = class.classID .. (class.subClassID and ("/" .. class.subClassID) or "")
+                .. (class.inventoryType and ("/" .. class.inventoryType) or "")
+        end
+        return table.concat(parts, " ")
+    end
+    Check("Gear for me, a level 45 paladin: weapons, plate, rings and such, cloaks, shields and librams",
+        #world.browseQueries == 1 and query.searchString == "" and Classes(query) == "2 4/4 4/0 4/1/16 4/6 4/7"
+        and query.filters[#query.filters] == Enum.AuctionHouseFilter.UsableOnly)
+    Check("the status says what it searched for", StatusLine() == "Searching weapons and plate armor for this character...")
+    world.level = 30
+    Click("Search")
+    Check("a paladin under 40 gets mail", Classes(world.browseQueries[2]) == "2 4/3 4/0 4/1/16 4/6 4/7")
+    world.class = "MAGE"
+    Click("Search")
+    Check("a mage gets cloth, which already has the cloaks", Classes(world.browseQueries[3]) == "2 4/1 4/0")
+    world.class = "DEMONHUNTER"
+    Click("Search")
+    Check("a class it doesn't know gets everything it can use", Classes(world.browseQueries[4]) == "2 4"
+        and StatusLine() == "Searching gear for this character...")
+    world.class = "PALADIN"
+    Pick(show, "Usable gear")
+    Check("Usable gear: every weapon and armor type the house says it can use",
+        Classes(world.browseQueries[5]) == "2 4"
+        and world.browseQueries[5].filters[#world.browseQueries[5].filters] == Enum.AuctionHouseFilter.UsableOnly)
+    SearchBox():SetText("sword")
+    Pick(show, "Gear for me")
+    Check("a name narrows it", world.browseQueries[6].searchString == "sword"
+        and world.browseQueries[6].itemClassFilters ~= nil)
+
+    world.browseResults = BrowseResults(1, 3)
+    Fire("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
+    Pick(show, "Everything")
+    Check("changing Show with results up searches again, now for everything", #world.browseQueries == 7
+        and world.browseQueries[7].searchString == "sword" and world.browseQueries[7].itemClassFilters == nil)
+    world.professions = { { skillLine = 197, profession = Enum.Profession.Tailoring },
+        { skillLine = 186, profession = Enum.Profession.Mining }, nil, nil,
+        { skillLine = 185, profession = Enum.Profession.Cooking } }
+    SearchBox():SetText("")
+    Pick(show, "My recipes")
+    query = world.browseQueries[8]
+    local subclasses = {}
+    for _, class in ipairs(query.itemClassFilters) do
+        subclasses[#subclasses + 1] = class.classID == Enum.ItemClass.Recipe and class.subClassID
+    end
+    Check("My recipes searches recipes of this character's crafting professions",
+        #subclasses == 2 and subclasses[1] == Enum.ItemRecipeSubclass.Tailoring
+        and subclasses[2] == Enum.ItemRecipeSubclass.Cooking and query.searchString == "")
+    Check("recipes aren't limited to usable ones", query.filters[#query.filters] ~= Enum.AuctionHouseFilter.UsableOnly)
+
+    world.professions = { { skillLine = 165 }, { skillLine = 129 } }
+    Click("Search")
+    query = world.browseQueries[9]
+    Check("without the game's profession name, the skill line still finds the recipes",
+        #query.itemClassFilters == 2 and query.itemClassFilters[1].subClassID == Enum.ItemRecipeSubclass.Leatherworking
+        and query.itemClassFilters[2].subClassID == Enum.ItemRecipeSubclass.FirstAid)
+
+    world.professions = { { skillLine = 182, profession = Enum.Profession.Herbalism } }
+    Click("Search")
+    Check("a character with no crafting profession is told so, and nothing is sent", #world.browseQueries == 9
+        and StatusLine() == "This character has no profession with recipes.")
+
+    Click("Market")
+    Check("Market hides the Show dropdown", not show.shown)
+    Click("Buy")
+    Check("Buy shows it again", show.shown)
+    Click("Clear")
+    Check("Clear goes back to everything", Picked(show) == "Everything")
+    Click("Search")
+    Check("then an empty name needs letters or a quality again", #world.browseQueries == 9)
+    Click("Market")
+    Pick(panel.qualityDropdown, "Rare & up")
+    Check("on Market a quality pick only filters saved prices: nothing is sent", #world.browseQueries == 9)
+    Pick(panel.qualityDropdown, "Any quality")
+end
 
 -- ---------------------------------------------------------------------
 -- House overview: the Buy details block while no row is picked

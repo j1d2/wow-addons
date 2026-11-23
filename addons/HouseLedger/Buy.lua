@@ -26,6 +26,15 @@ local PRICE_SORT = {
     { sortOrder = Enum.AuctionHouseSortOrder.Name, reverseSort = false },
 }
 
+-- The Show dropdown's choices: what a Search asks the house for besides the name and quality.
+-- Labels stay short enough for the 130 px dropdown (about 12 letters), so none is cut to "...".
+local SHOW_CHOICES = {
+    { key = "all", label = "Everything" },
+    { key = "gear", label = "Gear for me", searching = "Searching gear for this character..." },
+    { key = "anygear", label = "Usable gear", searching = "Searching gear for this character..." },
+    { key = "recipes", label = "My recipes", searching = "Searching recipes for this character's professions..." },
+}
+
 -- The search's page can't show everything: said by the filters and in the status line.
 local LOWER_QUALITY_NOTE = "Click Search again to include lower qualities."
 local FIRST_RESULTS_NOTE = "These are the first %d results. Add a name or filter to see others."
@@ -42,6 +51,8 @@ local buySort = {}
 -- The lowest quality the last search asked the house for (0 is every quality). A looser quality
 -- filter can't show what that search left out, so the status line says to search again.
 local searchedQuality = 0
+-- The Show choice's key; "all" until another is picked, and again after Clear.
+local showKey = "all"
 -- The Market tab's rows (shaped like browse results), how far they're scrolled, and the
 -- PriceLedger.Market lists, kept until the house has a newer scan.
 local marketList = {}
@@ -477,6 +488,11 @@ function Buy.SetMarketMode(market)
         ui.buyPanel.filterNameBox:Hide()
         quality:SetPoint("LEFT", ui.frame, "TOPLEFT", 14, FILTER_ROW_Y)
     end
+    -- The note sits after the last control that shows: Show on Buy, the item level on Market.
+    local notice = ui.buyPanel.notice
+    notice:ClearAllPoints()
+    notice:SetPoint("LEFT", market and ui.buyPanel.maxLevelBox or ui.buyPanel.showDropdown, "RIGHT", 12, 0)
+    notice:SetPoint("RIGHT", ui.frame, "RIGHT", -14, 0)
     Buy.ClearDetails()
     RefreshHeader()
     if market then
@@ -540,9 +556,11 @@ function Buy.ClearSearch()
     state.filter.minQuality, state.filter.minLevel, state.filter.maxLevel = nil, nil, nil
     ui.buyPanel.minLevelBox:SetText("")
     ui.buyPanel.maxLevelBox:SetText("")
-    local quality = ui.buyPanel.qualityDropdown
-    if type(quality.GenerateMenu) == "function" then
-        quality:GenerateMenu() -- shows "Any quality" on the button again
+    showKey = "all"
+    for _, dropdown in ipairs({ ui.buyPanel.qualityDropdown, ui.buyPanel.showDropdown }) do
+        if type(dropdown.GenerateMenu) == "function" then
+            dropdown:GenerateMenu() -- shows "Any quality" and "Everything" on the buttons again
+        end
     end
     searchedQuality = 0
     for _, row in ipairs(ui.rows) do
@@ -572,9 +590,32 @@ function Buy.SendSearch()
             SetListMessage(why)
         end
     end
-    if strlenutf8(text) < C.MIN_SEARCH_LENGTH and not (text == "" and state.filter.minQuality) then
+    if strlenutf8(text) < C.MIN_SEARCH_LENGTH and not (text == "" and (state.filter.minQuality or showKey ~= "all")) then
         Refuse("Type at least 2 letters, or pick a quality.")
         return
+    end
+    -- Show: gear this character wears best or can use at all (the house's own usable-only filter
+    -- does the class and level check), or recipes for its professions.
+    local classes, usable, searching
+    if showKey == "gear" then
+        local best
+        classes, best = U.BestGearFilters()
+        if best then
+            searching = "Searching weapons and " .. best:lower() .. " armor for this character..."
+        end
+    end
+    if showKey == "gear" or showKey == "anygear" then
+        classes = classes or { { classID = Enum.ItemClass.Weapon }, { classID = Enum.ItemClass.Armor } }
+        usable = true
+    elseif showKey == "recipes" then
+        classes = {}
+        for _, subclass in ipairs(U.RecipeSubclasses()) do
+            classes[#classes + 1] = { classID = Enum.ItemClass.Recipe, subClassID = subclass }
+        end
+        if #classes == 0 then
+            Refuse("This character has no profession with recipes.")
+            return
+        end
     end
     if not AuctionHouseFrame or not AuctionHouseFrame:IsShown() then
         Refuse("Open the auction house first.")
@@ -592,13 +633,23 @@ function Buy.SendSearch()
     for quality = state.filter.minQuality or 0, #QUALITY_FILTERS - 1 do
         qualities[#qualities + 1] = QUALITY_FILTERS[quality + 1]
     end
+    if usable then
+        qualities[#qualities + 1] = Enum.AuctionHouseFilter.UsableOnly
+    end
     C_AuctionHouse.SendBrowseQuery({
         searchString = text,
         sorts = PRICE_SORT,
         filters = qualities,
+        itemClassFilters = classes,
     })
     searchedQuality = state.filter.minQuality or 0
-    SetStatus(text ~= "" and ("Searching for " .. text .. "...") or "Searching...")
+    for _, choice in ipairs(SHOW_CHOICES) do
+        if choice.key == showKey and searching == nil then
+            searching = choice.searching
+        end
+    end
+    searching = searching or "Searching..."
+    SetStatus(text ~= "" and ("Searching for " .. text .. "...") or searching)
 end
 
 --- Anchors one line of cells, right to left.
@@ -719,8 +770,22 @@ function Buy.LayoutColumns(width)
     end
 end
 
---- Makes the filter row: Market's name filter, the quality dropdown and the item level range.
--- Every change filters what is already shown; none sends anything.
+--- After a pick in a Buy dropdown (quality or Show), searches right away: the pick is the
+-- player's click, so it is that click's one search. Only when a search would go out (a name, a
+-- quality or a Show choice); otherwise the pick just filters what is shown. Never on Market.
+local function SearchAfterPick()
+    if ui.buyPanel.marketMode then
+        return
+    end
+    if strtrim(ui.searchBox:GetText() or "") == "" and not state.filter.minQuality and showKey == "all" then
+        return
+    end
+    Buy.SendSearch()
+end
+
+--- Makes the filter row: Market's name filter, the quality dropdown, the item level range and
+-- Buy's Show dropdown. Item level and Market's filters only filter what is shown; on Buy, a
+-- quality or Show pick also searches again (SearchAfterPick), as the house does that filtering.
 function Buy.BuildFilterRow()
     --- A small edit box that filters as the player types.
     -- @param width the box width
@@ -751,7 +816,8 @@ function Buy.BuildFilterRow()
 
     -- Blizzard's own dropdown, as its auction house filter uses on Forever.
     local quality = CreateFrame("DropdownButton", nil, ui.buyPanel, "WowStyle1DropdownTemplate")
-    quality:SetWidth(130)
+    -- Wide enough for "Uncommon & up", the longest quality choice.
+    quality:SetWidth(145)
     quality:SetPoint("LEFT", ui.frame, "TOPLEFT", 14, FILTER_ROW_Y)
     quality:SetupMenu(function(_, root)
         for _, choice in ipairs(Price.QUALITY_CHOICES) do
@@ -760,6 +826,7 @@ function Buy.BuildFilterRow()
             end, function(picked)
                 state.filter.minQuality = picked.min
                 ApplyFilters()
+                SearchAfterPick()
             end, choice)
         end
     end)
@@ -777,9 +844,27 @@ function Buy.BuildFilterRow()
     maxBox:SetPoint("LEFT", dash, "RIGHT", 8, 0)
     ui.buyPanel.minLevelBox, ui.buyPanel.maxLevelBox = minBox, maxBox
 
+    -- Show (Buy only): what the search asks the house for. Picking one searches (SearchAfterPick).
+    local show = CreateFrame("DropdownButton", nil, ui.buyPanel, "WowStyle1DropdownTemplate")
+    show:SetWidth(130)
+    show:SetPoint("LEFT", maxBox, "RIGHT", 14, 0)
+    show:SetupMenu(function(_, root)
+        for _, choice in ipairs(SHOW_CHOICES) do
+            root:CreateRadio(choice.label, function(picked)
+                return showKey == picked
+            end, function(picked)
+                showKey = picked
+                SearchAfterPick()
+            end, choice.key)
+        end
+    end)
+    ui.buyPanel.showDropdown = show
+    -- A search control: Market hides it with the search box.
+    table.insert(ui.buyPanel.searchControls, show)
+
     -- An orange note right of the filters, for something to act on (two short lines at most).
     local notice = U.Cell(ui.buyPanel, "GameFontNormalSmall", "LEFT")
-    notice:SetPoint("LEFT", maxBox, "RIGHT", 12, 0)
+    notice:SetPoint("LEFT", show, "RIGHT", 12, 0)
     notice:SetPoint("RIGHT", ui.frame, "RIGHT", -14, 0)
     notice:SetWordWrap(true)
     notice:SetTextColor(1, 0.5, 0.1)
