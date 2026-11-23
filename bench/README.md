@@ -39,7 +39,7 @@ What's left is the exact lows and highs. On a house where nearly every price is 
 
 ## Budgets
 
-The smoke run (`--smoke`, 2,000 items x 14 days and 2,000 Unmaker entries) fails a step that:
+The smoke run (`--smoke`, 2,000 items x 14 days and 1,000 Unmaker entries) fails a step that:
 
 - allocates more than its `kb` budget,
 - keeps more than `keptPerDayRow` bytes per day row,

@@ -208,6 +208,7 @@ Its Buy and Sell tabs switch Blizzard's tabs too, and the reverse.
 1. **What starts unchecked or hidden:** epics, soulbound gear and items in your equipment sets.
 2. **When the window opens by itself:** when you loot gear to disenchant, or with your bags (and it closes with them too). Only on characters that know Disenchant.
 3. **Bag button:** show or hide the Unmaker button above your bags. On by default; `/unmaker` or `/um` opens the window either way.
+4. **History length:** keep 500, 1,000, 5,000 or 10,000 disenchants in the History tab. The Stats totals count every disenchant either way.
 
 <p align="center"><sub>Game art in the screenshots © Blizzard Entertainment, Inc.</sub></p>
 
@@ -227,7 +228,7 @@ Its Buy and Sell tabs switch Blizzard's tabs too, and the reverse.
 - **Settings tab:** keep epics, keep soulbound gear, hide equipment-set items, open when you loot gear to disenchant, open and close with your bags, and show or hide the Unmaker button above your bags.
 - With a fast-loot addon the button may stay locked a little longer. It unlocks by itself after 10 seconds.
 - **Stats tab:** items unmade this session, today, lifetime and in your best session; counts by quality; your most-unmade item, best item and busiest day; and lifetime materials. Pick all your characters together or one of them from the dropdown at the top. A 14-day chart shows how many you unmade each day.
-- **History tab:** the last 500 disenchants, newest first, and who unmade each. Pick a character from the dropdown to see only theirs. Click **Item**, **ilvl**, **Who** or **When** to sort, and again to reverse.
+- **History tab:** your last 500 disenchants (up to 10,000 from Settings), newest first, and who unmade each. Pick a character from the dropdown to see only theirs. Click **Item**, **ilvl**, **Who** or **When** to sort, and again to reverse.
 - Every character can see every character's stats and the shared history. They only count disenchants done with Unmaker's buttons.
 
 ### What it does not do

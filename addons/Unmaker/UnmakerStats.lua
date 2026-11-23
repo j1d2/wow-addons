@@ -17,8 +17,70 @@ if type(ns) == "table" then
     ns.Stats = S
 end
 
--- History keeps the newest entries only, so the saved file stays small. Totals count everything.
-S.HISTORY_MAX = 500
+-- How many disenchants the history keeps, newest first out: the Settings choices, the first the
+-- default (saved as settings.historyMax). Lifetime totals count everything either way. 10,000
+-- entries keep about 9 MB in memory (bench).
+S.HISTORY_CHOICES = { 500, 1000, 5000, 10000 }
+
+--- True for a history length the Settings tab offers.
+-- @param count a value
+-- @return true or false
+function S.IsHistoryChoice(count)
+    for _, choice in ipairs(S.HISTORY_CHOICES) do
+        if count == choice then
+            return true
+        end
+    end
+    return false
+end
+
+--- How many disenchants the history keeps.
+-- @param db the saved data, or nil
+-- @return the saved choice, or the default
+function S.HistoryMax(db)
+    local saved = type(db) == "table" and type(db.settings) == "table" and db.settings.historyMax
+    if S.IsHistoryChoice(saved) then
+        return saved
+    end
+    return S.HISTORY_CHOICES[1]
+end
+
+--- Drops the oldest entries past the history length. Works in the same list (the window may
+-- hold it), moving the kept entries down in one pass.
+-- @param db the saved data, changed in place
+local function TrimHistory(db)
+    local history = db.history
+    local count = #history
+    local extra = count - S.HistoryMax(db)
+    if extra <= 0 then
+        return
+    end
+    for index = 1, count - extra do
+        history[index] = history[index + extra]
+    end
+    for index = count, count - extra + 1, -1 do
+        history[index] = nil
+    end
+end
+
+--- Sets how many disenchants the history keeps, and saves it. A shorter length drops the
+-- oldest entries right away; totals are untouched.
+-- @param db the saved data, changed in place
+-- @param count one of HISTORY_CHOICES; anything else changes nothing
+-- @return the history length now in use
+function S.SetHistoryMax(db, count)
+    if type(db) ~= "table" or not S.IsHistoryChoice(count) then
+        return S.HistoryMax(db)
+    end
+    if type(db.settings) ~= "table" then
+        db.settings = {}
+    end
+    db.settings.historyMax = count
+    if type(db.history) == "table" then
+        TrimHistory(db)
+    end
+    return count
+end
 
 local QUALITY_NAMES = { [2] = "Uncommon", [3] = "Rare", [4] = "Epic" }
 
@@ -170,6 +232,11 @@ function S.EnsureStats(db, realm)
         end
     end
     db.history = history
+    if type(db.settings) == "table" and db.settings.historyMax ~= nil
+        and not S.IsHistoryChoice(db.settings.historyMax) then
+        db.settings.historyMax = nil
+    end
+    TrimHistory(db)
     if type(db.characters) == "table" then
         for key, totals in pairs(db.characters) do
             if type(key) == "string" and type(totals) == "table" then
@@ -323,9 +390,7 @@ function S.Record(db, session, item, now)
         mine.bestSession = math.max(mine.bestSession, session.unmade)
     end
     db.history[#db.history + 1] = entry
-    while #db.history > S.HISTORY_MAX do
-        table.remove(db.history, 1)
-    end
+    TrimHistory(db)
     return entry
 end
 

@@ -84,16 +84,46 @@ do
     Check("the best item is the highest quality, then item level", db.stats.best.name == "Ring of Fun")
 end
 
--- History length
+-- History length: 500 by default, up to 10,000 from Settings; lifetime totals count everything
 do
+    Check("history lengths offered: 500, 1,000, 5,000 and 10,000",
+        table.concat(S.HISTORY_CHOICES, ",") == "500,1000,5000,10000")
     local db = S.EnsureStats({})
+    Check("history keeps 500 by default", S.HistoryMax(db) == 500 and S.HistoryMax(nil) == 500)
     local session = { unmade = 0 }
-    for i = 1, S.HISTORY_MAX + 5 do
+    for i = 1, 505 do
         S.Record(db, session, Unmade(i, "Item " .. i, 2, 10), DAY1 + i)
     end
-    Check("history keeps only the newest entries", #db.history == S.HISTORY_MAX
-        and db.history[#db.history].name == "Item " .. (S.HISTORY_MAX + 5) and db.history[1].name == "Item 6")
-    Check("but lifetime totals count everything", db.stats.total == S.HISTORY_MAX + 5)
+    Check("history keeps only the newest entries", #db.history == 500
+        and db.history[500].name == "Item 505" and db.history[1].name == "Item 6")
+    Check("but lifetime totals count everything", db.stats.total == 505)
+
+    local history = db.history
+    Check("1,000 can be picked and saved", S.SetHistoryMax(db, 1000) == 1000 and db.settings.historyMax == 1000
+        and S.HistoryMax(db) == 1000)
+    for i = 506, 1003 do
+        S.Record(db, session, Unmade(i, "Item " .. i, 2, 10), DAY1 + i)
+    end
+    Check("a longer history keeps more", #db.history == 998 and db.history[998].name == "Item 1003")
+    S.Record(db, session, Unmade(1004, "Item 1004", 2, 10), DAY1 + 1004)
+    S.Record(db, session, Unmade(1005, "Item 1005", 2, 10), DAY1 + 1005)
+    S.Record(db, session, Unmade(1006, "Item 1006", 2, 10), DAY1 + 1006)
+    Check("up to its length", #db.history == 1000 and db.history[1].name == "Item 7")
+    Check("an unknown length is ignored", S.SetHistoryMax(db, 2000) == 1000 and S.SetHistoryMax(db, "x") == 1000
+        and db.settings.historyMax == 1000)
+    Check("a shorter length drops the oldest at once", S.SetHistoryMax(db, 500) == 500 and #db.history == 500
+        and db.history[1].name == "Item 507" and db.history[500].name == "Item 1006")
+    Check("in the same list, so anything holding it sees the change", db.history == history)
+    Check("totals still count everything", db.stats.total == 1006)
+
+    local damaged = S.EnsureStats({ settings = { historyMax = 123 } })
+    Check("a damaged saved length loads as 500", damaged.settings.historyMax == nil and S.HistoryMax(damaged) == 500)
+    local long = { settings = { historyMax = 500 }, history = {} }
+    for i = 1, 600 do
+        long.history[i] = { time = DAY1 + i, name = "Old " .. i }
+    end
+    S.EnsureStats(long)
+    Check("loading trims a history longer than its length", #long.history == 500 and long.history[1].name == "Old 101")
 end
 
 -- Fun facts

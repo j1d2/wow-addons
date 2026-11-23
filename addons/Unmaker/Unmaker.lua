@@ -328,7 +328,7 @@ local function RenderHistory()
         end
     end
     historyEmpty:SetText(#db.history == 0 and "Nothing unmade yet. Disenchant something on the Items tab."
-        or "Nothing unmade by this character in the last 500 disenchants.")
+        or "Nothing unmade by this character in the history kept (see Settings).")
     historyEmpty:SetShown(#historyList == 0)
     -- The arrow marks the sorted heading and its direction.
     for key, heading in pairs(historyHeadings) do
@@ -746,7 +746,15 @@ local function UpdateBagButtons()
     end
 end
 
---- Build the Settings tab: one checkbox per setting.
+--- A whole number with commas between thousands, like 10,000.
+-- @param number a whole number, 0 or more
+-- @return the text
+local function WithCommas(number)
+    local text = tostring(number):reverse():gsub("(%d%d%d)", "%1,"):reverse()
+    return (text:gsub("^,", ""))
+end
+
+--- Build the Settings tab: one checkbox per setting, then how many disenchants History keeps.
 local function BuildSettings()
     settingsPanel = CreateFrame("Frame", nil, frame)
     settingsPanel:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -70)
@@ -769,6 +777,30 @@ local function BuildSettings()
         end)
         settingBoxes[#settingBoxes + 1] = box
     end
+
+    local historyLabel = settingsPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    historyLabel:SetPoint("TOPLEFT", settingsPanel, "TOPLEFT", 4, -#R.SETTINGS * 30 - 12)
+    historyLabel:SetText("Keep history for")
+    local history = CreateFrame("DropdownButton", nil, settingsPanel, "WowStyle1DropdownTemplate")
+    history:SetWidth(160)
+    history:SetPoint("LEFT", historyLabel, "RIGHT", 10, 0)
+    history:SetupMenu(function(_, root)
+        for _, count in ipairs(S.HISTORY_CHOICES) do
+            root:CreateRadio(WithCommas(count) .. " disenchants", function(picked)
+                return S.HistoryMax(db) == picked
+            end, function(picked)
+                S.SetHistoryMax(db, picked)
+                Refresh()
+            end, count)
+        end
+    end)
+    local historyHint = settingsPanel:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    historyHint:SetPoint("TOPLEFT", historyLabel, "BOTTOMLEFT", 0, -14)
+    historyHint:SetPoint("RIGHT", settingsPanel, "RIGHT", 0, 0)
+    historyHint:SetJustifyH("LEFT")
+    historyHint:SetText("The Stats totals always count every disenchant. A longer history uses more memory"
+        .. " (10,000 takes about 9 MB); a shorter one drops the oldest right away.")
+    settingsPanel.historyDropdown, settingsPanel.historyHint = history, historyHint
     settingsPanel:Hide()
 end
 
