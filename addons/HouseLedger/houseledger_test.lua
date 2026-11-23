@@ -2884,6 +2884,29 @@ do
     Check("no match says names fill in from scans", window.status.text
         == "No saved item matches. Names fill in from your scans.")
 
+    -- Recent searches, the same list as the Buy tab's.
+    Check("a row clicked is remembered as a recent search", HouseLedgerDB.recentSearches[1] == "Bolt of Linen Cloth")
+    HouseLedgerDB.recentSearches = { "Bolt of Linen Cloth", "wool cloth", "silver rod" }
+    local list = window.recentList
+    local box = window.searchBox
+    box:SetText("")
+    box.focused = true
+    box:GetScript("OnEditFocusGained")(box)
+    Check("Price Check: clicking into the box shows the shared recent searches", list.shown
+        and list.lines[1].label.text == "Bolt of Linen Cloth" and list.lines[3].label.text == "silver rod")
+    Type(box, "wo")
+    box:GetScript("OnArrowPressed")(box, "DOWN")
+    Check("Price Check: Down puts one in the box", box.text == "wool cloth" and list.lines[1].selection.shown)
+    box:GetScript("OnEnterPressed")(box)
+    Check("Price Check: Enter shows its matches and remembers it", rows[1].nameText.text == "Wool Cloth"
+        and not list.shown and HouseLedgerDB.recentSearches[1] == "wool cloth")
+    box:SetText("")
+    box:GetScript("OnEditFocusGained")(box)
+    list.lines[2]:GetScript("OnClick")(list.lines[2], "LeftButton")
+    Check("Price Check: a click on one searches it", box.text == "Bolt of Linen Cloth"
+        and rows[1].nameText.text == "Bolt of Linen Cloth" and not list.shown)
+    Check("Price Check: still nothing sent to the auction house", #world.browseQueries == 0)
+
     local button = window.bagButtons[1]
     Check("a Price Check button sits above the bags", button ~= nil and button.shown and button.text == "Price Check"
         and button.parent == _G.ContainerFrameCombinedBags and window.bagButtons[2].parent == _G.ContainerFrame1)
