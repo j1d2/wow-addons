@@ -134,6 +134,10 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1, arg2)
 
     if PURCHASE_EVENTS[event] then
         Purchase[PURCHASE_EVENTS[event]](arg1, arg2)
+        if event == "AUCTION_HOUSE_SHOW_ERROR" then
+            -- A refused buy is answered this way; a refused post may be too.
+            Post.OnPostError()
+        end
         return
     end
 

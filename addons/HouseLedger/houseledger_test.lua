@@ -446,6 +446,10 @@ local function Setup(opts)
         PostCommodity = function(location, duration, quantity, price)
             world.posts[#world.posts + 1] = { kind = "commodity", itemID = location.itemID, duration = duration,
                 quantity = quantity, price = price }
+            -- With world.postTakes, a post takes the items out of the bags, as one that went up does.
+            if world.postTakes and not world.postNeedsConfirm and location.count then
+                location.count = location.count - quantity
+            end
             return world.postNeedsConfirm == true
         end,
         PostItem = function(location, duration, quantity, bid, buyout)
@@ -3980,20 +3984,45 @@ do
 
     HouseLedgerDB.settings.confirmPosts = false
     Type(boxes.copper, "99")
+    Type(panel.qtyBox, "20")
+    world.postTakes = true
     Press(panel.postButton)
+    world.postTakes = false
     Check("post: Confirm off: one click posts", #world.posts == 3 and world.posts[3].price == 99)
     world.now = world.now + 6
     MainFrame():GetScript("OnUpdate")(MainFrame(), 6)
-    Check("post: no answer after a few seconds: taken as posted", panel.postButton.text == "Post"
-        and SellStatus():find("Posted", 1, true))
+    Check("post: no answer, but the items left the bags: posted, and remembered", panel.postButton.text == "Post"
+        and SellStatus():find("Posted 20", 1, true) and HouseLedgerDB.lastPosts["Alliance|TestRealm"][2589][1] == 99)
+    Type(boxes.copper, "95")
+    Press(panel.postButton)
+    world.now = world.now + 6
+    MainFrame():GetScript("OnUpdate")(MainFrame(), 6)
+    Check("post: no answer and still in the bags: not called posted, not remembered",
+        SellStatus():find("may not have posted", 1, true) and HouseLedgerDB.lastPosts["Alliance|TestRealm"][2589][1] == 99)
+    Press(panel.postButton)
+    Fire("AUCTION_HOUSE_SHOW_ERROR", 3)
+    Check("post: the house's error while posting: refused", SellStatus():find("refused", 1, true)
+        and panel.postButton.text == "Post")
 
     world.postNeedsConfirm = true
     Press(panel.postButton)
     Check("post: the game asks to confirm: Confirm shows", panel.postButton.text == "Confirm"
         and SellStatus():find("The game asks", 1, true))
     world.postNeedsConfirm = false
+    world.itemMoved = true
+    local sent = #world.posts
     Press(panel.postButton)
-    Check("post: and the next click confirms it", world.posts[#world.posts].kind == "confirm")
+    Check("post: the game's Confirm still checks the item first", #world.posts == sent
+        and SellStatus():find("moved in your bags", 1, true))
+    world.itemMoved = false
+    Type(boxes.copper, "96")
+    Check("post: a change drops the game's Confirm too", panel.postButton.text == "Post")
+    world.postNeedsConfirm = true
+    Press(panel.postButton)
+    world.postNeedsConfirm = false
+    Press(panel.postButton)
+    Check("post: and the next click confirms it", world.posts[#world.posts].kind == "confirm"
+        and world.posts[#world.posts].price == 96)
     Fire("AUCTION_HOUSE_AUCTION_CREATED", 78)
 
     world.itemMoved = true
@@ -4003,7 +4032,7 @@ do
     world.itemMoved = false
 
     Pick(panel.pricingDropdown, "My last price")
-    Check("post: my last price", boxes.copper.text == "99" and panel.reasonText.text:find("Your last price", 1, true)
+    Check("post: my last price", boxes.copper.text == "96" and panel.reasonText.text:find("Your last price", 1, true)
         and HouseLedgerDB.settings.postPricing == "last")
     Pick(panel.durationDropdown, "Long")
     Check("post: the duration is remembered", HouseLedgerDB.settings.postDuration == 3)

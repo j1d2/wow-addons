@@ -2546,7 +2546,8 @@ end
 PriceLedger.POST_PRICING_ORDER = { "best", "fast", "last" }
 PriceLedger.POST_PRICINGS = { best = "Best price", fast = "Sell fast", last = "My last price" }
 -- The house's cut of a sale, by side. Measured from sale mail at the Horde house (2026-11-23):
--- 5%, rounded down. The goblin house's cut isn't known yet, so it has none here.
+-- 5%, rounded down; the Alliance house is taken to be the same (not measured). The goblin
+-- house's cut isn't known yet, so it has none here.
 PriceLedger.HOUSE_CUT = { Alliance = 0.05, Horde = 0.05 }
 -- Best price passes over at most this many cheap listings that look like bait.
 PriceLedger.POST_SKIP_MAX = 3
@@ -2662,7 +2663,7 @@ function PriceLedger.PostPrice(pricing, tiers, stats, last, stackable)
     if stackable then
         reason = string.format("Matching %d listed at %s.", chosen.quantity, coins(chosen.price))
     else
-        reason = string.format("1c under the cheapest at %s.", coins(chosen.price))
+        reason = string.format("1c under the cheapest at %s (any item level).", coins(chosen.price))
     end
     if skipped then
         reason = string.format("Skipping the cheapest (%s): it looks far too cheap. ", coins(skipped.price)) .. reason

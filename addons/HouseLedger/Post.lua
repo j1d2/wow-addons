@@ -167,9 +167,10 @@ local function RefreshMoney()
     panel.moneyText:SetText(table.concat(parts, ", "))
 end
 
---- Drops a post that was armed but not sent: any change means a fresh look before posting.
+--- Drops a post that was armed but not sent, or one the game asked to confirm: any change means a
+-- fresh look before posting.
 local function Disarm()
-    if post and (post.step == "warned" or post.step == "confirm") then
+    if post and (post.step == "warned" or post.step == "confirm" or post.step == "needsConfirm") then
         post = nil
     end
 end
@@ -270,8 +271,10 @@ end
 -- PostItem (a buyout, no bid).
 local function Send()
     local price, quantity, duration = TypedPrice(), Quantity(), Duration()
+    -- How many were in the bags before: a post that went up takes them out.
     post = { step = "posting", sentAt = U.Clock(), itemID = item.itemID, name = item.name, price = price,
-        quantity = quantity, commodity = item.commodity, location = item.location, duration = duration }
+        quantity = quantity, commodity = item.commodity, location = item.location, duration = duration,
+        before = Available() }
     local needsConfirmation
     if item.commodity then
         needsConfirmation = C_AuctionHouse.PostCommodity(item.location, duration, quantity, price) -- reviewed: the player's own Post click posts this stack
@@ -305,13 +308,13 @@ function Post.OnPostClick()
     if step == "posting" then
         return
     end
-    if step == "needsConfirm" then
-        ConfirmSent()
-        return
-    end
     local blocked = Blocked()
     if blocked then
         Sell.SetStatus(blocked)
+        return
+    end
+    if step == "needsConfirm" then
+        ConfirmSent()
         return
     end
     if step == nil then
@@ -361,18 +364,34 @@ function Post.OnAuctionCreated()
     end
 end
 
---- The house refused the post (AUCTION_HOUSE_POST_ERROR).
+--- The house refused the post (AUCTION_HOUSE_POST_ERROR, or AUCTION_HOUSE_SHOW_ERROR while one is
+-- in flight, as a refused buy is answered).
 function Post.OnPostError()
     if post and post.step == "posting" then
         EndPost("The house refused the post. Nothing was posted.", false)
     end
 end
 
---- Each second: a post with no answer after POST_ANSWER_WAIT is taken as posted, since the
--- house's answer to a post isn't known on Forever yet; an error would have come first.
+--- True when the items sent have left the bags, which a post that went up does.
+-- @return true when they have
+local function LeftTheBags()
+    if not post.commodity then
+        return not C_Item.DoesItemExist(post.location) or C_Item.GetItemID(post.location) ~= post.itemID
+    end
+    return post.before - Available() >= post.quantity
+end
+
+--- Each second: with no answer after POST_ANSWER_WAIT (whether the house answers a post on
+-- Forever isn't known yet), the bags decide: items gone means posted; still there means it
+-- isn't known, and the price isn't remembered.
 function Post.Tick()
     if post and post.step == "posting" and U.Clock() - post.sentAt >= POST_ANSWER_WAIT then
-        EndPost(PostedText() .. " Check Blizzard's Auctions tab.", true)
+        if LeftTheBags() then
+            EndPost(PostedText() .. " Check Blizzard's Auctions tab.", true)
+        else
+            EndPost("No answer from the house, and the items are still in your bags: it may not have posted. "
+                .. "Check Blizzard's Auctions tab.", false)
+        end
     end
 end
 

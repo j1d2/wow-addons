@@ -759,7 +759,7 @@ do
     local price, reason = P.PostPrice("best", tiers, nil, nil, true)
     Check("post: best price matches the cheapest stackable listing", price == 20 and reason == "Matching 50 listed at 20c.")
     price, reason = P.PostPrice("best", tiers, nil, nil, false)
-    Check("post: other items go 1c under", price == 19 and reason == "1c under the cheapest at 20c.")
+    Check("post: other items go 1c under", price == 19 and reason == "1c under the cheapest at 20c (any item level).")
     price, reason = P.PostPrice("best", { Tier(5, 1), Tier(20, 50), Tier(21, 200) }, nil, nil, true)
     Check("post: a thin listing far under a bigger one is passed over, and the reason says so", price == 20
         and reason:find("Skipping the cheapest (5c)", 1, true) and reason:find("Matching 50 listed at 20c.", 1, true))
