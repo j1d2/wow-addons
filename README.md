@@ -201,7 +201,7 @@ Its Buy and Sell tabs switch Blizzard's tabs too, and the reverse.
 1. **Characters:** show every character's disenchants, or just one character's.
 2. **Headings:** click one to sort, and again to reverse. Dates read month-day, then time; hover a row to see the year.
 3. **Who:** the character that unmade the item (names are hidden in this picture).
-4. **Got:** the materials each disenchant gave.
+4. **Got:** the materials each disenchant gave, as icons with names shortened to fit. Hover the row for the full names.
 
 <p align="center">
   <img src="docs/screenshots/unmaker-settings.png" alt="Unmaker's Settings tab: keep epics, keep soulbound gear, hide equipment-set items, open when you loot, open and close with your bags, show the button above the bags" width="420">

@@ -252,6 +252,24 @@ do
         and mats[3].name == "Shard")
     Check("a history entry's loot reads as short text", S.LootText(entry):find("4 Strange Dust", 1, true) ~= nil)
     Check("an entry with no loot yet reads as a dash", S.LootText({}) == "-")
+    -- With icons and a column 20 characters wide (an icon counts as 2), shared by the materials.
+    local function Fits(text, count)
+        local width = #text:gsub("|T[^|]*|t", "ii")
+        return width <= math.floor(20 / count)
+    end
+    local function IconOf(mat) return mat.name:find("^Strange Dust") and 1 or nil end
+    local one = { mats = { Mat("Strange Dust", 2) } }
+    Check("one material: its icon and whole name when it fits", S.LootText(one, IconOf, Fits) == "2 |T1:0|t Strange Dust")
+    one.mats[1].name = "Strange Dust Of Many Words"
+    Check("too long: cut with .., no space before it",
+        S.LootText(one, IconOf, Fits) == "2 |T1:0|t Strange Dust..")
+    Check("each material gets its share; no icon, just the count and name",
+        S.LootText({ mats = { Mat("Lesser Magic Essence", 1), Mat("Strange Dust", 2) } }, IconOf, Fits)
+        == "1 Lesser..  2 |T1:0|t Str..")
+    Check("no room for any of the name: the count and icon", S.LootText({ mats = { Mat("Dust", 1), Mat("Dust", 2),
+        Mat("Dust", 3), Mat("Dust", 4), Mat("Dust", 5) } }, function() return 1 end, Fits) == "1 |T1:0|t  2 |T1:0|t  3 |T1:0|t  4 |T1:0|t  5 |T1:0|t")
+    Check("a name is never cut inside a letter", S.LootText({ mats = { Mat("Póó", 1) } }, nil,
+        function(text) return #text <= 6 end) == "1 P..")
 end
 
 -- Sorting history

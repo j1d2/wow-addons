@@ -94,6 +94,10 @@ local factLines = {}
 local matLines = {}
 local historyRowFrames = {}
 local historyEmpty
+local historyMeasure -- a hidden font string that measures Got text (FitsGot)
+-- The History tab's Got column: its width, and the space between two materials in it (the two
+-- spaces S.LootText puts between them).
+local GOT_WIDTH, GOT_GAP = 185, 8
 local historyOffset = 0
 local historySort = "time"
 local historyReverse = false -- a second click on the same heading reverses its sort
@@ -441,6 +445,17 @@ local function RenderStats()
     chart:Show()
 end
 
+--- True when a material's text fits its share of the History tab's Got column, measured in
+-- the column's own font, so each name is cut just where the game would run out of room.
+-- @param text one material: count, icon and name
+-- @param count how many materials share the column
+-- @return true when it fits
+local function FitsGot(text, count)
+    local share = (GOT_WIDTH - (count - 1) * GOT_GAP) / count
+    historyMeasure:SetText(text)
+    return historyMeasure:GetStringWidth() <= share
+end
+
 --- Fill the History tab from the saved history, sorted by the chosen heading.
 local function RenderHistory()
     if not built then
@@ -455,7 +470,7 @@ local function RenderHistory()
             rowFrame.itemText:SetText(entry.link or entry.name)
             rowFrame.levelText:SetText(entry.level and tostring(entry.level) or "")
             rowFrame.whoText:SetText(S.WhoText(entry, playerRealm))
-            rowFrame.lootText:SetText(S.LootText(entry))
+            rowFrame.lootText:SetText(S.LootText(entry, KnownIcon, FitsGot))
             rowFrame.whenText:SetText(FormatWhen(entry.time))
             rowFrame:Show()
         else
@@ -837,8 +852,8 @@ local HISTORY_COLUMNS = {
     { key = "name", label = "Item", x = 0, width = 150 },
     { key = "level", label = "ilvl", x = 155, width = 35 },
     { key = "who", label = "Who", x = 195, width = 80 },
-    { key = nil, label = "Got", x = 280, width = 120 },
-    { key = "time", label = "When", x = 405, width = 80 },
+    { key = nil, label = "Got", x = 280, width = GOT_WIDTH },
+    { key = "time", label = "When", x = 470, width = 80 },
 }
 
 --- Build the History tab: clickable headings that sort, then ten rows, newest first by default.
@@ -918,6 +933,7 @@ local function BuildHistory()
                     GameTooltip:SetHyperlink(entry.link)
                 end
                 GameTooltip:AddLine("Unmade by " .. S.WhoText(entry, playerRealm) .. ", " .. FormatWhen(entry.time, true))
+                GameTooltip:AddLine("Got " .. S.LootText(entry), 1, 1, 1, true)
                 GameTooltip:Show()
             end
         end)
@@ -926,6 +942,9 @@ local function BuildHistory()
         end)
         historyRowFrames[index] = rowFrame
     end
+    -- Never shown: measures loot text in the Got column's font (FitsGot).
+    historyMeasure = historyPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    historyMeasure:Hide()
     historyEmpty = historyPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     historyEmpty:SetPoint("TOPLEFT", historyPanel, "TOPLEFT", 0, -(FILTER_HEIGHT + 24))
     historyEmpty:SetText("Nothing unmade yet. Disenchant something on the Items tab.")

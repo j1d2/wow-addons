@@ -60,6 +60,11 @@ function FrameMethods:Hide() self.shown = false end
 function FrameMethods:SetShown(shown) self.shown = shown and true or false end
 function FrameMethods:IsShown() return self.shown end
 function FrameMethods:SetText(text) self.text = text end
+--- Like the game's: the text's width in pixels; here 6 per character and 12 per icon.
+function FrameMethods:GetStringWidth()
+    local text = (self.text or ""):gsub("|T[^|]*|t", "ii")
+    return #text * 6
+end
 function FrameMethods:GetText() return self.text end
 function FrameMethods:SetEnabled(enabled) self.enabled = enabled and true or false end
 function FrameMethods:IsEnabled() return self.enabled end
@@ -1064,9 +1069,11 @@ do
     headers.time:GetScript("OnClick")(headers.time)
     Check("clicking the When heading sorts newest first again", historyRows[1].entry.name == "Green Vest")
     Check("each row shows its loot", historyRows[1].lootText.text:find("Strange Dust", 1, true) ~= nil)
+    world.tooltipLines = {}
     historyRows[1]:GetScript("OnEnter")(historyRows[1])
     Check("hovering a history row shows the item and who unmade it",
-        world.tooltip ~= nil and world.tooltipLine ~= nil and world.tooltipLine:find("Tester", 1, true) ~= nil)
+        world.tooltip ~= nil and world.tooltipLines[1]:find("Tester", 1, true) ~= nil)
+    Check("and what it gave, names in full", world.tooltipLines[2] == "Got 1 Strange Dust")
     historyRows[1]:GetScript("OnLeave")(historyRows[1])
 end
 
@@ -1408,6 +1415,25 @@ do
     end
     Check("no tooltip hook: the row's tooltip adds the results itself", world.tooltipHook == nil
         and TooltipHas("Disenchants into"))
+end
+
+do
+    -- The Got column: each material's icon, and names cut with ".." to fit its share.
+    local history = { { itemID = 7, name = "Old Cloak", quality = 2, level = 9, time = 1762800000, looted = true,
+        mats = { { name = "Strange Dust", link = "|Hitem:10940|h[Strange Dust]|h", quantity = 2 },
+            { name = "Lesser Magic Essence", quantity = 1 } } } }
+    Start({ bags = StandardBags(), db = { history = history } })
+    _G.SlashCmdList.UNMAKER("")
+    _G.UnmakerFrameTab3:GetScript("OnClick")(_G.UnmakerFrameTab3)
+    local row
+    for _, f in ipairs(world.frames) do
+        if f.historyRow and f.shown then
+            row = f
+        end
+    end
+    -- The fake measures 6 pixels a character and 12 an icon; each of two shares is 88 pixels.
+    Check("Got: icons, and names cut to fit with ..", row.lootText.text
+        == "2 |T" .. DUST_ICON .. ":0|t Strange..  1 Lesser Mag..")
 end
 
 if failed > 0 then
