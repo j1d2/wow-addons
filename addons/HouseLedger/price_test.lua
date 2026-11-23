@@ -620,6 +620,39 @@ do
     Check("damaged settings are replaced", type(P.EnsureDB({ settings = 5 }).settings) == "table")
 end
 
+-- Recent searches
+do
+    local list = P.AddRecent({}, "  Linen Cloth ")
+    list = P.AddRecent(list, "silver rod")
+    Check("recent: newest first, trimmed", list[1] == "silver rod" and list[2] == "Linen Cloth" and #list == 2)
+    local again = P.AddRecent(list, "linen cloth")
+    Check("recent: a repeat in any case moves up, no copy", #again == 2 and again[1] == "linen cloth"
+        and again[2] == "silver rod")
+    Check("recent: the list given is not changed", list[1] == "silver rod" and #list == 2)
+    Check("recent: blanks aren't kept", #P.AddRecent(list, "   ") == 2)
+    local long = {}
+    for index = 1, 20 do
+        long = P.AddRecent(long, "item " .. index)
+    end
+    Check("recent: at most 15 kept, the oldest dropped", #long == P.RECENT_KEPT and long[1] == "item 20"
+        and long[15] == "item 6")
+    local recent = { "silver rod", "linen cloth", "bolt of silk", "rod of silver", "Silverleaf" }
+    local matched = P.MatchRecent(recent, "sil")
+    Check("match: starting with the text first, then containing it, each newest first",
+        table.concat(matched, ",") == "silver rod,Silverleaf,bolt of silk,rod of silver")
+    Check("match: nothing typed shows them all", #P.MatchRecent(recent, "") == 5)
+    Check("match: at most 8", #P.MatchRecent(long, "item") == P.RECENT_SHOWN)
+    Check("match: no match, nothing", #P.MatchRecent(recent, "zzz") == 0)
+    Check("match: special characters are plain text", #P.MatchRecent({ "a (b)", "a.c" }, "(") == 1
+        and #P.MatchRecent({ "a.c" }, "%") == 0)
+    Check("forget: drops it in any case", table.concat(P.ForgetRecent(recent, "SILVER ROD"), ",")
+        == "linen cloth,bolt of silk,rod of silver,Silverleaf")
+    local db = P.EnsureDB({ houses = {}, recentSearches = { "a", 5, "", "A", "b", { "x" } } })
+    Check("saved: only text, no blanks or repeats, oldest last", table.concat(db.recentSearches, ",") == "a,b")
+    Check("saved: damaged becomes empty", #P.EnsureDB({ recentSearches = "x" }).recentSearches == 0
+        and #P.EnsureDB(nil).recentSearches == 0)
+end
+
 -- Chart: one slot per day from the oldest saved day (at least 7), up to the history length
 do
     local db = P.EmptyDB()
