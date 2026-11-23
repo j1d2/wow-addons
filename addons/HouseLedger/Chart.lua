@@ -229,9 +229,11 @@ function Chart.Show(chart, info)
         chart:Hide()
         return
     end
-    chart.fit, chart.nextWord = Price.ChartFit(data.slots), "day"
+    chart.fit = Price.ChartFit(data.slots)
+    chart.nextWord = data.perBar > 1 and data.perBar .. " days" or "day"
     local top = DrawBars(chart, data.slots, data.top, false, chart.fit)
-    chart.caption:SetText("Daily low, " .. #data.slots .. " days")
+    chart.caption:SetText("Daily low, " .. data.days .. " days"
+        .. (data.perBar > 1 and " (" .. data.perBar .. " days per bar)" or ""))
     chart.topText:SetText(U.CopperToText(top))
     chart:Show()
 end
@@ -343,7 +345,7 @@ function Chart.Build(parent, width, height)
     chart.chartWidth = width
     chart.bars, chart.bands, chart.trendBands = {}, {}, {}
     -- One more slot than the most days or scans, for the guess.
-    local slots = math.max(Price.HISTORY_CHOICES[#Price.HISTORY_CHOICES], Price.SCANS_KEPT) + 1
+    local slots = math.max(Price.CHART_MAX_BARS, Price.SCANS_KEPT) + 1
     for index = 1, slots do
         local barTexture = chart:CreateTexture(nil, "ARTWORK")
         barTexture:Hide()
@@ -478,7 +480,7 @@ function Chart.BuildOverview(parent, width, height)
     chart.barArea = height - 18
     chart.chartWidth = width
     chart.bars, chart.bands = {}, {}
-    local slots = Price.HISTORY_CHOICES[#Price.HISTORY_CHOICES] + 1
+    local slots = Price.CHART_MAX_BARS + 1
     for index = 1, slots do
         chart.bands[index] = chart:CreateTexture(nil, "BORDER")
         chart.bands[index]:SetColorTexture(TREND_BAND_COLOR[1], TREND_BAND_COLOR[2], TREND_BAND_COLOR[3],

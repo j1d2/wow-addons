@@ -31,6 +31,8 @@ Checked on a real 13-day file (7,246 items, about 3 scans a day): 29% of the lim
 
 What's left is the exact lows and highs. On a house where nearly every price is new, that part alone can still come near the limit at 20,000 items x 30 days.
 
+60 days (a Settings choice since 0.5.0): the heavy case at 20,000 x 60 is 16% (about 30% for a real file, going by the undercount above). Memory is the bigger cost: about 67 MB kept at 6,600 x 60 against 24 MB at 14 days, and loading the 20,000 x 60 file (about 66 MB) takes about 0.7 s here.
+
 ## The synthetic data
 
 `bench/synth.lua` makes the same data on every run: a fixed-seed generator, never `math.random`. It's tuned against one real 7-day file. 84% of item-days are listed, prices are rounded to four significant digits, and a scan finds the same cheapest price as the scan before 85% of the time. With those settings, 6,661 items x 7 days gives about 42,000 different values (the real file: 41,351) and 225 bytes of memory per day row (the real file: about 250). Those numbers are from before scan lists. Each item now also keeps its last 30 scans; synth.lua spaces a day's 1 to 3 scans evenly up to 12:00, so every item in one scan shares its time, as in a real scan. That adds about 90 bytes per day row and almost no different values: a scan's time is shared by every item in it, and its price is nearly always that day's low or high.

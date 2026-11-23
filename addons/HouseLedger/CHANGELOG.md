@@ -8,11 +8,11 @@ All notable changes to HouseLedger. The format follows [Keep a Changelog](https:
 
 - **Show** on the Buy tab: search **Everything**, **Gear for me** (weapons this character can use and its best armor type, like plate for a paladin from level 40, plus rings, necks, trinkets, cloaks, shields and relics it can use), **Usable gear** (every armor type it can wear) or **My recipes** (recipes for this character's professions). Picking one searches right away, and so does picking a quality on Buy; a name is optional.
 - **House overview** on the Buy tab, until you click a row: items listed at the last scan and on average, the trend per day, a next-day estimate after 5 days of scans, and the last scan's listings, units and value (each item's units at its cheapest price, so joke-priced listings don't inflate it), with a chart of each day, a trend line and its normal range. Items per day come from the scans you've already saved; listings, units and value start with your next scan.
-- **Price history length** on the Settings tab: keep 14 or 30 days of prices. Going back to 14 drops the older days right away.
+- **Price history length** on the Settings tab: keep 14, 30 or 60 days of prices. 60 days uses about three times the memory of 14. Going back to a shorter one drops the older days right away.
 - **Price Check** scrolls with the mouse wheel through every match, and the bottom line says which ones show and how many there are ("13-24 of 57 items").
 - Click **Item**, **Price** or **Trend** in Price Check to sort; click again to reverse.
 - With Price Check open, shift-click an item in your bags or a chat link to look it up.
-- The price chart grows with your history. It starts at the first day an item was scanned, with at least 7 bars and up to 14 or 30. Hover it to see how many days it shows.
+- The price chart grows with your history. It starts at the first day an item was scanned, with at least 7 bars and up to 30; past 30 days, each bar covers 2 days. Hover it to see how many days it shows.
 - **Days | Scans** in the corner of every price chart. Scans shows one bar per scan (an item's last 30, within your history length) with a little space between days, so you can see a price move during a day. Your choice is saved for every chart. Scans are saved from your first scan after updating.
 - Every price chart gets a **trend line**, a faint band for its normal range, and a purple **guess** at the next day or scan, like the house overview, once it has 5 bars. The line is fit so one odd cheap listing can't tilt it. The guess is only the line carried on one more step, not a promise. Hover the chart for what each part means.
 

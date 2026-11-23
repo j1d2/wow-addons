@@ -56,7 +56,7 @@ Open the addon's CurseForge page, [HouseLedger](https://www.curseforge.com/wow/a
 - **Buy tab:** search, then compare today's price with your 7-day average. Click a row for 1, 3, 7 and 14 days. Before you click one, a house overview shows how many items are listed each day, the trend and a next-day estimate.
 - **Sell tab:** drop an item in to see the lowest price now and its history. Then post it in Blizzard's window.
 - **Market tab:** the deals, biggest drops and biggest rises from your last scan, with no searching.
-- **Settings tab:** turn tooltip prices off, always show the day lines without Shift, or keep 30 days of prices instead of 14.
+- **Settings tab:** turn tooltip prices off, always show the day lines without Shift, or keep 30 or 60 days of prices instead of 14.
 - **Price Check:** type `/pc` anywhere, or click **Price Check** above your bags, to look up a saved price by name. Shift-click an item in your bags or a chat link to look it up, scroll through every match, and click a heading to sort.
 - **Never** buys, posts or scans by itself.
 
@@ -80,7 +80,7 @@ Open the addon's CurseForge page, [HouseLedger](https://www.curseforge.com/wow/a
 3. **Columns:** click a heading to sort by it, and again to reverse. **Price** is the cheapest up right now, **Avg 7d** your saved 7-day average, and **Trend** a green arrow for cheaper than usual, red for pricier, grey "steady" about the same, ⭐ for a deal.
 4. **Scan:** saves today's prices for the whole auction house. The button counts down the 15 minutes until you can scan again.
 5. **Click a row** for its saved prices over 1, 3, 7 and 14 days.
-6. **Its chart:** each day's lowest price, today in gold, with a faint band up to that day's highest. It starts at the first day you scanned the item and grows to 14 or 30 days. Click **Scans** in its corner for one bar per scan instead (the item's last 30), or **Days** to go back. Every chart remembers your choice. From 5 bars, a white **trend line** shows which way the price is going (one odd cheap listing can't tilt it), with a faint band for its normal range, and a purple bar on the right is a guess at the next day or scan.
+6. **Its chart:** each day's lowest price, today in gold, with a faint band up to that day's highest. It starts at the first day you scanned the item and grows to 14, 30 or 60 days; past 30 days, each bar covers 2 days. Click **Scans** in its corner for one bar per scan instead (the item's last 30), or **Days** to go back. Every chart remembers your choice. From 5 bars, a white **trend line** shows which way the price is going (one odd cheap listing can't tilt it), with a faint band for its normal range, and a purple bar on the right is a guess at the next day or scan.
 
 **House overview:** until you click a row, the space under the Buy list shows your whole auction house. It lists how many items your scans saw at the last scan and on average, the trend per day, an estimate for the next day (after 5 days of scans), and the last scan's listings, units and value. The value counts each item's units at its cheapest price, so a few listings at joke prices don't inflate it. Its chart has one bar per day (the last scan's day in gold), a white trend line, a faint band for the normal range around it, and a purple bar for the next-day estimate. Items listed per day come from the scans you've already saved; listings, units and value start with your next scan. All of it reads saved data only.
 
@@ -119,7 +119,7 @@ Scroll with the mouse wheel; the line at the bottom says which matches show and 
 1. **Tooltip prices** on or off.
 2. **Day lines on tooltips** without holding Shift.
 3. **The Price Check button** above your bags (right) on or off.
-4. **Price history:** keep 14 or 30 days. Longer history makes a bigger saved file. Going back to 14 drops the older days right away.
+4. **Price history:** keep 14, 30 or 60 days. Longer history uses more memory and makes a bigger saved file: 60 days takes about three times as much as 14. Going back to 14 drops the older days right away.
 
 <p align="center"><sub>Game art in the screenshots © Blizzard Entertainment, Inc.</sub></p>
 

@@ -2169,10 +2169,14 @@ do
     Check("with tooltip prices off, tooltips get nothing", HouseLedgerDB.settings.tooltipPrices == false and #Hover() == 0)
     Check("settings send nothing", #world.browseQueries == 0 and world.replicateCalls == 1)
     Check("the history dropdown shows 14 days at first", Picked(panel.historyDropdown) == "14 days"
-        and #MenuChoices(panel.historyDropdown) == 2)
+        and #MenuChoices(panel.historyDropdown) == 3)
     Pick(panel.historyDropdown, "30 days")
     Check("picking 30 days saves it and keeps 30 days", HouseLedgerDB.settings.historyDays == 30
         and HouseLedgerPrice.DAYS_KEPT == 30 and Picked(panel.historyDropdown) == "30 days")
+    Pick(panel.historyDropdown, "60 days")
+    Check("picking 60 days saves it", HouseLedgerDB.settings.historyDays == 60 and HouseLedgerPrice.DAYS_KEPT == 60)
+    Check("the hint says a longer history uses more memory, and wraps rather than cut off",
+        panel.historyHint.text:find("more memory", 1, true) and panel.historyHint.wordWrap == true)
     Pick(panel.historyDropdown, "14 days")
     Check("picking 14 days again saves it", HouseLedgerDB.settings.historyDays == 14 and HouseLedgerPrice.DAYS_KEPT == 14)
     Click("Buy")
@@ -2678,6 +2682,24 @@ do
     local chart = ShowBuyChart()
     Check("4 days: no line or guess yet", chart.shown and not chart.line.shown and chart.slotCount == 7
         and not chart.bars[8].shown and not TipHas(ChartTipLines(chart), "White line"))
+end
+
+do
+    -- 60 days kept: every price chart shows 2 days per bar, at most 30 bars and the guess.
+    Setup({ screenRight = 1400 })
+    Load()
+    HouseLedgerPrice.SetHistoryDays(HouseLedgerDB, 60)
+    SaveDailyHistory(60)
+    local chart = ShowBuyChart()
+    local heights = BarHeights(chart)
+    Check("60 days chart as 30 bars of 2 days, plus the guess", chart.slotCount == 31
+        and heights[1] and heights[30] and heights[31] and #chart.bars == 31)
+    Check("its caption says 2 days per bar", chart.caption.text == "Daily low, 60 days (2 days per bar)")
+    Check("the guess is for the next 2 days", TipHas(ChartTipLines(chart), "Purple: a guess at the next 2 days"))
+    local overview = MainFrame().buyPanel.overviewChart
+    Click("Clear")
+    Check("the house overview shows the last 30 days", overview.shown and overview.slotCount <= 31)
+    HouseLedgerPrice.SetHistoryDays(HouseLedgerDB, 14)
 end
 
 -- ---------------------------------------------------------------------
