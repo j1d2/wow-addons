@@ -220,6 +220,10 @@ local tooltipsHooked = false
 -- @param itemID the item's ID
 -- @return its class (Enum.ItemClass), or nil
 local function ClassOf(itemID)
+    -- The game raises an error for a missing item (its argument can't be nil).
+    if itemID == nil then
+        return nil
+    end
     local _, _, _, _, _, classID = C_Item.GetItemInfoInstant(itemID)
     return classID
 end
@@ -248,7 +252,11 @@ end
 -- @param result one result of a prediction
 -- @return the icon
 local function MaterialIcon(result)
-    local _, _, _, _, icon = C_Item.GetItemInfoInstant(result.id or result.link)
+    local item = result.id or result.link
+    if item == nil then
+        return UNKNOWN_ICON
+    end
+    local _, _, _, _, icon = C_Item.GetItemInfoInstant(item)
     return icon or UNKNOWN_ICON
 end
 

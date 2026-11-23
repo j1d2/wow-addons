@@ -245,7 +245,8 @@ local function Load(setup)
     }
     _G.C_Item = {
         GetItemInfoInstant = function(itemID)
-            -- Like the game's, it also takes an item link.
+            -- Like the game's: nil is an error, and an item link works too.
+            assert(itemID ~= nil, "Usage: GetItemInfoInstant(itemInfo)")
             if type(itemID) == "string" then
                 itemID = tonumber(itemID:match("item:(%d+)"))
             end
@@ -1367,6 +1368,9 @@ do
         history[index] = { itemID = 11, quality = 2, level = 13, looted = true, time = index,
             mats = { { name = "Strange Dust", link = "|Hitem:10940|h[Strange Dust]|h", quantity = 2 } } }
     end
+    -- Loot with no link (an old entry) still shows, with the unknown icon.
+    history[1].mats[2] = { name = "Odd Dust", quantity = 1 }
+    history[6] = { quality = 2, level = 13, looted = true, time = 6, mats = {} } -- no item ID: left out
     local bags = StandardBags()
     bags[0][1].level = 13
     Start({ bags = bags, db = { history = history } })
@@ -1380,7 +1384,8 @@ do
             vest = row
         end
     end
-    Check("and so does the Gives column", vest.gives[1].text.text == "100%" and vest.gives[2].text.text == "")
+    Check("and so does the Gives column", vest.gives[1].text.text == "100%" and vest.gives[2].text.text == "20%"
+        and vest.gives[2].icon.texture == 134400)
 end
 
 do

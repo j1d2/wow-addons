@@ -7,7 +7,8 @@ from, in order:
 1. The player's own results: Unmaker's history of disenchants and their loot, once it holds
    YOURS_MIN of the same kind of item (quality, armor or weapon, item-level band).
 2. Forever's own rules, where Forever differs from the published tables: blues below item
-   level 20 disenchant like a green of their band with one more of each dust and essence, and
+   level 20 (armor from 5, weapons from 16) disenchant like a green of their band with one more
+   of each dust and essence, and
    green weapons from item level 21 to 30 give Greater Magic Essence. These come from what the
    game's players and other tools report for Forever, and match this addon's own results so far.
 3. The published tables: warcraft.wiki.gg, "Disenchanting tables" (CC BY-SA 4.0), item levels
@@ -159,12 +160,12 @@ local function TableRow(quality, kind, level)
         return row, forever and "forever" or "guide", row[1], row[2], forever and "weapon" or nil
     elseif quality == RARE and level < FOREVER_BLUE_BELOW then
         local row = RowFor(greens, level, true)
-        if row == nil then
-            return nil
+        -- Blue weapons below 16: no source has seen what they give, so only the player's own
+        -- results will tell (their band still groups them).
+        if row == nil or (kind == "weapon" and row == greens[1]) then
+            return nil, nil, row and 5, row and row[2]
         end
-        -- The band starts at 5 for weapons too, whose first green row starts at 6.
-        local low = row == greens[1] and math.min(row[1], 5) or row[1]
-        return row, "forever", low, math.min(row[2], FOREVER_BLUE_BELOW - 1), "blue"
+        return row, "forever", row[1], math.min(row[2], FOREVER_BLUE_BELOW - 1), "blue"
     end
     local row = RowFor(quality == RARE and BLUE or EPIC_ROWS, level)
     if row == nil then

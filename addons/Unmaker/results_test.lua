@@ -87,8 +87,8 @@ do
     p = D.Predict({ quality = 3, classID = ARMOR, level = 10 })
     Check("Forever blue armor 5-15", Is(Result(p, "Strange Dust"), 80, 2, 3)
         and Is(Result(p, "Lesser Magic Essence"), 20, 2, 3))
-    p = D.Predict({ quality = 3, classID = WEAPON, level = 5 })
-    Check("a level-5 blue weapon uses the first weapon row", p ~= nil and p.results[1].name == "Lesser Magic Essence")
+    Check("blue weapons below 16: no source, so no guess", D.Predict({ quality = 3, classID = WEAPON, level = 5 }) == nil
+        and D.Predict({ quality = 3, classID = WEAPON, level = 15 }) == nil)
     p = D.Predict({ quality = 3, classID = ARMOR, level = 20 })
     Check("Forever blue from 20: a shard, as in the guide", p.source == "guide"
         and Is(Result(p, "Small Glimmering Shard"), 100, 1, 1))
@@ -144,6 +144,12 @@ do
     Check("Forever blues have their own groups", p.source == "yours" and Is(Result(p, "Greater Magic Essence"), 100, 3, 3))
     p = D.Predict({ quality = 3, classID = WEAPON, level = 70 }, tally)
     Check("past the guide: 5-level groups of your own", p == nil)
+    for _ = 1, 5 do
+        history[#history + 1] = Entry(4, 3, 6, { { name = "Lesser Magic Essence", quantity = 2 } })
+    end
+    tally = D.Tally(history, function(itemID) return kinds[itemID] end)
+    p = D.Predict({ quality = 3, classID = WEAPON, level = 14 }, tally)
+    Check("blue weapons 5-15 group together, so your own results show", p.source == "yours" and p.count == 5)
     for _ = 1, 5 do
         history[#history + 1] = Entry(4, 3, 71, { { name = "Large Brilliant Shard", quantity = 1 } })
     end
