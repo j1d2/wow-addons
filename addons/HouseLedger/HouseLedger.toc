@@ -18,6 +18,7 @@ Buy.lua
 Sell.lua
 Purchase.lua
 PriceCheck.lua
+History.lua
 Settings.lua
 Window.lua
 HouseLedger.lua

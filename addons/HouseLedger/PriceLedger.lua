@@ -485,6 +485,7 @@ function PriceLedger.EnsureDB(db)
         db.settings.historyDays = nil
     end
     db.recentSearches = PriceLedger.CleanRecent(db.recentSearches)
+    db.ledger = PriceLedger.CleanLedger(db.ledger)
     PriceLedger.DAYS_KEPT = db.settings.historyDays or PriceLedger.HISTORY_CHOICES[1]
     if db.settings.chartView ~= nil and PriceLedger.ChartView(db) ~= db.settings.chartView then
         db.settings.chartView = nil
@@ -2229,6 +2230,253 @@ function PriceLedger.OverviewLines(overview, coinText)
         lines[5] = { left = "Value at lowest prices", right = "from your next scan" }
     end
     return title, lines
+end
+
+-- ---------------------------------------------------------------------
+-- History: what this account's characters bought and sold (the History tab)
+-- ---------------------------------------------------------------------
+
+-- Entries kept, oldest dropped first. Each costs a few saved constants (its time, amounts).
+PriceLedger.LEDGER_KEPT = 2000
+-- Entry kinds and their words in the window.
+PriceLedger.LEDGER_KINDS = { bought = "Bought", sold = "Sold", expired = "Expired", cancelled = "Cancelled" }
+-- Two looks at one mail give an expiry this close (seconds): the game counts its days left as it goes.
+PriceLedger.MAIL_SAME_EXPIRY = 300
+-- A mail seen once is remembered this long past its expiry, so it is never counted twice.
+PriceLedger.MAIL_SEEN_GRACE = 86400
+
+--- A saved history made safe: { entries = { ... }, seen = { ... } } with only well-formed
+-- entries, oldest first, at most LEDGER_KEPT.
+-- @param ledger the saved value, or anything
+-- @return the history, repaired in place when it was a table
+function PriceLedger.CleanLedger(ledger)
+    if type(ledger) ~= "table" then
+        ledger = {}
+    end
+    local entries = {}
+    for _, entry in ipairs(type(ledger.entries) == "table" and ledger.entries or {}) do
+        if type(entry) == "table" and type(entry.time) == "number" and PriceLedger.LEDGER_KINDS[entry.kind]
+            and type(entry.name) == "string" and type(entry.count) == "number" and entry.count > 0 then
+            entries[#entries + 1] = entry
+        end
+    end
+    while #entries > PriceLedger.LEDGER_KEPT do
+        table.remove(entries, 1)
+    end
+    local seen = {}
+    for _, mail in ipairs(type(ledger.seen) == "table" and ledger.seen or {}) do
+        if type(mail) == "table" and type(mail.expires) == "number" then
+            seen[#seen + 1] = mail
+        end
+    end
+    ledger.entries, ledger.seen = entries, seen
+    return ledger
+end
+
+--- Adds one entry, dropping the oldest past LEDGER_KEPT.
+-- @param ledger the history; changed in place
+-- @param entry the entry
+local function AddEntry(ledger, entry)
+    local entries = ledger.entries
+    entries[#entries + 1] = entry
+    while #entries > PriceLedger.LEDGER_KEPT do
+        table.remove(entries, 1)
+    end
+end
+
+--- True when two records name the same item: by item ID when both have one, else by name.
+-- @param a a record with itemID and/or name
+-- @param b another
+-- @return true when they match
+local function SameItem(a, b)
+    if a.itemID and b.itemID then
+        return a.itemID == b.itemID
+    end
+    return a.name == b.name
+end
+
+--- Records a buy HouseLedger made, at once. Its mail later is matched to it, not counted again.
+-- @param ledger the history; changed in place
+-- @param buy { time, who, realm, itemID, name (plain), count, bid (copper paid in all) }
+-- @return the new entry
+function PriceLedger.RecordBuy(ledger, buy)
+    local entry = { time = buy.time, who = buy.who, realm = buy.realm, kind = "bought", itemID = buy.itemID,
+        name = buy.name, count = buy.count, bid = buy.bid, source = "hl", open = buy.count }
+    AddEntry(ledger, entry)
+    return entry
+end
+
+--- True when a mail is one already counted: same character, kind, item, count and money, and an
+-- expiry within MAIL_SAME_EXPIRY.
+-- @param seen a remembered mail
+-- @param mail the mail now
+-- @param who the character
+-- @return true when they are the same mail
+local function SameMail(seen, mail, who)
+    return seen.who == who and seen.kind == mail.kind and seen.name == mail.name and seen.count == mail.count
+        and seen.bid == mail.bid and math.abs(seen.expires - mail.expires) <= PriceLedger.MAIL_SAME_EXPIRY
+end
+
+--- Records the auction house mail in one look at a character's mailbox. Each mail counts once,
+-- however often the mailbox is looked at: identical mails in one look count apart. A bought mail
+-- for a buy HouseLedger already recorded is matched to it (by item and how many are still
+-- unmatched) instead of added. Remembered mails are forgotten a day past their expiry.
+-- @param ledger the history; changed in place
+-- @param mails list of { kind, name, itemID?, count, bid, deposit?, cut?, expires }
+-- @param now the time
+-- @param who the character's name
+-- @param realm the realm
+-- @return how many entries were added
+function PriceLedger.RecordMail(ledger, mails, now, who, realm)
+    local used, added = {}, 0
+    for _, mail in ipairs(mails) do
+        local known = false
+        for index, old in ipairs(ledger.seen) do
+            if not used[index] and SameMail(old, mail, who) then
+                used[index], known = true, true
+                break
+            end
+        end
+        if not known then
+            ledger.seen[#ledger.seen + 1] = { who = who, kind = mail.kind, name = mail.name, count = mail.count,
+                bid = mail.bid, expires = mail.expires }
+            used[#ledger.seen] = true
+            local matched = false
+            if mail.kind == "bought" then
+                for _, entry in ipairs(ledger.entries) do
+                    if entry.source == "hl" and entry.who == who and (entry.open or 0) > 0 and SameItem(entry, mail) then
+                        entry.open = math.max(0, entry.open - mail.count)
+                        matched = true
+                        break
+                    end
+                end
+            end
+            if not matched then
+                AddEntry(ledger, { time = now, who = who, realm = realm, kind = mail.kind, itemID = mail.itemID,
+                    name = mail.name, count = mail.count, bid = mail.bid, deposit = mail.deposit, cut = mail.cut,
+                    source = "mail" })
+                added = added + 1
+            end
+        end
+    end
+    local kept = {}
+    for _, old in ipairs(ledger.seen) do
+        if old.expires + PriceLedger.MAIL_SEEN_GRACE >= now then
+            kept[#kept + 1] = old
+        end
+    end
+    ledger.seen = kept
+    return added
+end
+
+--- The item name in an auction mail's subject, from the game's subject format ("Auction
+-- expired: %s"), or nil when the subject isn't one of those or the format is unknown.
+-- @param format the game's format string, or nil
+-- @param subject the mail's subject
+-- @return the item name, or nil
+function PriceLedger.SubjectItem(format, subject)
+    if type(format) ~= "string" or type(subject) ~= "string" or not format:find("%s", 1, true) then
+        return nil
+    end
+    local pattern = "^" .. format:gsub("([%^%$%(%)%.%[%]%*%+%-%?%%])", "%%%1"):gsub("%%%%s", "(.+)") .. "$"
+    return subject:match(pattern)
+end
+
+--- What a sale brought in: the buyer's money less the house's cut (the deposit only comes back).
+-- @param entry a sold entry
+-- @return copper
+function PriceLedger.SaleProceeds(entry)
+    return (entry.bid or 0) - (entry.cut or 0)
+end
+
+--- The profit of each sale: its proceeds less what the account paid for that many, at the average
+-- price of the recorded buys of that item up to then. A sale with no recorded buy before it has no
+-- profit (crafted or looted items aren't counted as all profit).
+-- @param entries the history's entries, oldest first
+-- @return table entry -> copper (rounded), for sold entries with recorded buys
+function PriceLedger.LedgerProfits(entries)
+    -- By name: a sale's mail names the item but gives no item ID.
+    local paid, profits = {}, {}
+    for _, entry in ipairs(entries) do
+        if entry.kind == "bought" and entry.bid then
+            local sum = paid[entry.name] or { copper = 0, count = 0 }
+            sum.copper, sum.count = sum.copper + entry.bid, sum.count + entry.count
+            paid[entry.name] = sum
+        elseif entry.kind == "sold" then
+            local sum = paid[entry.name]
+            if sum and sum.count > 0 then
+                local cost = sum.copper / sum.count * entry.count
+                profits[entry] = math.floor(PriceLedger.SaleProceeds(entry) - cost + 0.5)
+            end
+        end
+    end
+    return profits
+end
+
+--- The entries the History tab shows: one character's (or all), one kind (or all), newest first.
+-- @param entries the history's entries, oldest first
+-- @param who a character's name, or nil for all
+-- @param kind "bought", "sold", "returned" (expired and cancelled) or nil for all
+-- @return a new list
+function PriceLedger.LedgerView(entries, who, kind)
+    local view = {}
+    for index = #entries, 1, -1 do
+        local entry = entries[index]
+        local kindOK = kind == nil or entry.kind == kind
+            or (kind == "returned" and (entry.kind == "expired" or entry.kind == "cancelled"))
+        if kindOK and (who == nil or entry.who == who) then
+            view[#view + 1] = entry
+        end
+    end
+    return view
+end
+
+--- Totals for a list of entries: bought (count, copper), sold (count, proceeds), returned count,
+-- and the profit of the sales that have one.
+-- @param view the entries
+-- @param profits from LedgerProfits
+-- @return { boughtCount, boughtCopper, soldCount, soldCopper, returnedCount, profit, profitSales }
+function PriceLedger.LedgerTotals(view, profits)
+    local totals = { boughtCount = 0, boughtCopper = 0, soldCount = 0, soldCopper = 0, returnedCount = 0,
+        profit = 0, profitSales = 0 }
+    for _, entry in ipairs(view) do
+        if entry.kind == "bought" then
+            totals.boughtCount = totals.boughtCount + entry.count
+            totals.boughtCopper = totals.boughtCopper + (entry.bid or 0)
+        elseif entry.kind == "sold" then
+            totals.soldCount = totals.soldCount + entry.count
+            totals.soldCopper = totals.soldCopper + PriceLedger.SaleProceeds(entry)
+            if profits[entry] then
+                totals.profit = totals.profit + profits[entry]
+                totals.profitSales = totals.profitSales + 1
+            end
+        else
+            totals.returnedCount = totals.returnedCount + entry.count
+        end
+    end
+    return totals
+end
+
+--- When an entry happened, as the History tab shows it: month-day and time.
+-- @param seconds a time() value
+-- @return text like "11-23 07:25"
+function PriceLedger.WhenText(seconds)
+    return FormatTime("%m-%d %H:%M", seconds) or ""
+end
+
+--- The characters in the history, A to Z.
+-- @param entries the history's entries
+-- @return list of names
+function PriceLedger.LedgerCharacters(entries)
+    local names, seen = {}, {}
+    for _, entry in ipairs(entries) do
+        if type(entry.who) == "string" and not seen[entry.who] then
+            seen[entry.who] = true
+            names[#names + 1] = entry.who
+        end
+    end
+    table.sort(names)
+    return names
 end
 
 return PriceLedger

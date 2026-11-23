@@ -98,6 +98,20 @@ function Synth.HouseLedgerDB(items, days, ledger, maxScans, scansKept)
         house.items[itemID] = row
     end
     local db = { version = 4, houses = { [houseKey] = house }, lastHouseKey = houseKey, settings = {} }
+    -- A full History tab: every entry its own time and amounts, the worst case for constants.
+    db.ledger = { entries = {}, seen = {} }
+    local kinds = { "bought", "sold", "bought", "expired" }
+    for index = 1, ledger.LEDGER_KEPT do
+        local count = 1 + math.floor(next() * 20)
+        db.ledger.entries[index] = { time = Synth.NOW - (ledger.LEDGER_KEPT - index) * 600, who = "Bench Name " .. index % 4,
+            realm = "Bench Realm", kind = kinds[1 + index % 4], itemID = 1 + index % items, name = "Bench Item " .. (1 + index % items),
+            count = count, bid = SellerPrice(100 + next() * 200000) * count, cut = index % 4 == 2 and 50 or nil,
+            source = "mail" }
+    end
+    db.recentSearches = {}
+    for index = 1, ledger.RECENT_KEPT do
+        db.recentSearches[index] = "bench search " .. index
+    end
     return db, houseKey
 end
 

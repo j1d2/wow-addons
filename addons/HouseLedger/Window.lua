@@ -4,14 +4,16 @@ and following Blizzard's window through hooksecurefunc (never calling its method
 ]]
 
 local _, ns = ...
-local C, ui, state, U, Chart, Scan, Tooltip, Buy, Sell, Purchase, PC, Settings, Window = ns.C, ns.ui, ns.state, ns.U,
-    ns.Chart, ns.Scan, ns.Tooltip, ns.Buy, ns.Sell, ns.Purchase, ns.PC, ns.Settings, ns.Window
+local C, ui, state, U, Chart, Scan, Tooltip, Buy, Sell, Purchase, PC, History, Settings, Window = ns.C, ns.ui,
+    ns.state, ns.U, ns.Chart, ns.Scan, ns.Tooltip, ns.Buy, ns.Sell, ns.Purchase, ns.PC, ns.History, ns.Settings,
+    ns.Window
 
 -- The Buy chart's height, beside the details block.
 local CHART_HEIGHT = 74
 local SELL_TAB = 2
--- Settings is ours alone, like Market.
-local SETTINGS_TAB = 4
+-- History and Settings are ours alone, like Market.
+local HISTORY_TAB = 4
+local SETTINGS_TAB = 5
 
 -- Blizzard's auction window is followed through hooksecurefunc, set once.
 local houseHooked = false
@@ -39,18 +41,18 @@ local function SelectTab(id)
     if U.Locked(ui.buyPanel) or U.Locked(ui.sellPanel) then
         return
     end
-    if id == SETTINGS_TAB then
-        ui.buyPanel:Hide()
-        ui.sellPanel:Hide()
-        ui.settingsPanel:Show()
-    elseif id == SELL_TAB then
-        ui.buyPanel:Hide()
-        ui.settingsPanel:Hide()
-        ui.sellPanel:Show()
-    else
-        ui.sellPanel:Hide()
-        ui.settingsPanel:Hide()
-        ui.buyPanel:Show()
+    -- One panel shows: Settings, History, Sell, or Buy (which Market shares).
+    local shown = id == SETTINGS_TAB and ui.settingsPanel or id == HISTORY_TAB and ui.historyPanel
+        or id == SELL_TAB and ui.sellPanel or ui.buyPanel
+    for _, panel in ipairs({ ui.buyPanel, ui.sellPanel, ui.historyPanel, ui.settingsPanel }) do
+        if panel ~= shown then
+            panel:Hide()
+        end
+    end
+    shown:Show()
+    if shown == ui.historyPanel then
+        History.Render()
+    elseif shown == ui.buyPanel then
         if (id == C.MARKET_TAB) ~= (ui.buyPanel.marketMode == true) then
             Buy.SetMarketMode(id == C.MARKET_TAB)
         end
@@ -79,8 +81,8 @@ local function BuildTab(id, label)
     return tab
 end
 
---- Makes the Buy, Sell, Market and Settings tabs and shows the Buy tab.
--- Market and Settings are plain tabs: not linked to Blizzard's window, they press nothing there.
+--- Makes the Buy, Sell, Market, History and Settings tabs and shows the Buy tab.
+-- Market, History and Settings are plain tabs: not linked to Blizzard's window, they press nothing there.
 local function BuildTabs()
     local buyTab = BuildTab(C.BUY_TAB, "Buy")
     buyTab:SetPoint("TOPLEFT", ui.frame, "BOTTOMLEFT", 12, 2)
@@ -99,8 +101,9 @@ local function BuildTabs()
         return tab
     end
     local marketTab = PlainTab(C.MARKET_TAB, "Market")
+    local historyTab = PlainTab(HISTORY_TAB, "History")
     local settingsTab = PlainTab(SETTINGS_TAB, "Settings")
-    ui.frame.Tabs = { buyTab, sellTab, marketTab, settingsTab }
+    ui.frame.Tabs = { buyTab, sellTab, marketTab, historyTab, settingsTab }
     if type(PanelTemplates_TabResize) == "function" then
         for _, tab in ipairs(ui.frame.Tabs) do
             PanelTemplates_TabResize(tab, 0)
@@ -274,6 +277,7 @@ function Window.Build()
     Buy.ClearDetails()
 
     Sell.BuildPanel()
+    History.BuildPanel()
     Settings.BuildPanel()
     BuildTabs()
     Purchase.Build()

@@ -15,8 +15,8 @@ does not scan when the auction house opens.
 ]]
 
 local ADDON_NAME, ns = ...
-local C, ui, state, Price, U, Scan, Tooltip, Buy, Sell, Purchase, PC, Window = ns.C, ns.ui, ns.state, ns.Price, ns.U,
-    ns.Scan, ns.Tooltip, ns.Buy, ns.Sell, ns.Purchase, ns.PC, ns.Window
+local C, ui, state, Price, U, Scan, Tooltip, Buy, Sell, Purchase, PC, History, Window = ns.C, ns.ui, ns.state,
+    ns.Price, ns.U, ns.Scan, ns.Tooltip, ns.Buy, ns.Sell, ns.Purchase, ns.PC, ns.History, ns.Window
 
 -- True while one refilter waits for the next frame, so a burst of item-info events filters once.
 local refilterPending = false
@@ -39,6 +39,8 @@ eventFrame:RegisterEvent("COMMODITY_PURCHASE_SUCCEEDED")
 eventFrame:RegisterEvent("COMMODITY_PURCHASE_FAILED")
 eventFrame:RegisterEvent("AUCTION_HOUSE_PURCHASE_COMPLETED")
 eventFrame:RegisterEvent("AUCTION_HOUSE_SHOW_ERROR")
+-- The mailbox: the History tab reads auction house mail while it is open (reads only).
+eventFrame:RegisterEvent("MAIL_INBOX_UPDATE")
 
 -- The buy answers and the handler each one goes to; COMMODITY_PRICE_UPDATED also passes arg2.
 local PURCHASE_EVENTS = {
@@ -111,6 +113,11 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1, arg2)
             Price.joined = {}
         end
         Buy.RefreshOverview()
+        return
+    end
+
+    if event == "MAIL_INBOX_UPDATE" then
+        History.ReadInbox()
         return
     end
 

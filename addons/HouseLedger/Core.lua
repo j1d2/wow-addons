@@ -7,7 +7,7 @@ item looks, font-string cells).
 local _, ns = ...
 ns.C, ns.ui, ns.state = {}, {}, {}
 -- One table per file, made here so any file can name another's before it loads.
-for _, name in ipairs({ "U", "Chart", "Scan", "Tooltip", "Buy", "Sell", "Purchase", "PC", "Settings", "Window" }) do
+for _, name in ipairs({ "U", "Chart", "Scan", "Tooltip", "Buy", "Sell", "Purchase", "PC", "History", "Settings", "Window" }) do
     ns[name] = {}
 end
 local C, ui, state, Price, U = ns.C, ns.ui, ns.state, ns.Price, ns.U
@@ -73,7 +73,7 @@ C.BUY_START = "Type a name or pick a quality, then click Search."
 
 -- Frames more than one file uses, set when they are built (Window.Build, PC.Build). The rest
 -- start nil: frame, searchBox, statusText, scanText, scanBar (the read's progress, shown only
--- while reading), scanButton, buyPanel, sellPanel, settingsPanel, priceCheck (the /pc window,
+-- while reading), scanButton, buyPanel, sellPanel, historyPanel, settingsPanel, priceCheck (the /pc window,
 -- built at load) and header.
 ui.rows = {}
 

@@ -37,8 +37,10 @@ local overBudget = 0
 -- its last 30 scans); see bench/README.md before raising one.
 local BUDGETS = {
     keptPerDayRow = 470,
-    -- Share of CONSTANT_LIMIT the smoke data may use (3.2% since version 4's rounded days).
-    constantShare = 0.05,
+    -- Share of CONSTANT_LIMIT the smoke data may use (3.2% since version 4's rounded days; 5.3% with
+    -- a full History tab of 2,000 entries, 2026-11-23: each has its own time and amounts. A real
+    -- 15-day file measured 14.2% before the History tab.)
+    constantShare = 0.06,
     ["Load saved file"] = { kb = 13000, ms = 2000 },
     ["EnsureDB, from version 3"] = { kb = 1070, ms = 2000 },
     EnsureDB = { kb = 1000, ms = 2000 },
@@ -58,6 +60,9 @@ local BUDGETS = {
     ["Record, full history"] = { kb = 15, ms = 2000 },
     -- Counting the player's own disenchant results, after each disenchant (2026-11-22).
     ["Tally, full history"] = { kb = 70, ms = 2000 },
+    -- HouseLedger's History tab at LEDGER_KEPT entries, worked out when the history changes (2026-11-23).
+    ["LedgerProfits, full"] = { kb = 200, ms = 2000 },
+    ["LedgerView + totals"] = { kb = 120, ms = 2000 },
 }
 
 --- The memory in use now, in KB, after a full collection.
@@ -198,6 +203,10 @@ local function BenchHouseLedger(items, days, maxScans)
         end
     end)
     Step("Market", function() P.Market(house) end)
+    local profits
+    Step("LedgerProfits, full", function() profits = P.LedgerProfits(db.ledger.entries) end,
+        #db.ledger.entries .. " entries")
+    Step("LedgerView + totals", function() P.LedgerTotals(P.LedgerView(db.ledger.entries), profits) end)
     Step("FindByName", function() P.FindByName(house, "bench item 1", 100) end)
     Step("HouseOverview", function() P.HouseOverview(house) end)
     Step("ChartDays, every item", function()
