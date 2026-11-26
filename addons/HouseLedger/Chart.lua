@@ -23,7 +23,7 @@ local ESTIMATE_COLOR = { 0.72, 0.45, 1, 0.85 }
 local CHART_DAY_GAP = 3
 -- The view buttons: small game buttons, the one in use lit. What each says, by view.
 local VIEW_WORDS = { days = "Days", scans = "Scans" }
-local VIEW_BUTTON_WIDTH = 46
+local VIEW_BUTTON_WIDTH = 40
 local VIEW_BUTTON_HEIGHT = 16
 
 -- The price charts Chart.Build made, so a view change redraws every one on screen.
@@ -331,6 +331,8 @@ function Chart.Build(parent, width, height)
     chart.viewButtons = { days = ViewButton(chart, "days"), scans = ViewButton(chart, "scans") }
     chart.viewButtons.scans:SetPoint("TOPRIGHT", chart, "TOPRIGHT", -1, -1)
     chart.viewButtons.days:SetPoint("RIGHT", chart.viewButtons.scans, "LEFT", -2, 0)
+    -- A long price is cut short before it reaches the buttons.
+    chart.topText:SetPoint("RIGHT", chart.viewButtons.days, "LEFT", -4, 0)
     chart.emptyText = U.Cell(chart, "GameFontDisableSmall", "LEFT")
     chart.emptyText:SetPoint("LEFT", chart, "LEFT", 6, -6)
     chart.emptyText:SetPoint("RIGHT", chart, "RIGHT", -6, -6)

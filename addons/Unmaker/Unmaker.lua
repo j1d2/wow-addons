@@ -372,6 +372,8 @@ end
 function scroll.New(panel, move)
     local bar = CreateFrame("EventFrame", nil, panel, "MinimalScrollBar")
     bar.first, bar.last = 0, 0
+    -- The wheel over the bar moves one row, as the wheel over the list does (the game's default is two).
+    bar.wheelPanScalar = 1
     bar:SetHideIfUnscrollable(true)
     bar:RegisterCallback("OnScroll", function(_, percentage)
         local target = bar.last > 0 and math.floor((percentage or 0) * bar.last + 0.5) or 0
@@ -1017,7 +1019,8 @@ local function BuildKept()
         ScrollKept(-delta)
     end)
     scroll.bars.kept = scroll.New(kept.panel, ScrollKept)
-    scroll.bars.kept:SetPoint("TOPRIGHT", kept.panel, "TOPRIGHT", 4, -FILTER_HEIGHT)
+    -- Rows end 4 px short of the panel's right edge (Forget sits there); the bar starts 2 px past it.
+    scroll.bars.kept:SetPoint("TOPRIGHT", kept.panel, "TOPRIGHT", 10, -FILTER_HEIGHT)
     scroll.bars.kept:SetHeight(LIST_HEIGHT)
     kept.title = kept.panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     kept.title:SetPoint("TOPLEFT", kept.panel, "TOPLEFT", 4, -4)

@@ -499,6 +499,9 @@ end
 function U.ScrollBar(parent, scroll)
     local bar = CreateFrame("EventFrame", nil, parent, "MinimalScrollBar")
     bar.offset, bar.maxOffset = 0, 0
+    -- The wheel over the bar moves as far as the wheel over the list: WHEEL_STEP rows (the
+    -- game's default is two arrow clicks).
+    bar.wheelPanScalar = C.WHEEL_STEP
     bar:SetHideIfUnscrollable(true)
     bar:RegisterCallback("OnScroll", function(_, percentage)
         local target = U.ScrollTarget(percentage, bar.maxOffset)

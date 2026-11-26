@@ -565,6 +565,7 @@ function Buy.SetMarketMode(market)
             row.result = nil
             row:Hide()
         end
+        U.SetScrollBar(ui.buyPanel.scrollBar, 0, C.VISIBLE_ROWS, 0)
         SetNotice(nil)
         SetListMessage(C.BUY_START)
         SetStatus(C.BUY_HELP)
@@ -629,6 +630,7 @@ function Buy.ClearSearch()
         row.result = nil
         row:Hide()
     end
+    U.SetScrollBar(ui.buyPanel.scrollBar, 0, C.VISIBLE_ROWS, 0)
     Buy.ClearDetails()
     SetNotice(nil)
     HighlightSearch(false)

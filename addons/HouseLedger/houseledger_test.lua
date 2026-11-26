@@ -4118,6 +4118,42 @@ do
 end
 
 do
+    -- The Buy list's scroll bar never shows a stale thumb: Clear, an item's listings, Back and Market.
+    Setup()
+    Load()
+    OpenHouse()
+    world.commodities = { [1] = true }
+    world.browseResults = BrowseResults(1, 30)
+    Fire("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
+    local panel = MainFrame().buyPanel
+    local bar = panel.scrollBar
+    Check("buy bar: wheel over the bar moves as far as the wheel over the list", bar.wheelPanScalar == 3)
+    Click("Clear")
+    Check("buy bar: Clear hides it with the rows", not bar.shown)
+    Fire("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
+    local row = ResultRows()[1]
+    row:GetScript("OnClick")(row)
+    Press(panel.listingsButton)
+    world.commodityResults = {}
+    for index = 1, 20 do
+        world.commodityResults[index] = { itemID = 1, quantity = 1, unitPrice = 10 + index, auctionID = index,
+            containsOwnerItem = false, numOwnerItems = 0 }
+    end
+    Fire("COMMODITY_SEARCH_RESULTS_UPDATED", 1)
+    Check("buy bar: an item's listings get their own thumb", bar.shown and bar.visible == 15 / 20
+        and bar.percentage == 0)
+    local queries, searches, buys = #world.browseQueries, #world.itemQueries, #world.buys
+    bar:SetScrollPercentage(1)
+    Check("buy bar: dragging through the listings moves them and sends nothing", bar.offset == 5
+        and #world.browseQueries == queries and #world.itemQueries == searches and #world.buys == buys)
+    Press(panel.backButton)
+    Check("buy bar: Back puts the search results' thumb back", bar.shown and bar.visible == 15 / 30
+        and bar.percentage == 0)
+    Click("Market")
+    Check("buy bar: an empty Market hides it", not bar.shown)
+end
+
+do
     -- History: the list fills the dark box down to the totals, and a scroll bar shows when it is longer.
     Setup()
     Load()
