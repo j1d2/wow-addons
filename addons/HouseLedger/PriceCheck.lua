@@ -8,6 +8,8 @@ local C, ui, state, Price, U, Chart, PC = ns.C, ns.ui, ns.state, ns.Price, ns.U,
 -- Price Check layout: column headings under the search box, the rows, then the details and the
 -- chart.
 PC.WIDTH = 400
+-- A details line's price ends this far from the right edge.
+local DETAIL_RIGHT = 16
 PC.HEADER_HEIGHT = 18
 PC.ROWS = 12
 PC.LIST_TOP = 64
@@ -182,11 +184,7 @@ function PC.ShowDetails(row)
     local info = Price.Lookup(HouseLedgerDB, entry.itemID, U.PlayerHouseKey())
     local stats = info and info.stats
     ui.priceCheck.detailTitle:SetText(stats and (entry.name .. ", " .. Price.CountText(stats)) or entry.name)
-    local lines = stats and Price.WindowLines(stats, U.CopperToText) or {}
-    for index, line in ipairs(ui.priceCheck.detailLines) do
-        line.left:SetText(lines[index] and lines[index].left or "")
-        line.right:SetText(lines[index] and lines[index].right or "")
-    end
+    U.ShowWindowLines(ui.priceCheck.detailLines, stats, PC.WIDTH - C.DETAIL_VALUE_LEFT - DETAIL_RIGHT)
     Chart.Show(ui.priceCheck.chart, info)
 end
 
@@ -377,8 +375,8 @@ function PC.Build()
         left:SetPoint("TOPLEFT", ui.priceCheck, "TOPLEFT", 24, y)
         left:SetWidth(150)
         local right = U.Cell(ui.priceCheck, "GameFontHighlightSmall", "LEFT")
-        right:SetPoint("TOPLEFT", ui.priceCheck, "TOPLEFT", 180, y)
-        right:SetPoint("RIGHT", ui.priceCheck, "RIGHT", -16, 0)
+        right:SetPoint("TOPLEFT", ui.priceCheck, "TOPLEFT", C.DETAIL_VALUE_LEFT, y)
+        right:SetPoint("RIGHT", ui.priceCheck, "RIGHT", -DETAIL_RIGHT, 0)
         ui.priceCheck.detailLines[index] = { left = left, right = right }
     end
     ui.priceCheck.chart = Chart.Build(ui.priceCheck, PC.WIDTH - 40, 64)

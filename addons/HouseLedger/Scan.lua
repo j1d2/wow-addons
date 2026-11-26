@@ -83,13 +83,13 @@ function Scan.RefreshIdleLine()
     local label = Price.HouseLabel(key)
     if wait > 0 and priced > 0 then
         Scan.SetStatus(string.format(
-            "%d prices (%s). Next scan in %s.",
-            priced, label, U.RemainingText(wait)
+            "%s prices (%s). Next scan in %s.",
+            Price.Thousands(priced), label, U.RemainingText(wait)
         ))
         return
     end
     if priced > 0 then
-        Scan.SetStatus(string.format("%d prices (%s). Scan is ready.", priced, label))
+        Scan.SetStatus(string.format("%s prices (%s). Scan is ready.", Price.Thousands(priced), label))
         return
     end
     if wait > 0 then
@@ -128,7 +128,7 @@ local function FinishRead(token, best, totals)
     else
         Buy.RefreshOverview()
     end
-    Scan.SetStatus(string.format("Saved %d prices (%s).", saved, Price.HouseLabel(scanHouseKey)), 8)
+    Scan.SetStatus(string.format("Saved %s prices (%s).", Price.Thousands(saved), Price.HouseLabel(scanHouseKey)), 8)
 end
 
 --- Reads one batch of READ_BATCH replicate listings, then the next on the next frame.

@@ -32,6 +32,8 @@ C.FRAME_WIDTH_MIN = 440
 C.STATUS_HEIGHT = 48
 C.DETAIL_LINES = 5
 C.DETAIL_LINE_HEIGHT = 15
+-- Where a details line's price starts, from the window's left edge (Buy and Price Check).
+C.DETAIL_VALUE_LEFT = 180
 C.DETAIL_HEIGHT = (C.DETAIL_LINES + 1) * C.DETAIL_LINE_HEIGHT + 10
 
 -- The results list sits in the template's inset, between the search
@@ -171,6 +173,54 @@ function U.CopperToText(copper)
         return GetMoneyString(copper, true)
     end
     return Price.CoinText(copper)
+end
+
+-- The coin sizes FitMoney tries, smallest kept coin first: every coin, then no copper on amounts
+-- of 1 gold or more, then no silver either.
+local MONEY_UNITS = { 1, 100, 10000 }
+
+--- Writes text holding money into a cell, rounding amounts of 1 gold or more until it fits.
+-- A cell cuts long text with "...", and a cut through a coin icon's markup leaves a stray "|".
+-- The width is the one the code gave the cell, not the cell's own: a cell's size can be unknown
+-- until the game first lays it out.
+-- @param cell the font string
+-- @param width the room it has, in pixels
+-- @param build function(coins) returning the text, writing each amount with coins(copper)
+-- @return the text it set
+function U.FitMoney(cell, width, build)
+    local text
+    for _, unit in ipairs(MONEY_UNITS) do
+        text = build(function(copper)
+            return U.CopperToText(Price.RoundCoins(copper, unit))
+        end)
+        cell:SetText(text)
+        -- GetStringWidth can stop at the cell's width; the unbounded width is the whole text's.
+        local textWidth = cell.GetUnboundedStringWidth and cell:GetUnboundedStringWidth() or cell:GetStringWidth()
+        if textWidth <= width then
+            break
+        end
+    end
+    return text
+end
+
+--- Fills the details block's lines from PriceLedger.WindowLines. A price line is rounded (FitMoney)
+-- only when it can't fit whole.
+-- @param lines the line cells: { left, right } each
+-- @param stats the item's saved stats, or nil to empty the lines
+-- @param width the room each line's right cell has, in pixels
+function U.ShowWindowLines(lines, stats, width)
+    local exact = stats and Price.WindowLines(stats, U.CopperToText) or {}
+    for index, line in ipairs(lines) do
+        local source = exact[index]
+        line.left:SetText(source and source.left or "")
+        if source then
+            U.FitMoney(line.right, width, function(coins)
+                return Price.WindowLines(stats, coins)[index].right
+            end)
+        else
+            line.right:SetText("")
+        end
+    end
 end
 
 --- A wait as whole minutes (rounded up) from 60 seconds on, otherwise seconds.

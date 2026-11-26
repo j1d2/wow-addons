@@ -25,6 +25,9 @@ local CHART_DAY_GAP = 3
 local VIEW_WORDS = { days = "Days", scans = "Scans" }
 local VIEW_BUTTON_WIDTH = 40
 local VIEW_BUTTON_HEIGHT = 16
+-- The chart width the top price can't use: its 3 px inset, the 4 px gap before the Days button,
+-- and the two buttons (1 px from the corner, 2 px apart). Chart.Build anchors them that way.
+local TOP_TEXT_MARGIN = 3 + 4 + VIEW_BUTTON_WIDTH + 2 + VIEW_BUTTON_WIDTH + 1
 
 -- The price charts Chart.Build made, so a view change redraws every one on screen.
 Chart.built = {}
@@ -191,6 +194,15 @@ local function MarkView(chart, view)
     end
 end
 
+--- Writes the axis's top price, rounded when the whole price can't fit left of the view buttons.
+-- @param chart from Chart.Build
+-- @param top copper at the top of the axis
+local function SetTopPrice(chart, top)
+    U.FitMoney(chart.topText, chart.chartWidth - TOP_TEXT_MARGIN, function(coins)
+        return coins(top)
+    end)
+end
+
 --- Draws an item's saved prices on a chart, in the saved view.
 -- Days: one bar per day's low with a faint band up to its high, one slot per day from the item's
 -- oldest saved day (at least 7, at most the history length), so it grows as the history does.
@@ -222,7 +234,7 @@ function Chart.Show(chart, info)
         local top = DrawBars(chart, data.slots, data.top, true, chart.fit)
         chart.caption:SetText("Each scan, " .. data.count .. (data.count == 1 and " scan" or " scans"))
         chart.span = Price.ScanSpanText(data)
-        chart.topText:SetText(U.CopperToText(top))
+        SetTopPrice(chart, top)
         chart:Show()
         return
     end
@@ -236,7 +248,7 @@ function Chart.Show(chart, info)
     local top = DrawBars(chart, data.slots, data.top, false, chart.fit)
     chart.caption:SetText("Daily low, " .. data.days .. " days"
         .. (data.perBar > 1 and " (" .. data.perBar .. " days per bar)" or ""))
-    chart.topText:SetText(U.CopperToText(top))
+    SetTopPrice(chart, top)
     chart:Show()
 end
 

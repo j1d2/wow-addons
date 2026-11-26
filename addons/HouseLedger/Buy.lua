@@ -160,7 +160,9 @@ local function FillRow(row, result)
     row.availText:SetText(tostring(result.totalQuantity or 0))
 
     local stats = U.SavedStats(result.itemKey and result.itemKey.itemID)
-    row.typicalText:SetText(stats and stats.typical and U.CopperToText(stats.typical) or "-")
+    U.FitMoney(row.typicalText, COLUMN_WIDTH.typical, function(coins)
+        return stats and stats.typical and coins(stats.typical) or "-"
+    end)
     -- Judge the live price, not the last scan's: that is what you would pay.
     local verdict = Price.Judge(stats, result.minPrice)
     local mark = Price.TrendText(verdict, "buyer")
@@ -450,6 +452,13 @@ function Buy.Scroll(rowsDown)
     Buy.RenderRows()
 end
 
+--- How far a details line's price ends from the window's right edge: clear of the chart when it
+-- has room beside the details.
+-- @return pixels
+local function DetailRight()
+    return ui.buyPanel.chartRoom and C.CHART_WIDTH + 24 or 16
+end
+
 --- A row click: its saved stats in the details block, and the Listings button for it. While an
 -- item's listings show, the click picks a listing instead (Purchase.PickRow).
 -- Reads saved data only; the house is not asked anything.
@@ -476,12 +485,8 @@ local function ShowRowDetails(row)
     if ui.buyPanel.chartRoom then
         Chart.Show(ui.buyPanel.chart, Price.Lookup(HouseLedgerDB, row.result.itemKey.itemID, U.ViewHouseKey()))
     end
-    local lines = Price.WindowLines(stats, U.CopperToText) or {}
-    for index, line in ipairs(ui.buyPanel.detailLines) do
-        local source = lines[index]
-        line.left:SetText(source and source.left or "")
-        line.right:SetText(source and source.right or "")
-    end
+    U.ShowWindowLines(ui.buyPanel.detailLines, stats, (ui.frame:GetWidth() or C.FRAME_WIDTH_MIN)
+        - C.DETAIL_VALUE_LEFT - DetailRight())
 end
 
 --- Writes the column headings: Market's price is "Scanned", and the sorted column gets an arrow.
@@ -837,7 +842,7 @@ function Buy.LayoutColumns(width)
         end
     end
     for _, line in ipairs(ui.buyPanel.detailLines or {}) do
-        line.right:SetPoint("RIGHT", ui.frame, "RIGHT", showTypical and -(C.CHART_WIDTH + 24) or -16, 0)
+        line.right:SetPoint("RIGHT", ui.frame, "RIGHT", -DetailRight(), 0)
     end
 end
 

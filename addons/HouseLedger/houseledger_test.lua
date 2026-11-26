@@ -4005,7 +4005,7 @@ do
     local boxes = panel.priceBoxes
     Check("post: the price is filled in from the listings, matching the cheapest stackable",
         boxes.gold.text == "" and boxes.silver.text == "" and boxes.copper.text == "98"
-        and panel.reasonText.text == "Matching 50 listed at 98c.")
+        and panel.reasonText.text == "Matching 50 listed at <money 98>.")
     Check("post: the deposit and what the sale brings after the 5% cut", panel.moneyText.text
         == "Deposit <money 120>, you get <money 5586> after the cut")
     Check("post: Post can be clicked", panel.postButton.enabled and panel.postButton.text == "Post")
@@ -4182,6 +4182,76 @@ do
     TabNamed("Buy"):GetScript("PostClick")(TabNamed("Buy"))
     inset = frame.Inset.points[#frame.Inset.points]
     Check("history: other tabs get the box back above their details", inset[5] == 148)
+end
+
+-- Money that can't fit its cell is rounded (amounts of 1 gold or more lose copper, then silver)
+-- instead of cut with "...", which can split a coin icon's markup and leave a stray "|". Plain
+-- "1g 2s 3c" text here, so rounding makes it shorter, as the coin icons do in game.
+do
+    Setup({ noMoneyString = true })
+    Load()
+    local P = HouseLedgerPrice
+    for back = 5, 1, -1 do
+        local best = {}
+        P.Consider(best, 4306, 1, 1234567 + back * 1111)
+        P.Commit(HouseLedgerDB, "Alliance|TestRealm", best, world.now - back * 24 * 60 * 60)
+    end
+    HouseLedgerDB.houses["Alliance|TestRealm"].items[4306].name = "Wool Cloth"
+    OpenHouse()
+    world.browseResults = BrowseResults(4306, 4306, 1234567)
+    world.charWidth = 1
+    Fire("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
+    local panel = MainFrame().buyPanel
+    local row = ResultRows()[1]
+    row:GetScript("OnClick")(row)
+    local chart = panel.chart
+    local function Coarse(text) return text:find("%d+s") == nil and text:find("%d+c") == nil end
+    Check("fit money: what fits stays exact", chart.topText.text:find("^%d+g %d+s %d+c$") ~= nil
+        and panel.detailLines[1].right.text:find("%d+c") ~= nil and row.typicalText.text:find("%d+c$") ~= nil)
+    -- The top price has the chart's width less the view buttons: 170 - 90 = 80 px.
+    world.charWidth = 8
+    row:GetScript("OnClick")(row)
+    Check("fit money: too wide for copper, the axis price drops it", chart.topText.text:find("^%d+g %d+s$") ~= nil
+        and #chart.topText.text * 8 <= 80)
+    world.charWidth = 20
+    row:GetScript("OnClick")(row)
+    Check("fit money: then its silver", chart.topText.text:find("^%d+g$") ~= nil)
+    world.charWidth = 50
+    Fire("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
+    row = ResultRows()[1]
+    row:GetScript("OnClick")(row)
+    local coarse = true
+    for index = 1, 4 do
+        coarse = coarse and Coarse(panel.detailLines[index].right.text)
+    end
+    Check("fit money: details lines and Avg 7d round when nothing fits", coarse
+        and panel.detailLines[2].right.text:find("^avg %d+g") ~= nil and row.typicalText.text:find("^%d+g$") ~= nil)
+    Check("fit money: the live price you would pay is never rounded", row.priceText.text == "123g 45s 67c")
+    world.charWidth = nil
+    _G.SlashCmdList.HOUSELEDGERPC("")
+    local window = _G.HouseLedgerPriceCheck
+    world.charWidth = 9
+    Type(window.searchBox, "Wool")
+    window.rows[1]:GetScript("OnClick")(window.rows[1])
+    -- Price Check is 400 wide: a details price has 400 - 180 - 16 = 204 px.
+    local fits = true
+    for index = 1, 3 do
+        fits = fits and #window.detailLines[index].right.text * 9 <= 204
+    end
+    Check("fit money: Price Check's narrow details round too, each line only as far as it must", fits
+        and window.detailLines[1].right.text == "123g 56s 78c" and window.detailLines[2].right.text:find("^avg %d+g %(") ~= nil)
+    world.charWidth = nil
+end
+
+do
+    Setup()
+    Load()
+    OpenHouse()
+    local frame = MainFrame()
+    local tab = TabNamed("Settings")
+    tab:GetScript("OnClick")(tab)
+    local inset = frame.Inset.points[#frame.Inset.points]
+    Check("settings: the dark box reaches down like History's, with no empty band under it", inset[5] == 88)
 end
 
 if failed > 0 then

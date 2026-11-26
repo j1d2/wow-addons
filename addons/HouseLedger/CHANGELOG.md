@@ -31,6 +31,10 @@ All notable changes to HouseLedger. The format follows [Keep a Changelog](https:
 
 ### Fixed
 
+- A price too long for its space (a big price on a chart's top line, or in Price Check's details) could end in a stray "|". It's now rounded to fit instead: from 1 gold up, first without copper, then without silver. The price you'd pay is never rounded.
+- A price that fell more than 99.5% showed as -100%, as if the item were free. It now shows -99%.
+- Big counts get commas: "40,223 in 1,070 listings", "7,441 prices". The posting line shows its prices with coin icons, like the rest of the window.
+- On the Settings tab, the dark box now reaches down to the bottom line, as on History, instead of leaving an empty band under it.
 - The Sell tab's lowest price for an item that isn't stackable (like Silver Rod) was too low when one listing held several copies: it divided the price by the copies. A listing's price is the price of one copy, as the Buy tab's listings already show.
 - Since the game update of November 20, the game can give a blank realm name, and HouseLedger then started a new, empty price history for every scan after it. Your history wasn't lost: HouseLedger now joins those scans back into your saved history the first time it loads, and a blank realm name keeps using the realm the game last named. The auction house window says so once when it has joined them.
 - At a goblin auction house, the window (Market, the house overview, Buy and Sell details, and the scan line) now shows that goblin house's prices instead of your faction's, and calls it "Goblin". Tooltips and Price Check always show your own faction's prices, and no longer fall back to another house's.

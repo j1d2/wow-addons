@@ -51,11 +51,12 @@ local function SelectTab(id)
         end
     end
     shown:Show()
-    -- The dark box ends above the details block, except on History, whose list takes that space.
+    -- The dark box ends above the details block. History and Settings have no details block, so
+    -- it reaches down to History's totals there (on Settings, that space would be an empty band).
     local inset = ui.frame.Inset
     if type(inset) == "table" then
-        inset:SetPoint("BOTTOMRIGHT", ui.frame, "BOTTOMRIGHT", -6,
-            shown == ui.historyPanel and History.INSET_BOTTOM or C.LIST_BOTTOM)
+        local tall = shown == ui.historyPanel or shown == ui.settingsPanel
+        inset:SetPoint("BOTTOMRIGHT", ui.frame, "BOTTOMRIGHT", -6, tall and History.INSET_BOTTOM or C.LIST_BOTTOM)
     end
     if shown == ui.historyPanel then
         History.Render()
@@ -283,7 +284,7 @@ function Window.Build()
         left:SetPoint("TOPLEFT", ui.frame, "BOTTOMLEFT", 24, y)
         left:SetWidth(150)
         local right = U.Cell(ui.buyPanel, "GameFontHighlightSmall", "LEFT")
-        right:SetPoint("TOPLEFT", ui.frame, "BOTTOMLEFT", 180, y)
+        right:SetPoint("TOPLEFT", ui.frame, "BOTTOMLEFT", C.DETAIL_VALUE_LEFT, y)
         right:SetPoint("RIGHT", ui.frame, "RIGHT", -16, 0)
         ui.buyPanel.detailLines[index] = { left = left, right = right }
     end

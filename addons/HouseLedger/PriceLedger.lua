@@ -667,6 +667,19 @@ function PriceLedger.CoinText(copper)
     return table.concat(parts, " ")
 end
 
+--- Rounds an amount of 1 gold or more to whole coins of one size, for a cell too narrow for every
+-- coin (Blizzard's money text leaves out empty coins, so the text gets shorter). Under 1 gold an
+-- amount stays exact: it is short already.
+-- @param copper whole copper, or nil
+-- @param unit the smallest coin to keep, in copper: 1 (all), 100 (silver) or 10000 (gold)
+-- @return the rounded copper (nil stays nil)
+function PriceLedger.RoundCoins(copper, unit)
+    if type(copper) ~= "number" or copper < COPPER_PER_GOLD then
+        return copper
+    end
+    return math.floor(copper / unit + 0.5) * unit
+end
+
 --- Removes the first `drop` values of a list, moving the rest down.
 -- @param list an array; changed in place
 -- @param drop how many to remove from the front
@@ -1914,6 +1927,10 @@ function PriceLedger.TrendText(stats, view)
     local good = (view == "seller") == rising
     local color = good and GREEN or RED
     local percent = math.floor(math.abs(stats.trendPct) * 100 + 0.5)
+    if not rising then
+        -- A price can't fall 100% without being free: 99.9% rounds to -100%, so show -99%.
+        percent = math.min(percent, 99)
+    end
     return string.format("|A:%s:14:14:0:0:%d:%d:%d|a|cff%s%s%d%%|r",
         rising and ARROW_UP or ARROW_DOWN, color[1], color[2], color[3],
         color[4], rising and "+" or "-", percent)
@@ -2059,7 +2076,7 @@ local function Plural(count, word)
     if count == 1 then
         return count .. " " .. word
     end
-    return count .. " " .. word .. "s"
+    return PriceLedger.Thousands(count) .. " " .. word .. "s"
 end
 
 --- A price range like "95s - 1g 40s", or one price when the low and high match.
@@ -2085,7 +2102,7 @@ end
 -- @param summary from PriceLedger.LowestListing
 -- @return the text
 function PriceLedger.ListingText(summary)
-    return summary.total .. " in " .. Plural(summary.listings, "listing")
+    return PriceLedger.Thousands(summary.total) .. " in " .. Plural(summary.listings, "listing")
 end
 
 local RangeText = PriceLedger.RangeText
@@ -2628,13 +2645,16 @@ end
 -- @param stats the item's saved stats, or nil
 -- @param last { price, time } from My last price, or nil
 -- @param stackable true for a stackable item
+-- @param coins optional writer for the prices in the reason, like the window's coin icons;
+--   plain "1g 2s 3c" text (PriceLedger.CoinText) when nil
 -- @return copper each or nil (the player types one), and the reason
-function PriceLedger.PostPrice(pricing, tiers, stats, last, stackable)
+function PriceLedger.PostPrice(pricing, tiers, stats, last, stackable, coins)
+    coins = coins or PriceLedger.CoinText
     if pricing == "last" then
         if last then
             return last[1], "Your last price, from " .. (PriceLedger.WhenText(last[2]) or "before") .. "."
         end
-        local price, reason = PriceLedger.PostPrice("best", tiers, stats, nil, stackable)
+        local price, reason = PriceLedger.PostPrice("best", tiers, stats, nil, stackable, coins)
         return price, "No last price yet. " .. reason
     end
     local others = {}
@@ -2658,7 +2678,6 @@ function PriceLedger.PostPrice(pricing, tiers, stats, last, stackable)
         end
     end
     local chosen = others[index]
-    local coins = PriceLedger.CoinText
     local reason
     if stackable then
         reason = string.format("Matching %d listed at %s.", chosen.quantity, coins(chosen.price))

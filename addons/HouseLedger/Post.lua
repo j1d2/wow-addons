@@ -197,7 +197,8 @@ end
 --- Fills in the price from the listings with the chosen pricing, and says why.
 local function Prefill()
     local last = (HouseLedgerDB.lastPosts[U.ViewHouseKey()] or {})[item.itemID]
-    local price, reason = Price.PostPrice(Pricing(), tiers, U.SavedStats(item.itemID), last, item.commodity)
+    local price, reason = Price.PostPrice(Pricing(), tiers, U.SavedStats(item.itemID), last, item.commodity,
+        U.CopperToText)
     SetPrice(price)
     ui.postPanel.reasonText:SetText(reason)
 end

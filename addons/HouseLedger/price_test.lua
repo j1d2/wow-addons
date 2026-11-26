@@ -411,6 +411,9 @@ do
             == "|A:NPE_ArrowDown:14:14:0:0:255:32:32|a|cffff2020-20%|r")
     Check("flat trend shows nothing", P.TrendText({ trend = "flat", trendPct = 0.02 }, "buyer") == "")
     Check("no trend yet shows nothing", P.TrendText({}, "buyer") == "")
+    Check("a drop that rounds to 100% shows -99%: only a free item is -100%",
+        P.TrendText({ trend = "down", trendPct = -0.9988 }, "buyer"):find("-99%", 1, true) ~= nil)
+    Check("a rise is not capped", P.TrendText({ trend = "up", trendPct = 1.5 }, "buyer"):find("+150%", 1, true) ~= nil)
     Check("deal icon is the yellow burst", P.DEAL_ICON == "|A:Bonus-Objective-Star:16:16:0:0|a")
 end
 
@@ -485,6 +488,14 @@ do
     Check("silver alone", P.CoinText(500) == "5s")
     Check("large gold is not split", P.CoinText(12345678) == "1234g 56s 78c")
     Check("zero shows as copper", P.CoinText(0) == "0c")
+    Check("round coins: unit 1 keeps the amount", P.RoundCoins(1234567, 1) == 1234567)
+    Check("round coins: 1 gold and up loses its copper, to the nearest silver",
+        P.RoundCoins(1234567, 100) == 1234600 and P.RoundCoins(10049, 100) == 10000)
+    Check("round coins: then its silver, to the nearest gold", P.RoundCoins(1234567, 10000) == 1230000
+        and P.RoundCoins(15000, 10000) == 20000)
+    Check("round coins: under 1 gold stays exact", P.RoundCoins(9999, 10000) == 9999 and P.RoundCoins(57, 100) == 57)
+    Check("round coins: no price stays no price", P.RoundCoins(nil, 100) == nil)
+    Check("listing text groups thousands", P.ListingText({ total = 40223, listings = 1070 }) == "40,223 in 1,070 listings")
 end
 
 do
@@ -782,6 +793,14 @@ do
     end
     bait[7] = Tier(100, 10 ^ 7)
     Check("post: at most 3 cheap listings are passed over", P.PostPrice("best", bait, nil, nil, true) == 4)
+    local function Icons(copper) return "<" .. copper .. ">" end
+    price, reason = P.PostPrice("best", { Tier(5, 1), Tier(20, 50) }, nil, nil, true, Icons)
+    Check("post: the reason's prices use the coin writer it is given",
+        reason == "Skipping the cheapest (<5>): it looks far too cheap. Matching 50 listed at <20>.")
+    price, reason = P.PostPrice("last", {}, nil, nil, false, Icons)
+    Check("post: the fallback reason uses it too", reason:find("Nobody else", 1, true) ~= nil)
+    price, reason = P.PostPrice("last", { Tier(20, 1) }, nil, nil, false, Icons)
+    Check("post: and the 1c-under reason", reason == "No last price yet. 1c under the cheapest at <20> (any item level).")
 
     Check("cut: 5% at the faction houses, unknown at the goblin house", P.HouseCut("Horde|R") == 0.05
         and P.HouseCut("Alliance|R") == 0.05 and P.HouseCut("Neutral|R") == nil)
