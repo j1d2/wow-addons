@@ -107,6 +107,9 @@ local historyList = {}
 -- The Kept tab: its panel, title, empty text and row frames, the rows it lists, the scroll offset,
 -- and whether a row still waits for the game to load its item.
 local kept = { rowFrames = {}, list = {}, offset = 0, pending = false }
+-- Each list's scroll bar (Blizzard's MinimalScrollBar) in scroll.bars (items, history, kept), and
+-- the two functions that make and set them (one table, for the main chunk's locals limit).
+local scroll = { bars = {} }
 -- The game's question-mark icon, for a kept item it hasn't loaded yet.
 local UNKNOWN_ICON = 134400
 local selectedButton, nextButton
@@ -343,10 +346,50 @@ local function MoneyText(copper)
     return table.concat(parts, " ")
 end
 
+--- Matches a list's scroll bar to it: thumb size from how much shows, thumb place from the first
+-- row shown, one row per arrow click. The bar hides itself when every row fits.
+-- @param bar a bar from scroll.New, or nil before the window is built
+-- @param first the list's first shown row, from 0
+-- @param total how many rows the list has
+function scroll.Set(bar, first, total)
+    if bar == nil then
+        return
+    end
+    local last = math.max(0, total - ROW_COUNT)
+    bar.first, bar.last = math.min(first, last), last
+    bar:SetVisibleExtentPercentage(total > 0 and math.min(1, ROW_COUNT / total) or 1)
+    bar:SetPanExtentPercentage(last > 0 and 1 / last or 1)
+    if not bar.moving then
+        bar:SetScrollPercentage(last > 0 and bar.first / last or 0)
+    end
+end
+
+--- Puts Blizzard's thin scroll bar at a list panel's right edge. It shows only while the list is
+-- longer than its rows; its thumb, arrows and wheel move the list through the list's own scroll.
+-- @param panel the list's panel
+-- @param move called with the rows to move (negative moves up)
+-- @return the bar
+function scroll.New(panel, move)
+    local bar = CreateFrame("EventFrame", nil, panel, "MinimalScrollBar")
+    bar.first, bar.last = 0, 0
+    bar:SetHideIfUnscrollable(true)
+    bar:RegisterCallback("OnScroll", function(_, percentage)
+        local target = bar.last > 0 and math.floor((percentage or 0) * bar.last + 0.5) or 0
+        target = math.max(0, math.min(bar.last, target))
+        if target ~= bar.first then
+            bar.moving = true
+            move(target - bar.first)
+            bar.moving = false
+        end
+    end, bar)
+    return bar
+end
+
 local function Render()
     if not built then
         return
     end
+    scroll.Set(scroll.bars.items, offset, #rows)
     for index, rowFrame in ipairs(rowFrames) do
         local row = rows[offset + index]
         rowFrame.row = row
@@ -463,6 +506,7 @@ local function RenderHistory()
     end
     historyList = S.SortHistory(S.FilterHistory(db.history, historyWho, playerRealm), historySort, historyReverse)
     historyOffset = math.max(0, math.min(historyOffset, #historyList - ROW_COUNT))
+    scroll.Set(scroll.bars.history, historyOffset, #historyList)
     for index, rowFrame in ipairs(historyRowFrames) do
         local entry = historyList[historyOffset + index]
         rowFrame.entry = entry
@@ -509,6 +553,7 @@ local function RenderKept()
         return name, link, quality, level, icon
     end)
     kept.offset = math.max(0, math.min(kept.offset, #kept.list - ROW_COUNT))
+    scroll.Set(scroll.bars.kept, kept.offset, #kept.list)
     kept.pending = false
     for index, rowFrame in ipairs(kept.rowFrames) do
         local row = kept.list[kept.offset + index]
@@ -862,10 +907,16 @@ local function BuildHistory()
     historyPanel:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -LIST_TOP)
     historyPanel:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -16, BUTTON_AREA)
     historyPanel:EnableMouseWheel(true)
-    historyPanel:SetScript("OnMouseWheel", function(_, delta)
-        historyOffset = math.max(0, math.min(historyOffset - delta, #historyList - ROW_COUNT))
+    local function ScrollHistory(rowsDown)
+        historyOffset = math.max(0, math.min(historyOffset + rowsDown, #historyList - ROW_COUNT))
         RenderHistory()
+    end
+    historyPanel:SetScript("OnMouseWheel", function(_, delta)
+        ScrollHistory(-delta)
     end)
+    scroll.bars.history = scroll.New(historyPanel, ScrollHistory)
+    scroll.bars.history:SetPoint("TOPRIGHT", historyPanel, "TOPRIGHT", 4, -(FILTER_HEIGHT + 20))
+    scroll.bars.history:SetHeight(LIST_HEIGHT)
     -- Whose disenchants to show: the same kind of dropdown as the Stats tab, rebuilt when opened.
     local whoDropdown = CreateFrame("DropdownButton", nil, historyPanel, "WowStyle1DropdownTemplate")
     whoDropdown:SetWidth(150)
@@ -958,10 +1009,16 @@ local function BuildKept()
     kept.panel:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -LIST_TOP)
     kept.panel:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -16, BUTTON_AREA)
     kept.panel:EnableMouseWheel(true)
-    kept.panel:SetScript("OnMouseWheel", function(_, delta)
-        kept.offset = math.max(0, math.min(kept.offset - delta, #kept.list - ROW_COUNT))
+    local function ScrollKept(rowsDown)
+        kept.offset = math.max(0, math.min(kept.offset + rowsDown, #kept.list - ROW_COUNT))
         RenderKept()
+    end
+    kept.panel:SetScript("OnMouseWheel", function(_, delta)
+        ScrollKept(-delta)
     end)
+    scroll.bars.kept = scroll.New(kept.panel, ScrollKept)
+    scroll.bars.kept:SetPoint("TOPRIGHT", kept.panel, "TOPRIGHT", 4, -FILTER_HEIGHT)
+    scroll.bars.kept:SetHeight(LIST_HEIGHT)
     kept.title = kept.panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     kept.title:SetPoint("TOPLEFT", kept.panel, "TOPLEFT", 4, -4)
     kept.title:SetText("Kept items (0)")
@@ -1294,10 +1351,16 @@ local function BuildFrame()
     itemsPanel:SetPoint("TOPLEFT", frame, "TOPLEFT", 12, -LIST_TOP)
     itemsPanel:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -12, BUTTON_AREA)
     itemsPanel:EnableMouseWheel(true)
-    itemsPanel:SetScript("OnMouseWheel", function(_, delta)
-        offset = math.max(0, math.min(offset - delta, #rows - ROW_COUNT))
+    local function ScrollItems(rowsDown)
+        offset = math.max(0, math.min(offset + rowsDown, #rows - ROW_COUNT))
         Render()
+    end
+    itemsPanel:SetScript("OnMouseWheel", function(_, delta)
+        ScrollItems(-delta)
     end)
+    scroll.bars.items = scroll.New(itemsPanel, ScrollItems)
+    scroll.bars.items:SetPoint("TOPRIGHT", itemsPanel, "TOPRIGHT", 0, -(FILTER_HEIGHT + HEADER_HEIGHT))
+    scroll.bars.items:SetHeight(LIST_HEIGHT)
     BuildFilterAndHeader()
     for index = 1, ROW_COUNT do
         rowFrames[index] = BuildRow(index)
