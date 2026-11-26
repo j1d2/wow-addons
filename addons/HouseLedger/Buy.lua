@@ -297,6 +297,7 @@ function Buy.RenderRows()
     end
     local list, offset = ActiveList()
     local market = state.currentTab == C.MARKET_TAB
+    U.SetScrollBar(ui.buyPanel.scrollBar, offset, C.VISIBLE_ROWS, #list)
     for index = 1, C.VISIBLE_ROWS do
         local result = list[offset + index]
         if result then

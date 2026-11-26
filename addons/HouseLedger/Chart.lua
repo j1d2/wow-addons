@@ -1,6 +1,6 @@
 --[[
 The price chart, used by Buy, Market, Sell and Price Check: one bar per day's lowest price with a
-faint band up to its highest, or one bar per saved scan, picked with the Days | Scans words in its
+faint band up to its highest, or one bar per saved scan, picked with the Days and Scans buttons in its
 corner (one saved choice for every chart), with a trend line, its normal range and a guess at the
 next day or scan (PriceLedger.ChartFit). And the house overview chart (items listed a day, with the
 same three) on Buy. Both draw saved data only.
@@ -21,11 +21,10 @@ local ESTIMATE_COLOR = { 0.72, 0.45, 1, 0.85 }
 
 -- Extra space between two days' scans on the scan view, in pixels.
 local CHART_DAY_GAP = 3
--- The view words: the one in use bright, the other grey.
-local VIEW_ON_COLOR = { 1, 1, 1 }
-local VIEW_OFF_COLOR = { 0.5, 0.5, 0.5 }
--- What each view word says, by view.
+-- The view buttons: small game buttons, the one in use lit. What each says, by view.
 local VIEW_WORDS = { days = "Days", scans = "Scans" }
+local VIEW_BUTTON_WIDTH = 46
+local VIEW_BUTTON_HEIGHT = 16
 
 -- The price charts Chart.Build made, so a view change redraws every one on screen.
 Chart.built = {}
@@ -179,13 +178,16 @@ local function DrawBars(chart, slots, top, dayGaps, fit)
     return top
 end
 
---- Shows which view is in use: its word bright, the other grey.
+--- Shows which view is in use: its button stays lit, as if under the mouse.
 -- @param chart a chart from Chart.Build
 -- @param view one of PriceLedger.CHART_VIEWS
 local function MarkView(chart, view)
-    for name, word in pairs(chart.viewWords) do
-        local color = name == view and VIEW_ON_COLOR or VIEW_OFF_COLOR
-        word.label:SetTextColor(color[1], color[2], color[3])
+    for name, button in pairs(chart.viewButtons) do
+        if name == view then
+            button:LockHighlight()
+        else
+            button:UnlockHighlight()
+        end
     end
 end
 
@@ -284,29 +286,29 @@ local function HideChartTip()
     end
 end
 
---- Makes one view word: a small button that switches every price chart to its view.
+--- Makes one view button: a small game button that switches every price chart to its view.
 -- @param chart the chart it sits on
 -- @param view one of PriceLedger.CHART_VIEWS
--- @return the button, with its label
-local function ViewWord(chart, view)
-    local word = CreateFrame("Button", nil, chart)
-    word.label = U.Cell(word, "GameFontHighlightSmall", "RIGHT")
-    word.label:SetText(VIEW_WORDS[view])
-    word.label:SetPoint("RIGHT", word, "RIGHT", 0, 0)
-    word:SetSize(math.max(20, math.ceil(word.label:GetStringWidth() or 0) + 2), 14)
-    word:SetScript("OnClick", function()
+-- @return the button
+local function ViewButton(chart, view)
+    local button = CreateFrame("Button", nil, chart, "UIPanelButtonTemplate")
+    button:SetSize(VIEW_BUTTON_WIDTH, VIEW_BUTTON_HEIGHT)
+    button:SetNormalFontObject("GameFontNormalSmall")
+    button:SetHighlightFontObject("GameFontHighlightSmall")
+    button:SetText(VIEW_WORDS[view])
+    button:SetScript("OnClick", function()
         Chart.SetView(view)
         ShowChartTip(chart)
     end)
-    word:SetScript("OnEnter", function()
+    button:SetScript("OnEnter", function()
         ShowChartTip(chart)
     end)
-    word:SetScript("OnLeave", HideChartTip)
-    return word
+    button:SetScript("OnLeave", HideChartTip)
+    return button
 end
 
 --- Makes a price chart, hidden until Chart.Show fills it: a dark box, the top of its axis in its
--- top-left corner, the Days | Scans words in its top-right, three textures per slot (the low's
+-- top-left corner, the Days and Scans buttons in its top-right, three textures per slot (the low's
 -- bar, the faint range band and the trend line's normal range), enough for the longest history
 -- and for SCANS_KEPT plus the guess, and the trend line when the client can draw lines. What it
 -- shows ("Daily low, 14 days") is in its hover tip. Chart.Show places as many as it needs.
@@ -314,7 +316,7 @@ end
 -- @param width the chart's width
 -- @param height the chart's height
 -- @return the chart frame, with bars, bands, trendBands, line, barArea, topText, caption,
---   viewWords and emptyText
+--   viewButtons and emptyText
 function Chart.Build(parent, width, height)
     local chart = CreateFrame("Frame", nil, parent)
     chart:SetSize(width, height)
@@ -323,15 +325,12 @@ function Chart.Build(parent, width, height)
     background:SetColorTexture(0, 0, 0, 0.3)
     chart.topText = U.Cell(chart, "GameFontHighlightSmall", "LEFT")
     chart.topText:SetPoint("TOPLEFT", chart, "TOPLEFT", 3, -2)
-    -- What the chart shows; kept for the hover tip, not drawn (the view words use that corner).
+    -- What the chart shows; kept for the hover tip, not drawn (the view buttons use that corner).
     chart.caption = U.Cell(chart, "GameFontDisableSmall", "RIGHT")
     chart.caption:Hide()
-    chart.viewWords = { days = ViewWord(chart, "days"), scans = ViewWord(chart, "scans") }
-    chart.viewWords.scans:SetPoint("TOPRIGHT", chart, "TOPRIGHT", -3, -2)
-    local bar = U.Cell(chart, "GameFontDisableSmall", "RIGHT")
-    bar:SetText("|")
-    bar:SetPoint("RIGHT", chart.viewWords.scans, "LEFT", -3, 0)
-    chart.viewWords.days:SetPoint("RIGHT", bar, "LEFT", -3, 0)
+    chart.viewButtons = { days = ViewButton(chart, "days"), scans = ViewButton(chart, "scans") }
+    chart.viewButtons.scans:SetPoint("TOPRIGHT", chart, "TOPRIGHT", -1, -1)
+    chart.viewButtons.days:SetPoint("RIGHT", chart.viewButtons.scans, "LEFT", -2, 0)
     chart.emptyText = U.Cell(chart, "GameFontDisableSmall", "LEFT")
     chart.emptyText:SetPoint("LEFT", chart, "LEFT", 6, -6)
     chart.emptyText:SetPoint("RIGHT", chart, "RIGHT", -6, -6)

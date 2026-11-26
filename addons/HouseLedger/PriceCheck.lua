@@ -50,6 +50,7 @@ end
 --- Draws Price Check's rows from the scroll position, and the status line.
 function PC.Render()
     local list = ui.priceCheck.found
+    U.SetScrollBar(ui.priceCheck.scrollBar, ui.priceCheck.offset, PC.ROWS, #list)
     for index, row in ipairs(ui.priceCheck.rows) do
         local entry = list[ui.priceCheck.offset + index]
         row.entry = entry
@@ -293,7 +294,7 @@ function PC.Build()
     local headerRow = CreateFrame("Frame", nil, ui.priceCheck)
     headerRow:SetHeight(PC.HEADER_HEIGHT)
     headerRow:SetPoint("TOPLEFT", ui.priceCheck, "TOPLEFT", 12, -PC.LIST_TOP)
-    headerRow:SetPoint("RIGHT", ui.priceCheck, "RIGHT", -12, 0)
+    headerRow:SetPoint("RIGHT", ui.priceCheck, "RIGHT", -12 - C.SCROLL_GUTTER, 0)
     local trendHeading = U.Cell(headerRow, "GameFontNormalSmall", "RIGHT")
     trendHeading:SetPoint("RIGHT", headerRow, "RIGHT", -4, 0)
     trendHeading:SetWidth(70)
@@ -322,6 +323,9 @@ function PC.Build()
     ui.priceCheck:SetScript("OnMouseWheel", function(_, delta)
         PC.Scroll(-delta * C.WHEEL_STEP)
     end)
+    ui.priceCheck.scrollBar = U.ScrollBar(ui.priceCheck, PC.Scroll)
+    ui.priceCheck.scrollBar:SetPoint("TOPRIGHT", ui.priceCheck, "TOPRIGHT", -14, -PC.ROWS_TOP)
+    ui.priceCheck.scrollBar:SetHeight(PC.ROWS * C.ROW_HEIGHT)
     if type(ChatFrameUtil) == "table" and type(ChatFrameUtil.InsertLink) == "function" then
         hooksecurefunc(ChatFrameUtil, "InsertLink", PC.FollowLink)
     end
@@ -331,7 +335,7 @@ function PC.Build()
         local row = CreateFrame("Button", nil, ui.priceCheck)
         row:SetHeight(C.ROW_HEIGHT)
         row:SetPoint("TOPLEFT", ui.priceCheck, "TOPLEFT", 12, -PC.ROWS_TOP - (index - 1) * C.ROW_HEIGHT)
-        row:SetPoint("RIGHT", ui.priceCheck, "RIGHT", -12, 0)
+        row:SetPoint("RIGHT", ui.priceCheck, "RIGHT", -12 - C.SCROLL_GUTTER, 0)
         row:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
         U.AddSelection(row)
         row.icon = row:CreateTexture(nil, "ARTWORK")

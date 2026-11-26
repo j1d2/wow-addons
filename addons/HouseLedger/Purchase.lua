@@ -192,6 +192,7 @@ end
 function Purchase.Render()
     local _, icon = U.ItemLook(listing.readKey)
     local stats = ListingStats()
+    U.SetScrollBar(ui.buyPanel.scrollBar, listing.offset, C.VISIBLE_ROWS, #listing.rows)
     for index = 1, C.VISIBLE_ROWS do
         local row = ui.rows[index]
         local entry = listing.rows[listing.offset + index]

@@ -184,6 +184,8 @@ function Post.Refresh()
     local usable = item ~= nil and item.location ~= nil
     panel.qtyBox:SetShown(usable and item.commodity)
     panel.maxButton:SetShown(usable and item.commodity)
+    -- No item, or one followed from Blizzard's window: no count to set, so no label either.
+    panel.qtyLabel:SetShown(usable)
     panel.qtyLabel:SetText((usable and not item.commodity) and "One copy per post" or "How many")
     if item ~= nil and item.location == nil then
         panel.reasonText:SetText("Drop the item on the slot above to post it from here.")

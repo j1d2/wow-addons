@@ -45,6 +45,9 @@ C.FILTER_HEIGHT = 26
 -- (538 - 60 - 26 - 148 - 26) / 18 = 15 rows.
 C.VISIBLE_ROWS = math.floor((C.HOUSE_HEIGHT - C.LIST_TOP - C.FILTER_HEIGHT - C.LIST_BOTTOM - C.HEADER_HEIGHT) / C.ROW_HEIGHT)
 C.WHEEL_STEP = 3
+-- Room kept at a list's right edge for its scroll bar (Blizzard's MinimalScrollBar is 8 wide),
+-- whether or not the bar shows, so the columns never jump.
+C.SCROLL_GUTTER = 14
 -- The price chart's width beside the Buy details on a wide window.
 C.CHART_WIDTH = 170
 
@@ -485,6 +488,58 @@ function U.Cell(parent, font, justify)
     -- wrapping onto the line below.
     text:SetWordWrap(false)
     return text
+end
+
+--- Puts Blizzard's thin scroll bar (MinimalScrollBar) beside a list. It shows only while the
+-- list has more rows than fit. Its thumb, arrows and wheel move the list through the list's own
+-- scroll function, so they read rows already received and send nothing.
+-- @param parent the frame that owns the bar
+-- @param scroll the list's scroll function, called with the rows to move (negative moves up)
+-- @return the bar; place it with SetPoint, then call U.SetScrollBar on every render
+function U.ScrollBar(parent, scroll)
+    local bar = CreateFrame("EventFrame", nil, parent, "MinimalScrollBar")
+    bar.offset, bar.maxOffset = 0, 0
+    bar:SetHideIfUnscrollable(true)
+    bar:RegisterCallback("OnScroll", function(_, percentage)
+        local target = U.ScrollTarget(percentage, bar.maxOffset)
+        if target ~= bar.offset then
+            -- The list redraws and calls U.SetScrollBar; the bar is already where the hand put it.
+            bar.moving = true
+            scroll(target - bar.offset)
+            bar.moving = false
+        end
+    end, bar)
+    return bar
+end
+
+--- The first row to show for a scroll bar position.
+-- @param percentage the bar's position, 0 (top) to 1 (bottom)
+-- @param maxOffset the last offset the list can scroll to
+-- @return the offset, a whole row
+function U.ScrollTarget(percentage, maxOffset)
+    if maxOffset <= 0 or type(percentage) ~= "number" then
+        return 0
+    end
+    return math.max(0, math.min(maxOffset, math.floor(percentage * maxOffset + 0.5)))
+end
+
+--- Matches a scroll bar to its list: thumb size from how much shows, thumb place from the offset,
+-- one row per arrow click. The bar hides itself when everything fits.
+-- @param bar a bar from U.ScrollBar
+-- @param offset the list's first shown row, from 0
+-- @param shown how many rows fit
+-- @param total how many rows the list has
+function U.SetScrollBar(bar, offset, shown, total)
+    if bar == nil then
+        return
+    end
+    local maxOffset = math.max(0, total - shown)
+    bar.offset, bar.maxOffset = math.min(offset, maxOffset), maxOffset
+    bar:SetVisibleExtentPercentage(total > 0 and math.min(1, shown / total) or 1)
+    bar:SetPanExtentPercentage(maxOffset > 0 and 1 / maxOffset or 1)
+    if not bar.moving then
+        bar:SetScrollPercentage(maxOffset > 0 and bar.offset / maxOffset or 0)
+    end
 end
 
 --- The cells of the header or of a row, in the form AnchorCells takes.

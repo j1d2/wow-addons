@@ -91,6 +91,8 @@ function FrameMethods:SetWidth(width) NoteIfBlocked(self) self.width = width end
 function FrameMethods:GetWidth() return self.width end
 function FrameMethods:GetRight() return self.right end
 function FrameMethods:GetHeight() return self.height end
+-- Text width: world.charWidth per character (0 unless a test sets it).
+function FrameMethods:GetStringWidth() return #(self.text or "") * (world.charWidth or 0) end
 function FrameMethods:SetTextColor(r, g, b) self.color = { r, g, b } end
 function FrameMethods:SetAlpha(alpha) self.alpha = alpha end
 function FrameMethods:SetTexture(texture) self.texture = texture end
@@ -303,6 +305,27 @@ local function Setup(opts)
         object.template = template
         if template == "ButtonFrameTemplate" then
             object.Inset = NewObject("Frame")
+        end
+        -- Like Blizzard's MinimalScrollBar: a set position fires OnScroll, as the game's does, and
+        -- with hideIfUnscrollable it shows only while part of the list is out of view.
+        if template == "MinimalScrollBar" then
+            object.callbacks = {}
+            object.RegisterCallback = function(self, event, fn, owner) self.callbacks[event] = { fn, owner } end
+            object.SetHideIfUnscrollable = function(self, hide) self.hideIfUnscrollable = hide end
+            object.SetPanExtentPercentage = function(self, pan) self.pan = pan end
+            object.SetVisibleExtentPercentage = function(self, visible)
+                self.visible = visible
+                if self.hideIfUnscrollable then
+                    self.shown = visible > 0 and visible < 1
+                end
+            end
+            object.SetScrollPercentage = function(self, percentage)
+                self.percentage = percentage
+                local callback = self.callbacks.OnScroll
+                if callback then
+                    callback[1](callback[2], percentage)
+                end
+            end
         end
         -- Like the game's secure click button: protected, and so is its
         -- parent. Its click runs Blizzard's code, which may press the
@@ -1385,6 +1408,16 @@ do
         WheelDown()
     end
     Check("scroll stops at the last result", rows[15].nameText.text == "Item 30" and rows[1].nameText.text == "Item 16")
+    local bar = MainFrame().buyPanel.scrollBar
+    Check("scroll bar: shows while rows are out of view, its thumb at the bottom, half the list in view",
+        bar.shown and bar.template == "MinimalScrollBar" and bar.percentage == 1 and bar.visible == 15 / 30)
+    bar:SetScrollPercentage(0)
+    Check("scroll bar: dragging it to the top moves the list there and sends nothing",
+        rows[1].nameText.text == "Item 1" and StatusLine() == "Showing 1-15 of 30." and #world.browseQueries == queries)
+    bar:SetScrollPercentage(0.5)
+    Check("scroll bar: halfway shows the middle rows, a whole row at a time", rows[1].nameText.text == "Item 9"
+        and bar.offset == 8)
+    bar:SetScrollPercentage(0)
     for _ = 1, 6 do
         WheelUp()
     end
@@ -2633,6 +2666,24 @@ do
     world.commodityResults = { { itemID = 2589, unitPrice = 120, quantity = 2, owners = {} } }
     Fire("COMMODITY_SEARCH_RESULTS_UPDATED", 2589)
     Check("a dropped item with saved prices shows its chart", chart.shown and BarHeights(chart)[7])
+    local frameWidth = MainFrame().width
+    Check("the Sell chart sits right of the value lines, as tall as they are", chart.points[1][1] == "TOPRIGHT"
+        and chart.points[1][5] == -130 and chart.barArea + 18 == 187 and chart.chartWidth == frameWidth - 180 - 16 - 16)
+    world.charWidth = 2
+    Drop({ itemID = 2589, commodity = true })
+    Fire("COMMODITY_SEARCH_RESULTS_UPDATED", 2589)
+    local widest = 0
+    for _, value in pairs(MainFrame().sellPanel.values) do
+        widest = math.max(widest, #value.text * 2)
+    end
+    Check("it starts right of the widest value", widest > 0 and chart.chartWidth == frameWidth - 180 - widest - 16 - 16)
+    world.charWidth = 60
+    Drop({ itemID = 2589, commodity = true })
+    Fire("COMMODITY_SEARCH_RESULTS_UPDATED", 2589)
+    Check("with no room beside the values it goes under the hint, inside the dark box", chart.shown
+        and chart.points[1][1] == "TOPLEFT" and chart.points[1][5] == -341 and chart.barArea + 18 == 45
+        and chart.chartWidth == frameWidth - 40)
+    world.charWidth = nil
     Click("Reset")
     Check("Reset hides it", not chart.shown)
 end
@@ -2666,7 +2717,7 @@ do
 end
 
 do
-    -- Days | Scans: one saved choice for every price chart; the scan view has a bar per scan.
+    -- The Days and Scans buttons: one saved choice for every price chart; the scan view has a bar per scan.
     Setup({ screenRight = 1400 })
     Load()
     SaveDailyHistory(3)
@@ -2681,16 +2732,17 @@ do
     row:GetScript("OnClick")(row)
     local chart = MainFrame().buyPanel.chart
     local queries = #world.browseQueries
-    Check("charts open on days, its word bright", chart.caption.text == "Daily low, 7 days"
-        and chart.viewWords.days.label.color[1] == 1 and chart.viewWords.scans.label.color[1] < 1)
+    Check("charts open on days, its button lit", chart.caption.text == "Daily low, 7 days"
+        and chart.viewButtons.days.highlightLocked and not chart.viewButtons.scans.highlightLocked
+        and chart.viewButtons.days.template == "UIPanelButtonTemplate")
     chart:GetScript("OnEnter")(chart)
     Check("hovering the chart says what it shows", _G.GameTooltip.text == "Daily low, 7 days")
-    chart.viewWords.scans:GetScript("OnClick")(chart.viewWords.scans)
+    chart.viewButtons.scans:GetScript("OnClick")(chart.viewButtons.scans)
     local heights = BarHeights(chart)
     Check("Scans redraws the chart at once, a bar per scan", chart.shown and chart.slotCount == 7
         and chart.caption.text == "Each scan, 4 scans" and heights[4] and heights[7] and not heights[3])
-    Check("the scan view is saved and its word bright", HouseLedgerDB.settings.chartView == "scans"
-        and chart.viewWords.scans.label.color[1] == 1 and chart.viewWords.days.label.color[1] < 1)
+    Check("the scan view is saved and its button lit", HouseLedgerDB.settings.chartView == "scans"
+        and chart.viewButtons.scans.highlightLocked and not chart.viewButtons.days.highlightLocked)
     Check("the cheaper scan has the shorter bar", heights[7] < heights[6])
     local x = {}
     for index = 5, 7 do
@@ -2714,7 +2766,7 @@ do
     Fire("COMMODITY_SEARCH_RESULTS_UPDATED", 4306)
     Check("an item saved before scans says when they start", sellChart.shown and sellChart.emptyText.shown
         and sellChart.caption.text == "Each scan: none saved yet" and not BarHeights(sellChart)[1])
-    sellChart.viewWords.days:GetScript("OnClick")(sellChart.viewWords.days)
+    sellChart.viewButtons.days:GetScript("OnClick")(sellChart.viewButtons.days)
     Check("Days brings its daily bars back", sellChart.shown and not sellChart.emptyText.shown
         and sellChart.caption.text == "Daily low, 7 days" and HouseLedgerDB.settings.chartView == "days")
 end
@@ -2793,7 +2845,7 @@ do
         and TipHas(lines, "Purple: a guess at the next day, <money 170>.") and not TipHas(lines, "Faint band"))
     Check("drawing it sends nothing", #world.browseQueries == queries)
 
-    chart.viewWords.scans:GetScript("OnClick")(chart.viewWords.scans)
+    chart.viewButtons.scans:GetScript("OnClick")(chart.viewButtons.scans)
     lines = ChartTipLines(chart)
     Check("Scans draws them per scan, the guess for the next scan", chart.line.shown and chart.slotCount == 8
         and TipHas(lines, "Purple: a guess at the next scan"))
@@ -2803,7 +2855,7 @@ do
     row:GetScript("OnClick")(row)
     Check("an item without scans hides the line and the guess", chart.emptyText.shown and not chart.line.shown
         and not chart.bars[8].shown and not TipHas(ChartTipLines(chart), "White line"))
-    chart.viewWords.days:GetScript("OnClick")(chart.viewWords.days)
+    chart.viewButtons.days:GetScript("OnClick")(chart.viewButtons.days)
 end
 
 do
@@ -2989,6 +3041,10 @@ do
     Check("it stops at the last match", rows[12].nameText.text == "Ore 30" and window.status.text == "19-30 of 30 items. Scroll for more.")
     window:GetScript("OnMouseWheel")(window, 1)
     Check("and scrolls back up", rows[1].nameText.text == "Ore 16")
+    Check("price check: its scroll bar shows and follows the wheel", window.scrollBar.shown
+        and window.scrollBar.percentage == 15 / 18)
+    window.scrollBar:SetScrollPercentage(0)
+    Check("price check: dragging the bar up moves the list", rows[1].nameText.text == "Ore 01")
 
     window.sortButtons.price:GetScript("OnClick")(window.sortButtons.price)
     Check("Price sorts cheapest first and goes back to the top", rows[1].nameText.text == "Ore 02"
@@ -3936,9 +3992,11 @@ do
     Click("Sell")
     local sell = MainFrame().sellPanel
     local panel = sell.postPanel
-    Check("post: nothing to post until an item is dropped", not panel.postButton.enabled)
+    Check("post: nothing to post until an item is dropped, and no How many without its box",
+        not panel.postButton.enabled and not panel.qtyLabel.shown and not panel.qtyBox.shown)
     Drop({ itemID = 2589, commodity = true, count = 60 })
-    Check("post: how many starts at all in the bags", panel.qtyBox.text == "60" and panel.qtyBox.shown)
+    Check("post: how many starts at all in the bags", panel.qtyBox.text == "60" and panel.qtyBox.shown
+        and panel.qtyLabel.shown)
     world.commodityResults = {
         { itemID = 2589, unitPrice = 98, quantity = 50, containsOwnerItem = false },
         { itemID = 2589, unitPrice = 101, quantity = 400, containsOwnerItem = false },
@@ -4057,6 +4115,37 @@ do
 
     Click("Reset")
     Check("post: Reset empties it", not panel.postButton.enabled and boxes.copper.text == "")
+end
+
+do
+    -- History: the list fills the dark box down to the totals, and a scroll bar shows when it is longer.
+    Setup()
+    Load()
+    local frame = MainFrame()
+    for index = 1, 30 do
+        HouseLedgerDB.ledger.entries[index] = { time = world.now - 100 + index, who = "Tester Vale", realm = "TestRealm",
+            kind = "bought", name = string.format("Thing %02d", index), count = 1, bid = 100, source = "mail" }
+    end
+    local tab = TabNamed("History")
+    tab:GetScript("OnClick")(tab)
+    local panel = frame.historyPanel
+    local inset = frame.Inset.points[#frame.Inset.points]
+    Check("history: the dark box reaches down to the totals on this tab", inset[1] == "BOTTOMRIGHT"
+        and inset[5] == 88)
+    local lastRow = panel.rows[#panel.rows]
+    Check("history: 18 rows, the last still inside the box", #panel.rows == 18
+        and 538 + lastRow.points[1][5] - 18 >= 88)
+    Check("history: the totals sit under the box", panel.totals.points[1][5] + 26 <= 88)
+    local bar = panel.scrollBar
+    Check("history: a scroll bar shows, at the top", bar.shown and bar.percentage == 0
+        and panel.rows[1].cells.name.text == "Thing 30")
+    panel:GetScript("OnMouseWheel")(panel, -1)
+    Check("history: the wheel moves the bar too", bar.percentage == 3 / 12)
+    bar:SetScrollPercentage(1)
+    Check("history: dragging the bar down shows the oldest", panel.rows[18].cells.name.text == "Thing 01")
+    TabNamed("Buy"):GetScript("PostClick")(TabNamed("Buy"))
+    inset = frame.Inset.points[#frame.Inset.points]
+    Check("history: other tabs get the box back above their details", inset[5] == 148)
 end
 
 if failed > 0 then

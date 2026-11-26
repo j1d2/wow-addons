@@ -6,9 +6,13 @@ and the lowest price, quantity and saved history show. Nothing is saved or poste
 local _, ns = ...
 local C, ui, Price, U, Chart, Sell, Post = ns.C, ns.ui, ns.Price, ns.U, ns.Chart, ns.Sell, ns.Post
 
--- The Sell tab's chart, under its lines.
-local SELL_CHART_WIDTH = 260
-local SELL_CHART_HEIGHT = 70
+-- The Sell tab's chart sits right of the value lines, as tall as they are, in the room the widest
+-- value leaves. On a window too narrow for SELL_CHART_MIN_WIDTH it goes under the hint instead.
+local SELL_CHART_MIN_WIDTH = 150
+local SELL_CHART_GAP = 16
+local VALUES_LEFT = 180
+-- The post controls start this far under the dark box.
+local POST_GAP = 31
 local SELL_SORT = {
     { sortOrder = Enum.AuctionHouseSortOrder.Price, reverseSort = false },
 }
@@ -28,8 +32,10 @@ local SELL_LINES = {
     { "trend", "Trend vs 7-day avg" },
     { "typical", "Typical (7-day avg)" },
 }
--- Lines a little tight, so the post controls fit under the chart.
+-- Lines a little tight, so the hint fits in the dark box over the post controls.
 local SELL_LINE_HEIGHT = 17
+local LINES_TOP = -C.LIST_TOP - 72
+local LINES_BOTTOM = LINES_TOP - #SELL_LINES * SELL_LINE_HEIGHT
 
 -- The Sell lines filled in order from PriceLedger.WindowLines.
 local WINDOW_KEYS = { "w1", "w3", "w7", "w14", "spread" }
@@ -59,6 +65,28 @@ local function ClearSellValues()
     ui.sellPanel.chart:Hide()
 end
 
+--- Puts the Sell chart where it fits and draws the item's saved prices on it. Right of the value
+-- lines when the widest value leaves SELL_CHART_MIN_WIDTH, else under the hint, inside the box.
+local function ShowSellChart()
+    local chart = ui.sellPanel.chart
+    local widest = 0
+    for _, value in pairs(ui.sellPanel.values) do
+        widest = math.max(widest, value:GetStringWidth() or 0)
+    end
+    local panelWidth = ui.frame:GetWidth() or C.FRAME_WIDTH_MIN
+    local width = panelWidth - VALUES_LEFT - math.ceil(widest) - SELL_CHART_GAP - 16
+    chart:ClearAllPoints()
+    if width >= SELL_CHART_MIN_WIDTH then
+        chart:SetPoint("TOPRIGHT", ui.sellPanel, "TOPRIGHT", -16, LINES_TOP + 2)
+        Chart.Resize(chart, width, LINES_TOP - LINES_BOTTOM)
+    else
+        local top = LINES_BOTTOM - 22
+        chart:SetPoint("TOPLEFT", ui.sellPanel, "TOPLEFT", 24, top)
+        Chart.Resize(chart, panelWidth - 24 - 16, C.HOUSE_HEIGHT - C.LIST_BOTTOM + top - 4)
+    end
+    Chart.Show(chart, Price.Lookup(HouseLedgerDB, pendingSell.itemID, U.ViewHouseKey()))
+end
+
 --- Shows the live listings for the Sell item next to its saved stats.
 -- Colors are the seller's view: a higher price is good news.
 -- @param summary from PriceLedger.LowestListing, or nil for none listed
@@ -77,13 +105,15 @@ local function ShowSellResults(summary, complete)
         end
         values.based:SetText(Price.CountText(stats))
         values.typical:SetText(stats.typical and U.CopperToText(stats.typical) or "-")
-        Chart.Show(ui.sellPanel.chart, Price.Lookup(HouseLedgerDB, pendingSell.itemID, U.ViewHouseKey()))
     else
         values.based:SetText("No saved prices yet")
     end
     if summary == nil then
         ui.sellPanel.hint:SetText(Price.SellAdvice(nil, false))
         Sell.SetStatus("No one is selling " .. pendingSell.name .. " right now.")
+        if stats then
+            ShowSellChart()
+        end
         return
     end
     values.low:SetText(U.CopperToText(summary.low))
@@ -96,6 +126,10 @@ local function ShowSellResults(summary, complete)
     end
     values.trend:SetText(trend ~= "" and trend or "-")
     ui.sellPanel.hint:SetText(Price.SellAdvice(verdict, true))
+    if stats then
+        -- Placed once every value is in, so it starts right of the widest.
+        ShowSellChart()
+    end
     local text = "Lowest of " .. Price.ListingText(summary) .. " for " .. pendingSell.name .. "."
     if complete == false then
         -- Asking for the rest would be another query; leave that to a new drop.
@@ -274,22 +308,21 @@ function Sell.BuildPanel()
     ui.sellPanel.values = {}
     ui.sellPanel.labels = {}
     for index, line in ipairs(SELL_LINES) do
-        local y = -C.LIST_TOP - 72 - (index - 1) * SELL_LINE_HEIGHT
+        local y = LINES_TOP - (index - 1) * SELL_LINE_HEIGHT
         local label = U.Cell(ui.sellPanel, "GameFontNormal", "LEFT")
         label:SetPoint("TOPLEFT", ui.sellPanel, "TOPLEFT", 24, y)
         label:SetWidth(150)
         label:SetText(line[2])
         ui.sellPanel.labels[line[1]] = label
         local value = U.Cell(ui.sellPanel, "GameFontHighlight", "LEFT")
-        value:SetPoint("TOPLEFT", ui.sellPanel, "TOPLEFT", 180, y)
+        value:SetPoint("TOPLEFT", ui.sellPanel, "TOPLEFT", VALUES_LEFT, y)
         value:SetPoint("RIGHT", ui.sellPanel, "RIGHT", -16, 0)
         ui.sellPanel.values[line[1]] = value
     end
-    ui.sellPanel.chart = Chart.Build(ui.sellPanel, SELL_CHART_WIDTH, SELL_CHART_HEIGHT)
-    local linesBottom = -C.LIST_TOP - 72 - #SELL_LINES * SELL_LINE_HEIGHT
-    ui.sellPanel.chart:SetPoint("TOPLEFT", ui.sellPanel, "TOPLEFT", 24, linesBottom - 28)
+    -- Sized and placed by ShowSellChart once an item's values are in.
+    ui.sellPanel.chart = Chart.Build(ui.sellPanel, SELL_CHART_MIN_WIDTH, LINES_TOP - LINES_BOTTOM)
     ui.sellPanel.hint = U.Cell(ui.sellPanel, "GameFontHighlight", "LEFT")
-    ui.sellPanel.hint:SetPoint("TOPLEFT", ui.sellPanel, "TOPLEFT", 24, linesBottom - 4)
+    ui.sellPanel.hint:SetPoint("TOPLEFT", ui.sellPanel, "TOPLEFT", 24, LINES_BOTTOM - 4)
     ui.sellPanel.hint:SetPoint("RIGHT", ui.sellPanel, "RIGHT", -16, 0)
     ClearSellValues()
 
@@ -304,6 +337,6 @@ function Sell.BuildPanel()
     reset:SetText("Reset")
     reset:SetScript("OnClick", ResetSell)
 
-    -- Posting, under the chart.
-    Post.Build(linesBottom - 28 - SELL_CHART_HEIGHT - 4)
+    -- Posting, under the dark box.
+    Post.Build(-(C.HOUSE_HEIGHT - C.LIST_BOTTOM) - POST_GAP)
 end

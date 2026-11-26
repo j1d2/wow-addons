@@ -51,6 +51,12 @@ local function SelectTab(id)
         end
     end
     shown:Show()
+    -- The dark box ends above the details block, except on History, whose list takes that space.
+    local inset = ui.frame.Inset
+    if type(inset) == "table" then
+        inset:SetPoint("BOTTOMRIGHT", ui.frame, "BOTTOMRIGHT", -6,
+            shown == ui.historyPanel and History.INSET_BOTTOM or C.LIST_BOTTOM)
+    end
     if shown == ui.historyPanel then
         History.Render()
     elseif shown == ui.buyPanel then
@@ -224,11 +230,17 @@ function Window.Build()
 
     local list = CreateFrame("Frame", nil, ui.buyPanel)
     list:SetPoint("TOPLEFT", ui.frame, "TOPLEFT", 8, -C.LIST_TOP - 2 - C.FILTER_HEIGHT)
-    list:SetPoint("BOTTOMRIGHT", ui.frame, "BOTTOMRIGHT", -10, C.LIST_BOTTOM + 2)
+    list:SetPoint("BOTTOMRIGHT", ui.frame, "BOTTOMRIGHT", -10 - C.SCROLL_GUTTER, C.LIST_BOTTOM + 2)
     list:EnableMouseWheel(true)
     list:SetScript("OnMouseWheel", function(_, delta)
         Buy.Scroll(-delta * C.WHEEL_STEP)
     end)
+    -- Search results, Market and an item's listings share the rows, so they share one bar.
+    ui.buyPanel.scrollBar = U.ScrollBar(ui.buyPanel, function(rowsDown)
+        Buy.Scroll(rowsDown)
+    end)
+    ui.buyPanel.scrollBar:SetPoint("TOPLEFT", list, "TOPRIGHT", 4, -C.HEADER_HEIGHT)
+    ui.buyPanel.scrollBar:SetPoint("BOTTOMLEFT", list, "BOTTOMRIGHT", 4, 0)
     Buy.BuildHeader(list)
     ui.buyPanel.priceHeading = ui.header.priceText
     ui.buyPanel.headerTexts, ui.buyPanel.sortButtons = ui.header.texts, ui.header.sortButtons
