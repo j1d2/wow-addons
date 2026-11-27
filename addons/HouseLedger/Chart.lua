@@ -13,12 +13,10 @@ local Price, U, Chart = ns.Price, ns.U, ns.Chart
 local CHART_BAR_COLOR = { 0.35, 0.6, 1, 0.9 }
 local CHART_LATEST_COLOR = { 1, 0.82, 0, 1 }
 local CHART_RANGE_COLOR = { 0.35, 0.6, 1, 0.3 }
--- Both kinds of chart: the normal range around the trend line as a faint band behind the bars,
--- with thin edge lines over them (so the range still shows where bars cover the band), the trend
--- line in white, and the next day's (or scan's) projection in purple, so it doesn't read as one
--- more bar.
+-- Both kinds of chart: the normal range around the trend line as a shaded band behind the bars,
+-- the trend line in white, and the next day's (or scan's) projection in purple, so it doesn't
+-- read as one more bar.
 local TREND_BAND_COLOR = { 1, 1, 1, 0.2 }
-local BAND_EDGE_COLOR = { 1, 1, 1, 0.45 }
 local TREND_LINE_COLOR = { 1, 1, 1, 0.8 }
 local ESTIMATE_COLOR = { 0.72, 0.45, 1, 0.85 }
 
@@ -31,53 +29,6 @@ local VIEW_BUTTON_HEIGHT = 16
 -- The chart width the top price can't use: its 3 px inset, the 4 px gap before the Days button,
 -- and the two buttons (1 px from the corner, 2 px apart). Chart.Build anchors them that way.
 local TOP_TEXT_MARGIN = 3 + 4 + VIEW_BUTTON_WIDTH + 2 + VIEW_BUTTON_WIDTH + 1
-
---- Makes the two thin lines along the normal range's lower and upper edges, over the bars.
--- @param chart a chart that can draw lines
-local function BuildEdges(chart)
-    chart.edges = {}
-    for index = 1, 2 do
-        local edge = chart:CreateLine(nil, "OVERLAY")
-        edge:SetThickness(1)
-        edge:SetColorTexture(BAND_EDGE_COLOR[1], BAND_EDGE_COLOR[2], BAND_EDGE_COLOR[3], BAND_EDGE_COLOR[4])
-        edge:Hide()
-        chart.edges[index] = edge
-    end
-end
-
---- Draws one edge of the normal range: a straight line from slot `from` to slot `to`, cut where
--- it goes under 0. Hidden when it is under 0 all the way.
--- @param chart the chart the line belongs to
--- @param edge the line
--- @param Value the edge's price at a slot (a straight line)
--- @param from the first slot
--- @param to the last slot
--- @param X the x of a slot (fractions allowed)
--- @param Height the height in pixels of a price on the axis
-local function DrawEdge(chart, edge, Value, from, to, X, Height)
-    local first, last = Value(from), Value(to)
-    if first < 0 and last < 0 then
-        edge:Hide()
-        return
-    end
-    local fromY, toY = Height(first), Height(last)
-    if first < 0 then
-        from, fromY = from + (to - from) * first / (first - last), 0
-    elseif last < 0 then
-        to, toY = from + (to - from) * first / (first - last), 0
-    end
-    edge:SetStartPoint("BOTTOMLEFT", chart, X(from), 2 + fromY)
-    edge:SetEndPoint("BOTTOMLEFT", chart, X(to), 2 + toY)
-    edge:Show()
-end
-
---- Hides a chart's normal-range edge lines, when it has them.
--- @param chart a chart
-local function HideEdges(chart)
-    for _, edge in ipairs(chart.edges or {}) do
-        edge:Hide()
-    end
-end
 
 -- The price charts Chart.Build made, so a view change redraws every one on screen.
 Chart.built = {}
@@ -99,7 +50,6 @@ local function DrawTrend(chart, fit, count, Left, Height, barWidth)
     if chart.line then
         chart.line:Hide()
     end
-    HideEdges(chart)
     if fit == nil then
         return
     end
@@ -144,10 +94,6 @@ local function DrawTrend(chart, fit, count, Left, Height, barWidth)
     chart.line:SetStartPoint("BOTTOMLEFT", chart, Middle(from), 2 + Height(fit.fit(from)))
     chart.line:SetEndPoint("BOTTOMLEFT", chart, Middle(to), 2 + Height(fit.fit(to)))
     chart.line:Show()
-    if spread > 0 then
-        DrawEdge(chart, chart.edges[1], function(x) return fit.fit(x) - spread end, fit.first, count, Middle, Height)
-        DrawEdge(chart, chart.edges[2], function(x) return fit.fit(x) + spread end, fit.first, count, Middle, Height)
-    end
 end
 
 --- Draws bars from chart slots: one bar per filled slot's low, a faint band up to its high, the
@@ -335,7 +281,7 @@ local function ShowChartTip(chart)
         GameTooltip:AddLine("White line: which way the price is going. One odd listing can't tilt it.",
             0.8, 0.8, 0.8, true)
         if fit.spread > 0 then
-            GameTooltip:AddLine("Shaded band and thin lines: its normal range.", 0.8, 0.8, 0.8)
+            GameTooltip:AddLine("Shaded band: its normal range.", 0.8, 0.8, 0.8)
         end
         if fit.estimate then
             GameTooltip:AddLine("Purple: a projection for the next " .. chart.nextWord .. ", "
@@ -431,7 +377,6 @@ function Chart.Build(parent, width, height)
         chart.line:SetThickness(2)
         chart.line:SetColorTexture(TREND_LINE_COLOR[1], TREND_LINE_COLOR[2], TREND_LINE_COLOR[3], TREND_LINE_COLOR[4])
         chart.line:Hide()
-        BuildEdges(chart)
     end
     Chart.built[#Chart.built + 1] = chart
     chart:Hide()
@@ -504,18 +449,12 @@ function Chart.ShowOverview(chart, overview)
         end
     end
     chart.slotCount = count
-    HideEdges(chart)
     if chart.line then
         if overview.fit then
             local half = slotWidth / 2
             chart.line:SetStartPoint("BOTTOMLEFT", chart, half, 2 + Height(overview.fit(1)))
             chart.line:SetEndPoint("BOTTOMLEFT", chart, (count - 1) * slotWidth + half, 2 + Height(overview.fit(count)))
             chart.line:Show()
-            if spread > 0 then
-                local function X(slot) return (slot - 1) * slotWidth + half end
-                DrawEdge(chart, chart.edges[1], function(x) return overview.fit(x) - spread end, 1, count, X, Height)
-                DrawEdge(chart, chart.edges[2], function(x) return overview.fit(x) + spread end, 1, count, X, Height)
-            end
         else
             chart.line:Hide()
         end
@@ -570,7 +509,6 @@ function Chart.BuildOverview(parent, width, height)
         chart.line:SetColorTexture(TREND_LINE_COLOR[1], TREND_LINE_COLOR[2], TREND_LINE_COLOR[3],
             TREND_LINE_COLOR[4])
         chart.line:Hide()
-        BuildEdges(chart)
     end
     chart:Hide()
     return chart

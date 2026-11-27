@@ -2113,7 +2113,24 @@ local RangeText = PriceLedger.RangeText
 -- @param window one entry of the Stats windows list
 -- @param coinText function(copper) -> money text
 -- @return { left, right }
+-- From this many copper (1 gold) up, the day lines leave out the copper: it is a rounding error
+-- at that size, so a line never shows more than two coins and reads easier.
+PriceLedger.LINE_COPPER_BELOW = COPPER_PER_GOLD
+
+--- A coin writer for the day lines: amounts of LINE_COPPER_BELOW and up rounded to the silver.
+-- @param coinText function(copper) -> money text
+-- @return function(copper) -> money text
+local function LineCoins(coinText)
+    return function(copper)
+        if type(copper) == "number" and copper >= PriceLedger.LINE_COPPER_BELOW then
+            copper = math.floor(copper / COPPER_PER_SILVER + 0.5) * COPPER_PER_SILVER
+        end
+        return coinText(copper)
+    end
+end
+
 local function WindowLine(window, coinText)
+    coinText = LineCoins(coinText)
     local right = coinText(window.avg)
     if window.low ~= window.high then
         right = "avg " .. right .. " (" .. RangeText(window, coinText) .. ")"
@@ -2147,7 +2164,7 @@ function PriceLedger.WindowLines(stats, coinText)
         -- The earlier scans all had the same price.
         spread = "none"
     elseif stats.spread ~= nil then
-        spread = coinText(Round(stats.spread))
+        spread = LineCoins(coinText)(Round(stats.spread))
     else
         spread = "after " .. Plural(PriceLedger.TREND_MIN_SCANS - (stats.earlierScans or 0), "more scan")
     end

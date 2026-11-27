@@ -35,6 +35,10 @@ C.DETAIL_LINE_HEIGHT = 15
 -- Where a details line's price starts, from the window's left edge (Buy and Price Check).
 C.DETAIL_VALUE_LEFT = 180
 C.DETAIL_HEIGHT = (C.DETAIL_LINES + 1) * C.DETAIL_LINE_HEIGHT + 10
+-- The Buy details charts (an item's prices, the house overview) fill the details block's height,
+-- this far from the dark box above and the status lines below.
+C.DETAIL_CHART_MARGIN = 6
+C.DETAIL_CHART_HEIGHT = C.DETAIL_HEIGHT - 2 * C.DETAIL_CHART_MARGIN
 
 -- The results list sits in the template's inset, between the search
 -- bar (60 from the top) and the details block. The filter row (quality, item level, and
@@ -50,7 +54,7 @@ C.WHEEL_STEP = 3
 -- Room kept at a list's right edge for its scroll bar (Blizzard's MinimalScrollBar is 8 wide),
 -- whether or not the bar shows, so the columns never jump.
 C.SCROLL_GUTTER = 14
--- The price chart's width beside the Buy details on a wide window.
+-- The Buy details charts' width when built; Buy sizes them to the window when it lays out.
 C.CHART_WIDTH = 170
 
 -- Column headings, and the way each first sorts when clicked (true is low to high, A to Z).
@@ -175,6 +179,14 @@ function U.CopperToText(copper)
     return Price.CoinText(copper)
 end
 
+--- The width of a cell's whole text, even when the cell cuts it short.
+-- @param cell a font string
+-- @return pixels
+function U.TextWidth(cell)
+    -- GetStringWidth can stop at the cell's width; the unbounded width is the whole text's.
+    return cell.GetUnboundedStringWidth and cell:GetUnboundedStringWidth() or cell:GetStringWidth() or 0
+end
+
 -- The coin sizes FitMoney tries, smallest kept coin first: every coin, then no copper on amounts
 -- of 1 gold or more, then no silver either.
 local MONEY_UNITS = { 1, 100, 10000 }
@@ -194,9 +206,7 @@ function U.FitMoney(cell, width, build)
             return U.CopperToText(Price.RoundCoins(copper, unit))
         end)
         cell:SetText(text)
-        -- GetStringWidth can stop at the cell's width; the unbounded width is the whole text's.
-        local textWidth = cell.GetUnboundedStringWidth and cell:GetUnboundedStringWidth() or cell:GetStringWidth()
-        if textWidth <= width then
+        if U.TextWidth(cell) <= width then
             break
         end
     end

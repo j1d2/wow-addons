@@ -59,10 +59,13 @@ local showKey = "all"
 local marketList = {}
 local marketOffset = 0
 local marketCache
--- The overview chart's left edge from the window's left, clear of its text lines (an average
--- like "(avg 5,799)" ends near 365 in game), and its height, leaving a gap under the list.
-local OVERVIEW_LEFT = 380
-local OVERVIEW_HEIGHT = 80
+-- Where the details charts start from the window's left, clear of the overview's lines (an
+-- average like "(avg 5,799)" ends near 365 in game). An item chart starts further right only when
+-- its price lines need the room, and is never narrower than CHART_MIN_WIDTH (past that, the lines
+-- are rounded to fit). CHART_GAP is the space between the details text and a chart.
+local CHART_LEFT = 380
+local CHART_MIN_WIDTH = 150
+local CHART_GAP = 10
 -- True while the details block shows the house overview, and the overview kept until the house
 -- has a newer scan or the history length changes.
 local overviewShown = false
@@ -354,6 +357,37 @@ function Buy.RenderRows()
     SetStatus(string.format("Showing %d-%d of %d%s.", scrollOffset + 1, last, #list, filtered) .. noteText)
 end
 
+--- The window's width.
+-- @return pixels
+local function FrameWidth()
+    return ui.frame:GetWidth() or C.FRAME_WIDTH_MIN
+end
+
+--- How far the details title and lines end from the window's right edge.
+-- @param chartWidth the width of the chart beside them, or nil for none
+-- @return pixels
+local function DetailRight(chartWidth)
+    if not ui.buyPanel.chartRoom or chartWidth == nil then
+        return 16
+    end
+    return 16 + chartWidth + CHART_GAP
+end
+
+--- Ends the details title and lines a distance from the window's right edge.
+-- @param right pixels, from DetailRight
+local function AnchorDetails(right)
+    ui.buyPanel.detailTitle:SetPoint("RIGHT", ui.frame, "RIGHT", -right, 0)
+    for _, line in ipairs(ui.buyPanel.detailLines) do
+        line.right:SetPoint("RIGHT", ui.frame, "RIGHT", -right, 0)
+    end
+end
+
+--- The house overview chart's width: from CHART_LEFT to the right margin.
+-- @return pixels
+local function OverviewChartWidth()
+    return FrameWidth() - CHART_LEFT - 16
+end
+
 --- Empties the details block under the list: the hint, no lines, no chart.
 local function EmptyDetails()
     overviewShown, rowShown, pickedResult = false, false, nil
@@ -366,6 +400,7 @@ local function EmptyDetails()
     end
     ui.buyPanel.chart:Hide()
     ui.buyPanel.overviewChart:Hide()
+    AnchorDetails(DetailRight(nil))
 end
 
 --- Fills the details block with the house overview: items listed each day, its trend and the
@@ -394,6 +429,7 @@ function Buy.ShowOverview()
         line.right:SetText(lines[index] and lines[index].right or "")
     end
     if ui.buyPanel.chartRoom then
+        AnchorDetails(DetailRight(OverviewChartWidth()))
         Chart.ShowOverview(ui.buyPanel.overviewChart, cache.overview)
     end
 end
@@ -452,11 +488,18 @@ function Buy.Scroll(rowsDown)
     Buy.RenderRows()
 end
 
---- How far a details line's price ends from the window's right edge: clear of the chart when it
--- has room beside the details.
+--- The item chart's width: from CHART_LEFT to the right margin, or narrower when a price line
+-- needs the room, but never under CHART_MIN_WIDTH. Writes the lines whole to measure them.
+-- @param stats the item's saved stats
 -- @return pixels
-local function DetailRight()
-    return ui.buyPanel.chartRoom and C.CHART_WIDTH + 24 or 16
+local function ItemChartWidth(stats)
+    U.ShowWindowLines(ui.buyPanel.detailLines, stats, math.huge)
+    local widest = 0
+    for _, line in ipairs(ui.buyPanel.detailLines) do
+        widest = math.max(widest, U.TextWidth(line.right))
+    end
+    local left = math.max(CHART_LEFT, C.DETAIL_VALUE_LEFT + math.ceil(widest) + CHART_GAP)
+    return math.max(CHART_MIN_WIDTH, FrameWidth() - left - 16)
 end
 
 --- A row click: its saved stats in the details block, and the Listings button for it. While an
@@ -482,11 +525,15 @@ local function ShowRowDetails(row)
         return
     end
     ui.buyPanel.detailTitle:SetText(name .. ", " .. Price.CountText(stats))
+    local right = DetailRight(nil)
     if ui.buyPanel.chartRoom then
+        local width = ItemChartWidth(stats)
+        right = DetailRight(width)
+        Chart.Resize(ui.buyPanel.chart, width, C.DETAIL_CHART_HEIGHT)
         Chart.Show(ui.buyPanel.chart, Price.Lookup(HouseLedgerDB, row.result.itemKey.itemID, U.ViewHouseKey()))
     end
-    U.ShowWindowLines(ui.buyPanel.detailLines, stats, (ui.frame:GetWidth() or C.FRAME_WIDTH_MIN)
-        - C.DETAIL_VALUE_LEFT - DetailRight())
+    AnchorDetails(right)
+    U.ShowWindowLines(ui.buyPanel.detailLines, stats, FrameWidth() - C.DETAIL_VALUE_LEFT - right)
 end
 
 --- Writes the column headings: Market's price is "Scanned", and the sorted column gets an arrow.
@@ -835,14 +882,13 @@ function Buy.LayoutColumns(width)
         ui.buyPanel.chart:Hide()
         ui.buyPanel.overviewChart:Hide()
     else
-        -- The overview's chart takes the room right of its text, up to the list.
-        Chart.Resize(ui.buyPanel.overviewChart, width - OVERVIEW_LEFT - 16, OVERVIEW_HEIGHT)
-        if overviewShown then
-            Buy.ShowOverview()
-        end
+        -- The overview's chart takes the room right of its text.
+        Chart.Resize(ui.buyPanel.overviewChart, width - CHART_LEFT - 16, C.DETAIL_CHART_HEIGHT)
     end
-    for _, line in ipairs(ui.buyPanel.detailLines or {}) do
-        line.right:SetPoint("RIGHT", ui.frame, "RIGHT", -DetailRight(), 0)
+    if overviewShown then
+        Buy.ShowOverview()
+    elseif ui.buyPanel.detailLines and not showTypical then
+        AnchorDetails(DetailRight(nil))
     end
 end
 

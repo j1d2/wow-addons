@@ -329,6 +329,14 @@ do
     local longer = P.WindowLines(P.Stats(History({ 100, 100, 100, 100, 100, 100, 100, 100, 100 }, 100)), Coins)
     Check("window lines: a window with more scans than the last shows its numbers",
         longer[4].left == "14 days, 10 scans" and not longer[4].right:find("same as", 1, true))
+
+    -- From 1 gold up the copper is a rounding error: those amounts drop it (rounded to the silver),
+    -- so a line never shows more than two coins.
+    local gold = P.WindowLines(P.Stats(History({ 9999, 15049, 2500051 }, 1234567)), P.CoinText)
+    Check("window lines: 1 gold and up drop their copper, under 1 gold keeps it", gold[1].right == "123g 46s"
+        and gold[2].right:find("(1g 50s - 250g 1s)", 1, true) ~= nil and gold[3].right:find("(99s 99c - 250g 1s)", 1, true)
+        and not gold[2].right:find("^avg %d+g %d+s %d+c"))
+    Check("window lines: so does a big std dev", gold[5].right:find("%d+c$") == nil and gold[5].right:find("g") ~= nil)
 end
 
 do

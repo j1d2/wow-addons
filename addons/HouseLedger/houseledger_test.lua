@@ -161,7 +161,6 @@ function FrameMethods:CreateLine()
 end
 function FrameMethods:SetStartPoint(...) self.startPoint = { ... } end
 function FrameMethods:SetEndPoint(...) self.endPoint = { ... } end
-function FrameMethods:SetThickness(thickness) self.thickness = thickness end
 
 --- Builds one listing for the fake replicate list.
 -- The fake GetReplicateItemInfo returns it in the game's order, with owner
@@ -2509,14 +2508,22 @@ do
         panel.detailTitle.text == "House overview, 5 days of scans"
         and Line(1) == "Items listed = 1 at the last scan (avg 1)" and Line(2) == "Trend = steady"
         and Line(3) == "Next day, projected = 1 item" and Line(4) == "Listings / units = from your next scan")
-    Check("its chart shows each day and the next day's estimate", chart.shown and chart.slotCount == 8
+    Check("its chart shows each day and the next day's projection", chart.shown and chart.slotCount == 8
         and chart.caption.text == "Items listed, 7 days" and chart.bars[7].shown and chart.bars[8].shown
         and not chart.bars[1].shown and not chart.bars[9].shown)
-    Check("the last scan's day is gold, the estimate purple", chart.bars[7].colorTexture[1] == 1
+    Check("the last scan's day is gold, the projection purple", chart.bars[7].colorTexture[1] == 1
         and chart.bars[8].colorTexture[3] == 1 and chart.bars[8].colorTexture[2] < 0.5
         and chart.bars[6].colorTexture[1] < 1)
-    Check("the overview chart fills the room right of its lines", chart.chartWidth == MainFrame().width - 396
-        and chart.barArea == 62)
+    -- The details block runs from 48 (the status lines) to 148 (the dark box) above the window's
+    -- bottom; the chart fills it less 6 px above and below.
+    local anchor = chart.points[#chart.points]
+    Check("the overview chart fills the room right of its lines, centred in the details block",
+        chart.chartWidth == MainFrame().width - 396 and chart.barArea + 18 == 88 and anchor[1] == "BOTTOMRIGHT"
+        and anchor[5] == 54 and 54 + 88 == 148 - 6)
+    local panel = MainFrame().buyPanel
+    local titleRight = panel.detailTitle.points[#panel.detailTitle.points]
+    Check("the overview's title and lines end clear of its chart", titleRight[1] == "RIGHT"
+        and titleRight[4] == -(16 + chart.chartWidth + 10))
     Check("the trend line runs across the chart", chart.line.shown and chart.line.startPoint ~= nil
         and chart.line.endPoint[4] > chart.line.startPoint[3])
     Check("the overview sends nothing", #world.browseQueries == 0 and world.replicateCalls == 0)
@@ -2560,10 +2567,6 @@ do
     end
     Check("days that go up and down get the normal-range band around the line", bands > 0
         and chart.line.shown and MainFrame().buyPanel.detailLines[2].right.text:find("a day", 1, true) ~= nil)
-    local lower, upper = chart.edges[1], chart.edges[2]
-    Check("the overview's band has edge lines over the bars, either side of the trend line", lower.shown and upper.shown
-        and lower.startPoint[4] < chart.line.startPoint[4] and upper.startPoint[4] > chart.line.startPoint[4]
-        and lower.startPoint[3] == chart.line.startPoint[3] and upper.endPoint[3] == chart.line.endPoint[3])
 end
 
 do
@@ -2573,7 +2576,7 @@ do
     OpenHouse()
     local chart = MainFrame().buyPanel.overviewChart
     Check("one day of scans: a bar but no trend line yet", chart.shown and chart.slotCount == 7
-        and not chart.line.shown and not chart.bands[1].shown and not chart.edges[1].shown and not chart.edges[2].shown)
+        and not chart.line.shown and not chart.bands[1].shown)
 end
 
 do
@@ -2656,7 +2659,9 @@ do
     Fire("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
     local row = ResultRows()[1]
     row:GetScript("OnClick")(row)
-    Check("a narrow window leaves the chart out", not MainFrame().buyPanel.chart.shown)
+    local title = MainFrame().buyPanel.detailTitle
+    Check("a narrow window leaves the chart out, and the details run to the margin",
+        not MainFrame().buyPanel.chart.shown and title.points[#title.points][4] == -16)
 end
 
 do
@@ -2844,8 +2849,7 @@ do
     for _, band in ipairs(chart.trendBands) do
         bands = bands + (band.shown and 1 or 0)
     end
-    Check("prices on the line get no normal-range band, and no edge lines", bands == 0
-        and not chart.edges[1].shown and not chart.edges[2].shown)
+    Check("prices on the line get no normal-range band", bands == 0)
     local lines = ChartTipLines(chart)
     Check("the hover tip says what the line and the purple bar are", TipHas(lines, "White line")
         and TipHas(lines, "Purple: a projection for the next day, <money 170>.") and not TipHas(lines, "Shaded band"))
@@ -2876,15 +2880,8 @@ do
     end
     Check("prices that go up and down get the normal-range band, first bar to the projection",
         shown[2] and shown[8] and not shown[1] and not shown[9] and chart.line.startPoint[4] == chart.line.endPoint[4])
-    Check("the tip names the band", TipHas(ChartTipLines(chart), "Shaded band and thin lines: its normal range."))
-    local lower, upper = chart.edges[1], chart.edges[2]
-    -- Flat at 110 with every price 10 off it: the range is 1.4826 x 10 on each side.
-    local function Y(price) return 2 + price / 125 * chart.barArea end
-    Check("the band's edges are lines over the bars, from the first bar to the projection", lower.shown and upper.shown
-        and lower.startPoint[3] == chart.line.startPoint[3] and upper.endPoint[3] == chart.line.endPoint[3]
-        and math.abs(upper.startPoint[4] - Y(110 + 14.826)) < 0.01 and math.abs(lower.endPoint[4] - Y(110 - 14.826)) < 0.01)
-    Check("the band is easier to see: brighter, and its edges thin and fainter than the line",
-        chart.trendBands[2].colorTexture[4] == 0.2 and upper.thickness == 1 and upper.colorTexture[4] < chart.line.colorTexture[4])
+    Check("the tip names the band", TipHas(ChartTipLines(chart), "Shaded band: its normal range."))
+    Check("the band is shaded at 20% white, so it shows", chart.trendBands[2].colorTexture[4] == 0.2)
     Check("the axis grows to the band's top, in whole copper", chart.topText.text == "<money 125>")
 end
 
@@ -2906,8 +2903,6 @@ do
     Check("a line that would end under 0 stops at 0, with no projection", chart.line.endPoint[4] == 2
         and chart.line.endPoint[3] > chart.bars[5].points[1][4] and chart.line.endPoint[3] < chart.bars[7].points[1][4]
         and chart.slotCount == 7 and not chart.bars[8].shown)
-    Check("the band's lower edge stops at 0 too", chart.edges[1].shown and chart.edges[1].endPoint[4] == 2
-        and chart.edges[1].endPoint[3] < chart.line.endPoint[3])
 end
 
 do
@@ -4216,6 +4211,38 @@ do
     Check("history: other tabs get the box back above their details", inset[5] == 148)
 end
 
+do
+    -- An item's chart fills the details block's height, and its width from x 380 to the right
+    -- margin; it starts further right only when a price line needs the room.
+    Setup({ screenRight = 1400 })
+    Load()
+    SaveDailyHistory(5)
+    local chart = ShowBuyChart()
+    local panel = MainFrame().buyPanel
+    local frameWidth = MainFrame().width
+    local anchor = chart.points[#chart.points]
+    Check("item chart: as tall as the details block less 6 px above and below", chart.barArea + 18 == 88
+        and anchor[1] == "BOTTOMRIGHT" and anchor[5] == 54)
+    Check("item chart: from x 380 to the right margin", chart.chartWidth == frameWidth - 380 - 16)
+    local lineRight = panel.detailLines[1].right.points[#panel.detailLines[1].right.points]
+    local titleRight = panel.detailTitle.points[#panel.detailTitle.points]
+    Check("item chart: the title and lines end 10 px before it", lineRight[4] == -(16 + chart.chartWidth + 10)
+        and titleRight[4] == lineRight[4])
+    world.charWidth = 8
+    local row = ResultRows()[1]
+    row:GetScript("OnClick")(row)
+    local widest = 0
+    for _, line in ipairs(panel.detailLines) do
+        widest = math.max(widest, #line.right.text * 8)
+    end
+    Check("item chart: a wide price line pushes it right", widest + 180 + 10 > 380
+        and chart.chartWidth == frameWidth - (180 + widest + 10) - 16)
+    world.charWidth = 40
+    row:GetScript("OnClick")(row)
+    Check("item chart: never under 150 px wide; the lines round instead", chart.chartWidth == 150)
+    world.charWidth = nil
+end
+
 -- Money that can't fit its cell is rounded (amounts of 1 gold or more lose copper, then silver)
 -- instead of cut with "...", which can split a coin icon's markup and leave a stray "|". Plain
 -- "1g 2s 3c" text here, so rounding makes it shorter, as the coin icons do in game.
@@ -4239,7 +4266,7 @@ do
     local chart = panel.chart
     local function Coarse(text) return text:find("%d+s") == nil and text:find("%d+c") == nil end
     Check("fit money: what fits stays exact", chart.topText.text:find("^%d+g %d+s %d+c$") ~= nil
-        and panel.detailLines[1].right.text:find("%d+c") ~= nil and row.typicalText.text:find("%d+c$") ~= nil)
+        and panel.detailLines[1].right.text:find("^%d+g %d+s$") ~= nil and row.typicalText.text:find("%d+c$") ~= nil)
     -- The top price has the chart's width less the view buttons: 170 - 90 = 80 px.
     world.charWidth = 8
     row:GetScript("OnClick")(row)
@@ -4271,7 +4298,7 @@ do
         fits = fits and #window.detailLines[index].right.text * 9 <= 204
     end
     Check("fit money: Price Check's narrow details round too, each line only as far as it must", fits
-        and window.detailLines[1].right.text == "123g 56s 78c" and window.detailLines[2].right.text:find("^avg %d+g %(") ~= nil)
+        and window.detailLines[1].right.text == "123g 57s" and window.detailLines[2].right.text:find("^avg %d+g %(") ~= nil)
     world.charWidth = nil
 end
 

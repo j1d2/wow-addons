@@ -8,8 +8,6 @@ local C, ui, state, U, Chart, Scan, Tooltip, Buy, Sell, Purchase, Post, PC, Hist
     ns.ui, ns.state, ns.U, ns.Chart, ns.Scan, ns.Tooltip, ns.Buy, ns.Sell, ns.Purchase, ns.Post, ns.PC, ns.History,
     ns.Settings, ns.Window
 
--- The Buy chart's height, beside the details block.
-local CHART_HEIGHT = 74
 local SELL_TAB = 2
 -- History and Settings are ours alone, like Market.
 local HISTORY_TAB = 4
@@ -257,12 +255,14 @@ function Window.Build()
     for index = 1, C.VISIBLE_ROWS do
         ui.rows[index] = Buy.BuildRow(list, index)
     end
-    -- The price chart sits right of the details lines, above the status lines.
-    ui.buyPanel.chart = Chart.Build(ui.buyPanel, C.CHART_WIDTH, CHART_HEIGHT)
-    ui.buyPanel.chart:SetPoint("BOTTOMRIGHT", ui.frame, "BOTTOMRIGHT", -16, C.STATUS_HEIGHT + 4)
+    -- The price chart sits right of the details lines, as tall as the details block less an even
+    -- margin above and below.
+    ui.buyPanel.chart = Chart.Build(ui.buyPanel, C.CHART_WIDTH, C.DETAIL_CHART_HEIGHT)
+    ui.buyPanel.chart:SetPoint("BOTTOMRIGHT", ui.frame, "BOTTOMRIGHT", -16, C.STATUS_HEIGHT + C.DETAIL_CHART_MARGIN)
     -- The house overview's chart takes the same spot while no row is picked.
-    ui.buyPanel.overviewChart = Chart.BuildOverview(ui.buyPanel, C.CHART_WIDTH, CHART_HEIGHT)
-    ui.buyPanel.overviewChart:SetPoint("BOTTOMRIGHT", ui.frame, "BOTTOMRIGHT", -16, C.STATUS_HEIGHT + 4)
+    ui.buyPanel.overviewChart = Chart.BuildOverview(ui.buyPanel, C.CHART_WIDTH, C.DETAIL_CHART_HEIGHT)
+    ui.buyPanel.overviewChart:SetPoint("BOTTOMRIGHT", ui.frame, "BOTTOMRIGHT", -16,
+        C.STATUS_HEIGHT + C.DETAIL_CHART_MARGIN)
     Buy.LayoutColumns(C.FRAME_WIDTH_MIN)
 
     ui.statusText = ui.buyPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
