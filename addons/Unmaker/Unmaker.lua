@@ -20,25 +20,27 @@ local R, S, D = ns.Rules, ns.Stats, ns.Results
 
 local DISENCHANT_SPELL = 13262
 local BAGS = { 0, 1, 2, 3, 4 } -- the backpack and four bags; the reagent bag holds no gear
-local ROW_COUNT = 10
-local ROW_HEIGHT = 24
-local WIDTH = 600
-local LIST_TOP = 64 -- the Items tab starts this far below the window's top edge
+-- Window layout, in one table so the main chunk stays under Lua 5.1's locals limit.
+local layout = {}
+layout.ROW_COUNT = 10
+layout.ROW_HEIGHT = 24
+layout.WIDTH = 600
+layout.LIST_TOP = 64 -- the Items tab starts this far below the window's top edge
 -- On the Items tab: the filter row, then the column headings, then the list.
-local FILTER_HEIGHT = 26
-local HEADER_HEIGHT = 20
-local LIST_START = LIST_TOP + FILTER_HEIGHT + HEADER_HEIGHT
-local LIST_HEIGHT = ROW_COUNT * ROW_HEIGHT
+layout.FILTER_HEIGHT = 26
+layout.HEADER_HEIGHT = 20
+layout.LIST_START = layout.LIST_TOP + layout.FILTER_HEIGHT + layout.HEADER_HEIGHT
+layout.LIST_HEIGHT = layout.ROW_COUNT * layout.ROW_HEIGHT
 -- Under the list: the count line, the status line (room for two lines of text), then the buttons.
-local TEXT_HEIGHT = 56
-local BUTTON_AREA = 40
-local HEIGHT = LIST_START + LIST_HEIGHT + TEXT_HEIGHT + BUTTON_AREA
+layout.TEXT_HEIGHT = 56
+layout.BUTTON_AREA = 40
+layout.HEIGHT = layout.LIST_START + layout.LIST_HEIGHT + layout.TEXT_HEIGHT + layout.BUTTON_AREA
 -- Items tab columns: their headings, and the way each first sorts when clicked (true is A to Z).
 local COLUMN_LABELS = { name = "Item", ilvl = "ilvl", gives = "Gives", vendor = "Vendor" }
 -- The Gives column: up to this many materials, each an icon and its chance, most likely first.
-local GIVES_SHOWN, GIVES_SLOT, GIVES_ICON = 3, 46, 14
+layout.GIVES_SHOWN, layout.GIVES_SLOT, layout.GIVES_ICON = 3, 46, 14
 -- Items tab cells, from the row's right edge: vendor price, then Gives, then item level.
-local VENDOR_RIGHT, GIVES_RIGHT, LEVEL_RIGHT, NAME_RIGHT = -4, -100, -244, -284
+layout.VENDOR_RIGHT, layout.GIVES_RIGHT, layout.LEVEL_RIGHT, layout.NAME_RIGHT = -4, -100, -244, -284
 local SORT_FIRST_ASCENDING = { name = true, ilvl = false, vendor = false }
 -- History headings that sort A to Z (the rest sort highest or newest first).
 local HISTORY_ASCENDING = { name = true, who = true }
@@ -49,10 +51,10 @@ local PORTRAIT_ICON = "Interface\\Icons\\INV_Enchant_Disenchant"
 -- A click's cast must start within this many seconds to count as that click's item, so a later
 -- Disenchant from the spellbook is never credited to an old row.
 local CLICK_WINDOW = 1
-local MAT_LINES = 5 -- lifetime materials shown on the Stats tab
+layout.MAT_LINES = 5 -- lifetime materials shown on the Stats tab
 -- The Stats chart: right of the short fact lines, under the character dropdown, ending above
 -- "Most unmade". Earlier days blue, today gold.
-local CHART_WIDTH, CHART_HEIGHT, CHART_TOP = 200, 78, 28
+layout.CHART_WIDTH, layout.CHART_HEIGHT, layout.CHART_TOP = 200, 78, 28
 local CHART_BAR_COLOR = { 0.35, 0.6, 1, 0.9 }
 local CHART_TODAY_COLOR = { 1, 0.82, 0, 1 }
 
@@ -97,7 +99,7 @@ local historyEmpty
 local historyMeasure -- a hidden font string that measures Got text (FitsGot)
 -- The History tab's Got column: its width, and the space between two materials in it (the two
 -- spaces S.LootText puts between them).
-local GOT_WIDTH, GOT_GAP = 185, 8
+layout.GOT_WIDTH, layout.GOT_GAP = 185, 8
 local historyOffset = 0
 local historySort = "time"
 local historyReverse = false -- a second click on the same heading reverses its sort
@@ -355,9 +357,9 @@ function scroll.Set(bar, first, total)
     if bar == nil then
         return
     end
-    local last = math.max(0, total - ROW_COUNT)
+    local last = math.max(0, total - layout.ROW_COUNT)
     bar.first, bar.last = math.min(first, last), last
-    bar:SetVisibleExtentPercentage(total > 0 and math.min(1, ROW_COUNT / total) or 1)
+    bar:SetVisibleExtentPercentage(total > 0 and math.min(1, layout.ROW_COUNT / total) or 1)
     bar:SetPanExtentPercentage(last > 0 and 1 / last or 1)
     if not bar.moving then
         bar:SetScrollPercentage(last > 0 and bar.first / last or 0)
@@ -496,7 +498,7 @@ end
 -- @param count how many materials share the column
 -- @return true when it fits
 local function FitsGot(text, count)
-    local share = (GOT_WIDTH - (count - 1) * GOT_GAP) / count
+    local share = (layout.GOT_WIDTH - (count - 1) * layout.GOT_GAP) / count
     historyMeasure:SetText(text)
     return historyMeasure:GetStringWidth() <= share
 end
@@ -507,7 +509,7 @@ local function RenderHistory()
         return
     end
     historyList = S.SortHistory(S.FilterHistory(db.history, historyWho, playerRealm), historySort, historyReverse)
-    historyOffset = math.max(0, math.min(historyOffset, #historyList - ROW_COUNT))
+    historyOffset = math.max(0, math.min(historyOffset, #historyList - layout.ROW_COUNT))
     scroll.Set(scroll.bars.history, historyOffset, #historyList)
     for index, rowFrame in ipairs(historyRowFrames) do
         local entry = historyList[historyOffset + index]
@@ -554,7 +556,7 @@ local function RenderKept()
         local name, link, quality, level, _, _, _, _, _, icon = C_Item.GetItemInfo(itemID)
         return name, link, quality, level, icon
     end)
-    kept.offset = math.max(0, math.min(kept.offset, #kept.list - ROW_COUNT))
+    kept.offset = math.max(0, math.min(kept.offset, #kept.list - layout.ROW_COUNT))
     scroll.Set(scroll.bars.kept, kept.offset, #kept.list)
     kept.pending = false
     for index, rowFrame in ipairs(kept.rowFrames) do
@@ -588,7 +590,7 @@ local function Refresh()
         end
     end
     selected = keep
-    offset = math.max(0, math.min(offset, #rows - ROW_COUNT))
+    offset = math.max(0, math.min(offset, #rows - layout.ROW_COUNT))
     Render()
     if currentTab == 4 then
         RenderKept()
@@ -714,8 +716,8 @@ end
 -- @return the row frame
 local function BuildRow(index)
     local rowFrame = CreateFrame("Button", nil, itemsPanel)
-    rowFrame:SetSize(WIDTH - 40, ROW_HEIGHT)
-    rowFrame:SetPoint("TOPLEFT", itemsPanel, "TOPLEFT", 4, -(FILTER_HEIGHT + HEADER_HEIGHT) - (index - 1) * ROW_HEIGHT)
+    rowFrame:SetSize(layout.WIDTH - 40, layout.ROW_HEIGHT)
+    rowFrame:SetPoint("TOPLEFT", itemsPanel, "TOPLEFT", 4, -(layout.FILTER_HEIGHT + layout.HEADER_HEIGHT) - (index - 1) * layout.ROW_HEIGHT)
 
     rowFrame.highlight = rowFrame:CreateTexture(nil, "BACKGROUND")
     rowFrame.highlight:SetAllPoints()
@@ -723,7 +725,7 @@ local function BuildRow(index)
     rowFrame.highlight:Hide()
 
     rowFrame.check = CreateFrame("CheckButton", nil, rowFrame, "UICheckButtonTemplate")
-    rowFrame.check:SetSize(ROW_HEIGHT, ROW_HEIGHT)
+    rowFrame.check:SetSize(layout.ROW_HEIGHT, layout.ROW_HEIGHT)
     rowFrame.check:SetPoint("LEFT", rowFrame, "LEFT", 0, 0)
     rowFrame.check:SetScript("OnClick", function(box)
         if rowFrame.row then
@@ -733,37 +735,37 @@ local function BuildRow(index)
     end)
 
     rowFrame.icon = rowFrame:CreateTexture(nil, "ARTWORK")
-    rowFrame.icon:SetSize(ROW_HEIGHT - 4, ROW_HEIGHT - 4)
+    rowFrame.icon:SetSize(layout.ROW_HEIGHT - 4, layout.ROW_HEIGHT - 4)
     rowFrame.icon:SetPoint("LEFT", rowFrame.check, "RIGHT", 2, 0)
 
     rowFrame.nameText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     rowFrame.nameText:SetPoint("LEFT", rowFrame.icon, "RIGHT", 6, 0)
-    rowFrame.nameText:SetPoint("RIGHT", rowFrame, "RIGHT", NAME_RIGHT, 0)
+    rowFrame.nameText:SetPoint("RIGHT", rowFrame, "RIGHT", layout.NAME_RIGHT, 0)
     rowFrame.nameText:SetJustifyH("LEFT")
     rowFrame.nameText:SetWordWrap(false)
 
     rowFrame.vendorText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    rowFrame.vendorText:SetPoint("RIGHT", rowFrame, "RIGHT", VENDOR_RIGHT, 0)
+    rowFrame.vendorText:SetPoint("RIGHT", rowFrame, "RIGHT", layout.VENDOR_RIGHT, 0)
     rowFrame.vendorText:SetWidth(90)
     rowFrame.vendorText:SetJustifyH("RIGHT")
     rowFrame.vendorText:SetWordWrap(false)
 
     rowFrame.levelText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    rowFrame.levelText:SetPoint("RIGHT", rowFrame, "RIGHT", LEVEL_RIGHT, 0)
+    rowFrame.levelText:SetPoint("RIGHT", rowFrame, "RIGHT", layout.LEVEL_RIGHT, 0)
     rowFrame.levelText:SetWidth(34)
     rowFrame.levelText:SetJustifyH("RIGHT")
 
     -- Gives: an icon and a chance per material, left to right, most likely first.
     rowFrame.gives = {}
-    local givesLeft = GIVES_RIGHT - GIVES_SHOWN * GIVES_SLOT
-    for slot = 1, GIVES_SHOWN do
+    local givesLeft = layout.GIVES_RIGHT - layout.GIVES_SHOWN * layout.GIVES_SLOT
+    for slot = 1, layout.GIVES_SHOWN do
         local icon = rowFrame:CreateTexture(nil, "ARTWORK")
-        icon:SetSize(GIVES_ICON, GIVES_ICON)
-        icon:SetPoint("LEFT", rowFrame, "RIGHT", givesLeft + (slot - 1) * GIVES_SLOT, 0)
+        icon:SetSize(layout.GIVES_ICON, layout.GIVES_ICON)
+        icon:SetPoint("LEFT", rowFrame, "RIGHT", givesLeft + (slot - 1) * layout.GIVES_SLOT, 0)
         icon:Hide()
         local text = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         text:SetPoint("LEFT", icon, "RIGHT", 2, 0)
-        text:SetWidth(GIVES_SLOT - GIVES_ICON - 4)
+        text:SetWidth(layout.GIVES_SLOT - layout.GIVES_ICON - 4)
         text:SetJustifyH("LEFT")
         text:SetWordWrap(false)
         rowFrame.gives[slot] = { icon = icon, text = text }
@@ -823,7 +825,7 @@ local function BuildStats()
     statsPanel = CreateFrame("Frame", nil, frame)
     statsPanel.isStats = true
     statsPanel:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -70)
-    statsPanel:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -16, BUTTON_AREA)
+    statsPanel:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -16, layout.BUTTON_AREA)
 
     -- Whose stats show: a dropdown top right, beside the short numbers of the first fact lines.
     -- Blizzard's own dropdown (as HouseLedger's filters use on Forever), rebuilt each time it
@@ -847,8 +849,8 @@ local function BuildStats()
 
     -- The 14-day chart: a dark box with one bar per day, the busiest day's count in its corner.
     local chart = CreateFrame("Frame", nil, statsPanel)
-    chart:SetSize(CHART_WIDTH, CHART_HEIGHT)
-    chart:SetPoint("TOPRIGHT", statsPanel, "TOPRIGHT", 0, -CHART_TOP)
+    chart:SetSize(layout.CHART_WIDTH, layout.CHART_HEIGHT)
+    chart:SetPoint("TOPRIGHT", statsPanel, "TOPRIGHT", 0, -layout.CHART_TOP)
     local background = chart:CreateTexture(nil, "BACKGROUND")
     background:SetAllPoints(chart)
     background:SetColorTexture(0, 0, 0, 0.3)
@@ -857,9 +859,9 @@ local function BuildStats()
     local caption = chart:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
     caption:SetPoint("TOPRIGHT", chart, "TOPRIGHT", -3, -2)
     caption:SetText("Unmade per day, 14 days")
-    chart.barArea = CHART_HEIGHT - 18
+    chart.barArea = layout.CHART_HEIGHT - 18
     chart.bars = {}
-    local slot = CHART_WIDTH / 14
+    local slot = layout.CHART_WIDTH / 14
     for index = 1, 14 do
         local bar = chart:CreateTexture(nil, "ARTWORK")
         bar:SetPoint("BOTTOMLEFT", chart, "BOTTOMLEFT", math.floor((index - 1) * slot) + 1, 2)
@@ -886,7 +888,7 @@ local function BuildStats()
     local header = statsPanel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     header:SetPoint("TOPLEFT", statsPanel, "TOPLEFT", 0, -top)
     header:SetText("Materials (lifetime)")
-    for index = 1, MAT_LINES do
+    for index = 1, layout.MAT_LINES do
         local line = statsPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
         line:SetPoint("TOPLEFT", statsPanel, "TOPLEFT", 12, -(top + index * 16))
         matLines[index] = line
@@ -899,26 +901,26 @@ local HISTORY_COLUMNS = {
     { key = "name", label = "Item", x = 0, width = 150 },
     { key = "level", label = "ilvl", x = 155, width = 35 },
     { key = "who", label = "Who", x = 195, width = 80 },
-    { key = nil, label = "Got", x = 280, width = GOT_WIDTH },
+    { key = nil, label = "Got", x = 280, width = layout.GOT_WIDTH },
     { key = "time", label = "When", x = 470, width = 80 },
 }
 
 --- Build the History tab: clickable headings that sort, then ten rows, newest first by default.
 local function BuildHistory()
     historyPanel = CreateFrame("Frame", nil, frame)
-    historyPanel:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -LIST_TOP)
-    historyPanel:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -16, BUTTON_AREA)
+    historyPanel:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -layout.LIST_TOP)
+    historyPanel:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -16, layout.BUTTON_AREA)
     historyPanel:EnableMouseWheel(true)
     local function ScrollHistory(rowsDown)
-        historyOffset = math.max(0, math.min(historyOffset + rowsDown, #historyList - ROW_COUNT))
+        historyOffset = math.max(0, math.min(historyOffset + rowsDown, #historyList - layout.ROW_COUNT))
         RenderHistory()
     end
     historyPanel:SetScript("OnMouseWheel", function(_, delta)
         ScrollHistory(-delta)
     end)
     scroll.bars.history = scroll.New(historyPanel, ScrollHistory)
-    scroll.bars.history:SetPoint("TOPRIGHT", historyPanel, "TOPRIGHT", 4, -(FILTER_HEIGHT + 20))
-    scroll.bars.history:SetHeight(LIST_HEIGHT)
+    scroll.bars.history:SetPoint("TOPRIGHT", historyPanel, "TOPRIGHT", 4, -(layout.FILTER_HEIGHT + 20))
+    scroll.bars.history:SetHeight(layout.LIST_HEIGHT)
     -- Whose disenchants to show: the same kind of dropdown as the Stats tab, rebuilt when opened.
     local whoDropdown = CreateFrame("DropdownButton", nil, historyPanel, "WowStyle1DropdownTemplate")
     whoDropdown:SetWidth(150)
@@ -943,7 +945,7 @@ local function BuildHistory()
     for _, column in ipairs(HISTORY_COLUMNS) do
         local heading = CreateFrame("Button", nil, historyPanel)
         heading:SetSize(column.width, 18)
-        heading:SetPoint("TOPLEFT", historyPanel, "TOPLEFT", column.x, -FILTER_HEIGHT)
+        heading:SetPoint("TOPLEFT", historyPanel, "TOPLEFT", column.x, -layout.FILTER_HEIGHT)
         heading.label = heading:CreateFontString(nil, "OVERLAY", "GameFontNormal")
         heading.label:SetPoint("LEFT", heading, "LEFT", 0, 0)
         heading.label:SetText(column.label)
@@ -963,11 +965,11 @@ local function BuildHistory()
             end)
         end
     end
-    for index = 1, ROW_COUNT do
+    for index = 1, layout.ROW_COUNT do
         local rowFrame = CreateFrame("Button", nil, historyPanel)
         rowFrame.historyRow = true
-        rowFrame:SetSize(WIDTH - 40, ROW_HEIGHT)
-        rowFrame:SetPoint("TOPLEFT", historyPanel, "TOPLEFT", 0, -(FILTER_HEIGHT + 20 + (index - 1) * ROW_HEIGHT))
+        rowFrame:SetSize(layout.WIDTH - 40, layout.ROW_HEIGHT)
+        rowFrame:SetPoint("TOPLEFT", historyPanel, "TOPLEFT", 0, -(layout.FILTER_HEIGHT + 20 + (index - 1) * layout.ROW_HEIGHT))
         for _, field in ipairs({ { "itemText", 1 }, { "levelText", 2 }, { "whoText", 3 }, { "lootText", 4 },
             { "whenText", 5 } }) do
             local column = HISTORY_COLUMNS[field[2]]
@@ -999,7 +1001,7 @@ local function BuildHistory()
     historyMeasure = historyPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     historyMeasure:Hide()
     historyEmpty = historyPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    historyEmpty:SetPoint("TOPLEFT", historyPanel, "TOPLEFT", 0, -(FILTER_HEIGHT + 24))
+    historyEmpty:SetPoint("TOPLEFT", historyPanel, "TOPLEFT", 0, -(layout.FILTER_HEIGHT + 24))
     historyEmpty:SetText("Nothing unmade yet. Disenchant something on the Items tab.")
     historyPanel:Hide()
 end
@@ -1008,11 +1010,11 @@ end
 -- Forget), scrolled with the mouse wheel, and what Forget does.
 local function BuildKept()
     kept.panel = CreateFrame("Frame", nil, frame)
-    kept.panel:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -LIST_TOP)
-    kept.panel:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -16, BUTTON_AREA)
+    kept.panel:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -layout.LIST_TOP)
+    kept.panel:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -16, layout.BUTTON_AREA)
     kept.panel:EnableMouseWheel(true)
     local function ScrollKept(rowsDown)
-        kept.offset = math.max(0, math.min(kept.offset + rowsDown, #kept.list - ROW_COUNT))
+        kept.offset = math.max(0, math.min(kept.offset + rowsDown, #kept.list - layout.ROW_COUNT))
         RenderKept()
     end
     kept.panel:SetScript("OnMouseWheel", function(_, delta)
@@ -1020,18 +1022,18 @@ local function BuildKept()
     end)
     scroll.bars.kept = scroll.New(kept.panel, ScrollKept)
     -- Rows end 4 px short of the panel's right edge (Forget sits there); the bar starts 2 px past it.
-    scroll.bars.kept:SetPoint("TOPRIGHT", kept.panel, "TOPRIGHT", 10, -FILTER_HEIGHT)
-    scroll.bars.kept:SetHeight(LIST_HEIGHT)
+    scroll.bars.kept:SetPoint("TOPRIGHT", kept.panel, "TOPRIGHT", 10, -layout.FILTER_HEIGHT)
+    scroll.bars.kept:SetHeight(layout.LIST_HEIGHT)
     kept.title = kept.panel:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     kept.title:SetPoint("TOPLEFT", kept.panel, "TOPLEFT", 4, -4)
     kept.title:SetText("Kept items (0)")
-    for index = 1, ROW_COUNT do
+    for index = 1, layout.ROW_COUNT do
         local rowFrame = CreateFrame("Button", nil, kept.panel)
         rowFrame.keptRow = true
-        rowFrame:SetSize(WIDTH - 40, ROW_HEIGHT)
-        rowFrame:SetPoint("TOPLEFT", kept.panel, "TOPLEFT", 4, -(FILTER_HEIGHT + (index - 1) * ROW_HEIGHT))
+        rowFrame:SetSize(layout.WIDTH - 40, layout.ROW_HEIGHT)
+        rowFrame:SetPoint("TOPLEFT", kept.panel, "TOPLEFT", 4, -(layout.FILTER_HEIGHT + (index - 1) * layout.ROW_HEIGHT))
         rowFrame.icon = rowFrame:CreateTexture(nil, "ARTWORK")
-        rowFrame.icon:SetSize(ROW_HEIGHT - 4, ROW_HEIGHT - 4)
+        rowFrame.icon:SetSize(layout.ROW_HEIGHT - 4, layout.ROW_HEIGHT - 4)
         rowFrame.icon:SetPoint("LEFT", rowFrame, "LEFT", 0, 0)
         rowFrame.itemText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
         rowFrame.itemText:SetPoint("LEFT", rowFrame.icon, "RIGHT", 6, 0)
@@ -1043,7 +1045,7 @@ local function BuildKept()
         rowFrame.bagText:SetWidth(70)
         rowFrame.bagText:SetJustifyH("RIGHT")
         rowFrame.forget = CreateFrame("Button", nil, rowFrame, "UIPanelButtonTemplate")
-        rowFrame.forget:SetSize(72, ROW_HEIGHT - 2)
+        rowFrame.forget:SetSize(72, layout.ROW_HEIGHT - 2)
         rowFrame.forget:SetPoint("RIGHT", rowFrame, "RIGHT", 0, 0)
         rowFrame.forget:SetText("Forget")
         rowFrame.forget:SetScript("OnClick", function()
@@ -1071,7 +1073,7 @@ local function BuildKept()
         kept.rowFrames[index] = rowFrame
     end
     kept.empty = kept.panel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    kept.empty:SetPoint("TOPLEFT", kept.panel, "TOPLEFT", 4, -(FILTER_HEIGHT + 4))
+    kept.empty:SetPoint("TOPLEFT", kept.panel, "TOPLEFT", 4, -(layout.FILTER_HEIGHT + 4))
     kept.empty:SetPoint("RIGHT", kept.panel, "RIGHT", -4, 0)
     kept.empty:SetJustifyH("LEFT")
     kept.empty:SetText("Nothing kept. Uncheck an item on the Items tab and Unmaker keeps it: it starts"
@@ -1238,7 +1240,7 @@ local function BuildFilterAndHeader()
     local filterRow = CreateFrame("Frame", nil, itemsPanel)
     filterRow:SetPoint("TOPLEFT", itemsPanel, "TOPLEFT", 0, 0)
     filterRow:SetPoint("RIGHT", itemsPanel, "RIGHT", 0, 0)
-    filterRow:SetHeight(FILTER_HEIGHT)
+    filterRow:SetHeight(layout.FILTER_HEIGHT)
 
     -- Blizzard's own dropdown, as HouseLedger's filters use on Forever.
     local quality = CreateFrame("DropdownButton", nil, filterRow, "WowStyle1DropdownTemplate")
@@ -1287,14 +1289,14 @@ local function BuildFilterAndHeader()
 
     -- Headings line up with the row cells: name after the checkbox and icon, ilvl, then vendor.
     local header = CreateFrame("Frame", nil, itemsPanel)
-    header:SetPoint("TOPLEFT", itemsPanel, "TOPLEFT", 4, -FILTER_HEIGHT)
-    header:SetSize(WIDTH - 40, HEADER_HEIGHT)
+    header:SetPoint("TOPLEFT", itemsPanel, "TOPLEFT", 4, -layout.FILTER_HEIGHT)
+    header:SetSize(layout.WIDTH - 40, layout.HEADER_HEIGHT)
     local places = {
-        { key = "name", point = "LEFT", x = ROW_HEIGHT + 2 + ROW_HEIGHT - 4 + 6, width = 120, justify = "LEFT" },
-        { key = "ilvl", point = "RIGHT", x = LEVEL_RIGHT, width = 50, justify = "RIGHT" },
-        { key = "gives", point = "RIGHT", x = GIVES_RIGHT, width = GIVES_SHOWN * GIVES_SLOT, justify = "LEFT",
+        { key = "name", point = "LEFT", x = layout.ROW_HEIGHT + 2 + layout.ROW_HEIGHT - 4 + 6, width = 120, justify = "LEFT" },
+        { key = "ilvl", point = "RIGHT", x = layout.LEVEL_RIGHT, width = 50, justify = "RIGHT" },
+        { key = "gives", point = "RIGHT", x = layout.GIVES_RIGHT, width = layout.GIVES_SHOWN * layout.GIVES_SLOT, justify = "LEFT",
             fixed = true },
-        { key = "vendor", point = "RIGHT", x = VENDOR_RIGHT, width = 90, justify = "RIGHT" },
+        { key = "vendor", point = "RIGHT", x = layout.VENDOR_RIGHT, width = 90, justify = "RIGHT" },
     }
     itemsPanel.headerTexts, itemsPanel.sortButtons = {}, {}
     for _, place in ipairs(places) do
@@ -1319,7 +1321,7 @@ end
 
 local function BuildFrame()
     frame = CreateFrame("Frame", "UnmakerFrame", UIParent, "ButtonFrameTemplate")
-    frame:SetSize(WIDTH, HEIGHT)
+    frame:SetSize(layout.WIDTH, layout.HEIGHT)
     local position = charDB.position
     if position then
         frame:SetPoint(position.point, UIParent, position.relativePoint, position.x, position.y)
@@ -1351,27 +1353,27 @@ local function BuildFrame()
     frame:Hide()
 
     itemsPanel = CreateFrame("Frame", nil, frame)
-    itemsPanel:SetPoint("TOPLEFT", frame, "TOPLEFT", 12, -LIST_TOP)
-    itemsPanel:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -12, BUTTON_AREA)
+    itemsPanel:SetPoint("TOPLEFT", frame, "TOPLEFT", 12, -layout.LIST_TOP)
+    itemsPanel:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -12, layout.BUTTON_AREA)
     itemsPanel:EnableMouseWheel(true)
     local function ScrollItems(rowsDown)
-        offset = math.max(0, math.min(offset + rowsDown, #rows - ROW_COUNT))
+        offset = math.max(0, math.min(offset + rowsDown, #rows - layout.ROW_COUNT))
         Render()
     end
     itemsPanel:SetScript("OnMouseWheel", function(_, delta)
         ScrollItems(-delta)
     end)
     scroll.bars.items = scroll.New(itemsPanel, ScrollItems)
-    scroll.bars.items:SetPoint("TOPRIGHT", itemsPanel, "TOPRIGHT", 0, -(FILTER_HEIGHT + HEADER_HEIGHT))
-    scroll.bars.items:SetHeight(LIST_HEIGHT)
+    scroll.bars.items:SetPoint("TOPRIGHT", itemsPanel, "TOPRIGHT", 0, -(layout.FILTER_HEIGHT + layout.HEADER_HEIGHT))
+    scroll.bars.items:SetHeight(layout.LIST_HEIGHT)
     BuildFilterAndHeader()
-    for index = 1, ROW_COUNT do
+    for index = 1, layout.ROW_COUNT do
         rowFrames[index] = BuildRow(index)
     end
 
     -- The count and status lines belong to the Items tab, so they hide on Settings.
     countText = itemsPanel:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    countText:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -(LIST_START + LIST_HEIGHT + 8))
+    countText:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -(layout.LIST_START + layout.LIST_HEIGHT + 8))
     countText:SetPoint("RIGHT", frame, "RIGHT", -16, 0)
     countText:SetJustifyH("LEFT")
     statusText = itemsPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -1379,7 +1381,7 @@ local function BuildFrame()
     statusText:SetPoint("RIGHT", frame, "RIGHT", -16, 0)
     statusText:SetJustifyH("LEFT")
     statusText:SetJustifyV("TOP")
-    statusText:SetHeight(TEXT_HEIGHT - 20)
+    statusText:SetHeight(layout.TEXT_HEIGHT - 20)
 
     selectedButton = BuildCastButton("UnmakerSelectedButton", "Disenchant selected", function()
         return selected
