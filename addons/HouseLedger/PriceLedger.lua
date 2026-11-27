@@ -65,7 +65,7 @@ PriceLedger.SCANS_KEPT = 30
 PriceLedger.CHART_VIEWS = { "days", "scans" }
 -- The house overview estimates the next day only from this many days of scans.
 PriceLedger.OVERVIEW_MIN_DAYS = 5
--- A price chart draws its line, normal range and guess at the next day or scan from this many
+-- A price chart draws its line, normal range and projection for the next day or scan from this many
 -- bars. Fewer can't hold one odd listing back: of 4 bars' 6 slope pairs, 3 include it.
 PriceLedger.CHART_FIT_MIN_POINTS = 5
 -- Turns the median distance from the line into a standard deviation, for prices that scatter
@@ -1487,7 +1487,7 @@ local function Median(list)
     return (list[count / 2] + list[count / 2 + 1]) / 2
 end
 
---- A straight line through a price chart's bars, its normal range and a guess at the next slot,
+--- A straight line through a price chart's bars, its normal range and a projection for the next slot,
 -- like the house overview's, but fit so one odd listing can't tilt it: cheapest prices jump
 -- whenever one seller lists low, which pulls a least-squares line a long way. The slope is the
 -- median of the slopes between every two bars (the Theil-Sen line), the line goes through the
@@ -2242,10 +2242,10 @@ function PriceLedger.OverviewLines(overview, coinText)
         lines[2] = { left = "Trend", right = string.format("%+.1f%% a day", overview.trendPct * 100) }
     end
     if overview.projection then
-        lines[3] = { left = "Next day, about",
+        lines[3] = { left = "Next day, projected",
             right = PriceLedger.Thousands(overview.projection) .. (overview.projection == 1 and " item" or " items") }
     else
-        lines[3] = { left = "Next day, about", right = "after " .. PriceLedger.OVERVIEW_MIN_DAYS .. " days of scans" }
+        lines[3] = { left = "Next day, projected", right = "after " .. PriceLedger.OVERVIEW_MIN_DAYS .. " days of scans" }
     end
     if latest.listings then
         lines[4] = { left = "Listings / units",

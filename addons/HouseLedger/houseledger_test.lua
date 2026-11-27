@@ -161,6 +161,7 @@ function FrameMethods:CreateLine()
 end
 function FrameMethods:SetStartPoint(...) self.startPoint = { ... } end
 function FrameMethods:SetEndPoint(...) self.endPoint = { ... } end
+function FrameMethods:SetThickness(thickness) self.thickness = thickness end
 
 --- Builds one listing for the fake replicate list.
 -- The fake GetReplicateItemInfo returns it in the game's order, with owner
@@ -2507,7 +2508,7 @@ do
     Check("with saved scans, Buy shows the house overview",
         panel.detailTitle.text == "House overview, 5 days of scans"
         and Line(1) == "Items listed = 1 at the last scan (avg 1)" and Line(2) == "Trend = steady"
-        and Line(3) == "Next day, about = 1 item" and Line(4) == "Listings / units = from your next scan")
+        and Line(3) == "Next day, projected = 1 item" and Line(4) == "Listings / units = from your next scan")
     Check("its chart shows each day and the next day's estimate", chart.shown and chart.slotCount == 8
         and chart.caption.text == "Items listed, 7 days" and chart.bars[7].shown and chart.bars[8].shown
         and not chart.bars[1].shown and not chart.bars[9].shown)
@@ -2559,6 +2560,10 @@ do
     end
     Check("days that go up and down get the normal-range band around the line", bands > 0
         and chart.line.shown and MainFrame().buyPanel.detailLines[2].right.text:find("a day", 1, true) ~= nil)
+    local lower, upper = chart.edges[1], chart.edges[2]
+    Check("the overview's band has edge lines over the bars, either side of the trend line", lower.shown and upper.shown
+        and lower.startPoint[4] < chart.line.startPoint[4] and upper.startPoint[4] > chart.line.startPoint[4]
+        and lower.startPoint[3] == chart.line.startPoint[3] and upper.endPoint[3] == chart.line.endPoint[3])
 end
 
 do
@@ -2568,7 +2573,7 @@ do
     OpenHouse()
     local chart = MainFrame().buyPanel.overviewChart
     Check("one day of scans: a bar but no trend line yet", chart.shown and chart.slotCount == 7
-        and not chart.line.shown and not chart.bands[1].shown)
+        and not chart.line.shown and not chart.bands[1].shown and not chart.edges[1].shown and not chart.edges[2].shown)
 end
 
 do
@@ -2628,13 +2633,13 @@ do
     row:GetScript("OnClick")(row)
     local chart = panel.chart
     local heights = BarHeights(chart)
-    Check("a row click shows its chart, 7 days for a young item, and the next day's guess",
+    Check("a row click shows its chart, 7 days for a young item, and the next day's projection",
         chart.shown and chart.slotCount == 8 and chart.caption.text == "Daily low, 7 days" and #chart.bars == 31)
     Check("days with scans have bars, the rest none", heights[7] and heights[3] and not heights[2] and not heights[1]
         and heights[8] and not heights[9] and not heights[31])
     Check("bars scale to the chart's top price", heights[7] == chart.barArea and heights[3] == chart.barArea)
     Check("the latest day is gold", chart.bars[7].colorTexture[1] == 1 and chart.bars[6].colorTexture[1] < 1)
-    Check("7 days and the guess share the chart's width, the guess a gap apart",
+    Check("7 days and the projection share the chart's width, the projection a gap apart",
         chart.bars[2].points[1][4] == math.floor((chart.chartWidth - 3) / 8) + 1)
     Check("the chart says its top price", chart.topText.text == "<money 100>")
     Check("the chart sends nothing", #world.browseQueries == queries)
@@ -2818,7 +2823,7 @@ local function TipHas(lines, text)
 end
 
 do
-    -- Trend line, normal range and guess on a price chart, like the house overview's.
+    -- Trend line, normal range and projection on a price chart, like the house overview's.
     Setup({ screenRight = 1400 })
     Load()
     -- Rising 10 a day, with one odd cheap day that mustn't tilt the line.
@@ -2827,33 +2832,34 @@ do
     local queries = #world.browseQueries
     local slotWidth = (chart.chartWidth - 3) / 8
     local middle = 1 + math.max(2, math.floor(slotWidth) - 2) / 2
-    Check("a price chart gets a trend line from its first bar to the guess", chart.line and chart.line.shown
+    Check("a price chart gets a trend line from its first bar to the projection", chart.line and chart.line.shown
         and chart.line.startPoint[3] == middle and chart.line.endPoint[3] > chart.bars[8].points[1][4])
     Check("the odd cheap day doesn't tilt it: it runs 100 to 170",
         chart.line.startPoint[4] == 2 + 100 / 170 * chart.barArea and chart.line.endPoint[4] == 2 + chart.barArea)
-    Check("the guess is the line at the next day, in purple", chart.slotCount == 8 and chart.bars[8].shown
+    Check("the projection is the line at the next day, in purple", chart.slotCount == 8 and chart.bars[8].shown
         and chart.bars[8].height == chart.barArea and chart.bars[8].colorTexture[1] == 0.72)
     Check("the latest real day stays gold", chart.bars[7].colorTexture[1] == 1)
-    Check("the axis grows to fit the guess", chart.topText.text == "<money 170>")
+    Check("the axis grows to fit the projection", chart.topText.text == "<money 170>")
     local bands = 0
     for _, band in ipairs(chart.trendBands) do
         bands = bands + (band.shown and 1 or 0)
     end
-    Check("prices on the line get no normal-range band", bands == 0)
+    Check("prices on the line get no normal-range band, and no edge lines", bands == 0
+        and not chart.edges[1].shown and not chart.edges[2].shown)
     local lines = ChartTipLines(chart)
     Check("the hover tip says what the line and the purple bar are", TipHas(lines, "White line")
-        and TipHas(lines, "Purple: a guess at the next day, <money 170>.") and not TipHas(lines, "Faint band"))
+        and TipHas(lines, "Purple: a projection for the next day, <money 170>.") and not TipHas(lines, "Shaded band"))
     Check("drawing it sends nothing", #world.browseQueries == queries)
 
     chart.viewButtons.scans:GetScript("OnClick")(chart.viewButtons.scans)
     lines = ChartTipLines(chart)
-    Check("Scans draws them per scan, the guess for the next scan", chart.line.shown and chart.slotCount == 8
-        and TipHas(lines, "Purple: a guess at the next scan"))
+    Check("Scans draws them per scan, the projection for the next scan", chart.line.shown and chart.slotCount == 8
+        and TipHas(lines, "Purple: a projection for the next scan"))
 
     HouseLedgerDB.houses["Alliance|TestRealm"].items[4306].scans = nil
     local row = ResultRows()[1]
     row:GetScript("OnClick")(row)
-    Check("an item without scans hides the line and the guess", chart.emptyText.shown and not chart.line.shown
+    Check("an item without scans hides the line and the projection", chart.emptyText.shown and not chart.line.shown
         and not chart.bars[8].shown and not TipHas(ChartTipLines(chart), "White line"))
     chart.viewButtons.days:GetScript("OnClick")(chart.viewButtons.days)
 end
@@ -2868,9 +2874,17 @@ do
     for index, band in ipairs(chart.trendBands) do
         shown[index] = band.shown
     end
-    Check("prices that go up and down get the normal-range band, first bar to the guess",
+    Check("prices that go up and down get the normal-range band, first bar to the projection",
         shown[2] and shown[8] and not shown[1] and not shown[9] and chart.line.startPoint[4] == chart.line.endPoint[4])
-    Check("the tip names the band", TipHas(ChartTipLines(chart), "Faint band: its normal range."))
+    Check("the tip names the band", TipHas(ChartTipLines(chart), "Shaded band and thin lines: its normal range."))
+    local lower, upper = chart.edges[1], chart.edges[2]
+    -- Flat at 110 with every price 10 off it: the range is 1.4826 x 10 on each side.
+    local function Y(price) return 2 + price / 125 * chart.barArea end
+    Check("the band's edges are lines over the bars, from the first bar to the projection", lower.shown and upper.shown
+        and lower.startPoint[3] == chart.line.startPoint[3] and upper.endPoint[3] == chart.line.endPoint[3]
+        and math.abs(upper.startPoint[4] - Y(110 + 14.826)) < 0.01 and math.abs(lower.endPoint[4] - Y(110 - 14.826)) < 0.01)
+    Check("the band is easier to see: brighter, and its edges thin and fainter than the line",
+        chart.trendBands[2].colorTexture[4] == 0.2 and upper.thickness == 1 and upper.colorTexture[4] < chart.line.colorTexture[4])
     Check("the axis grows to the band's top, in whole copper", chart.topText.text == "<money 125>")
 end
 
@@ -2884,38 +2898,40 @@ do
         and chart.line.startPoint[3] > chart.bars[2].points[1][4]
         and chart.line.startPoint[3] < chart.bars[3].points[1][4])
 
-    -- A steep fall: the line stops where it reaches 0, and there's no guess under 0.
+    -- A steep fall: the line stops where it reaches 0, and there's no projection under 0.
     Setup({ screenRight = 1400 })
     Load()
     SaveDailyPrices({ 800, 600, 400, 200, 3, 2, 1 })
     chart = ShowBuyChart()
-    Check("a line that would end under 0 stops at 0, with no guess", chart.line.endPoint[4] == 2
+    Check("a line that would end under 0 stops at 0, with no projection", chart.line.endPoint[4] == 2
         and chart.line.endPoint[3] > chart.bars[5].points[1][4] and chart.line.endPoint[3] < chart.bars[7].points[1][4]
         and chart.slotCount == 7 and not chart.bars[8].shown)
+    Check("the band's lower edge stops at 0 too", chart.edges[1].shown and chart.edges[1].endPoint[4] == 2
+        and chart.edges[1].endPoint[3] < chart.line.endPoint[3])
 end
 
 do
-    -- Too few bars: no line, band or guess.
+    -- Too few bars: no line, band or projection.
     Setup({ screenRight = 1400 })
     Load()
     SaveDailyPrices({ 100, 110, 120, 130 })
     local chart = ShowBuyChart()
-    Check("4 days: no line or guess yet", chart.shown and not chart.line.shown and chart.slotCount == 7
+    Check("4 days: no line or projection yet", chart.shown and not chart.line.shown and chart.slotCount == 7
         and not chart.bars[8].shown and not TipHas(ChartTipLines(chart), "White line"))
 end
 
 do
-    -- 60 days kept: every price chart shows 2 days per bar, at most 30 bars and the guess.
+    -- 60 days kept: every price chart shows 2 days per bar, at most 30 bars and the projection.
     Setup({ screenRight = 1400 })
     Load()
     HouseLedgerPrice.SetHistoryDays(HouseLedgerDB, 60)
     SaveDailyHistory(60)
     local chart = ShowBuyChart()
     local heights = BarHeights(chart)
-    Check("60 days chart as 30 bars of 2 days, plus the guess", chart.slotCount == 31
+    Check("60 days chart as 30 bars of 2 days, plus the projection", chart.slotCount == 31
         and heights[1] and heights[30] and heights[31] and #chart.bars == 31)
     Check("its caption says 2 days per bar", chart.caption.text == "Daily low, 60 days (2 days per bar)")
-    Check("the guess is for the next 2 days", TipHas(ChartTipLines(chart), "Purple: a guess at the next 2 days"))
+    Check("the projection is for the next 2 days", TipHas(ChartTipLines(chart), "Purple: a projection for the next 2 days"))
     local overview = MainFrame().buyPanel.overviewChart
     Click("Clear")
     Check("the house overview shows the last 30 days", overview.shown and overview.slotCount <= 31)

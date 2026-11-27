@@ -1,7 +1,7 @@
 --[[
 The price chart, used by Buy, Market, Sell and Price Check: one bar per day's lowest price with a
 faint band up to its highest, or one bar per saved scan, picked with the Days and Scans buttons in its
-corner (one saved choice for every chart), with a trend line, its normal range and a guess at the
+corner (one saved choice for every chart), with a trend line, its normal range and a projection for the
 next day or scan (PriceLedger.ChartFit). And the house overview chart (items listed a day, with the
 same three) on Buy. Both draw saved data only.
 ]]
@@ -13,9 +13,12 @@ local Price, U, Chart = ns.Price, ns.U, ns.Chart
 local CHART_BAR_COLOR = { 0.35, 0.6, 1, 0.9 }
 local CHART_LATEST_COLOR = { 1, 0.82, 0, 1 }
 local CHART_RANGE_COLOR = { 0.35, 0.6, 1, 0.3 }
--- Both kinds of chart: the normal range around the trend line as a faint band, the trend line in
--- white, and the next day's (or scan's) guess in purple, so it doesn't read as one more bar.
-local TREND_BAND_COLOR = { 1, 1, 1, 0.12 }
+-- Both kinds of chart: the normal range around the trend line as a faint band behind the bars,
+-- with thin edge lines over them (so the range still shows where bars cover the band), the trend
+-- line in white, and the next day's (or scan's) projection in purple, so it doesn't read as one
+-- more bar.
+local TREND_BAND_COLOR = { 1, 1, 1, 0.2 }
+local BAND_EDGE_COLOR = { 1, 1, 1, 0.45 }
 local TREND_LINE_COLOR = { 1, 1, 1, 0.8 }
 local ESTIMATE_COLOR = { 0.72, 0.45, 1, 0.85 }
 
@@ -29,16 +32,63 @@ local VIEW_BUTTON_HEIGHT = 16
 -- and the two buttons (1 px from the corner, 2 px apart). Chart.Build anchors them that way.
 local TOP_TEXT_MARGIN = 3 + 4 + VIEW_BUTTON_WIDTH + 2 + VIEW_BUTTON_WIDTH + 1
 
+--- Makes the two thin lines along the normal range's lower and upper edges, over the bars.
+-- @param chart a chart that can draw lines
+local function BuildEdges(chart)
+    chart.edges = {}
+    for index = 1, 2 do
+        local edge = chart:CreateLine(nil, "OVERLAY")
+        edge:SetThickness(1)
+        edge:SetColorTexture(BAND_EDGE_COLOR[1], BAND_EDGE_COLOR[2], BAND_EDGE_COLOR[3], BAND_EDGE_COLOR[4])
+        edge:Hide()
+        chart.edges[index] = edge
+    end
+end
+
+--- Draws one edge of the normal range: a straight line from slot `from` to slot `to`, cut where
+-- it goes under 0. Hidden when it is under 0 all the way.
+-- @param chart the chart the line belongs to
+-- @param edge the line
+-- @param Value the edge's price at a slot (a straight line)
+-- @param from the first slot
+-- @param to the last slot
+-- @param X the x of a slot (fractions allowed)
+-- @param Height the height in pixels of a price on the axis
+local function DrawEdge(chart, edge, Value, from, to, X, Height)
+    local first, last = Value(from), Value(to)
+    if first < 0 and last < 0 then
+        edge:Hide()
+        return
+    end
+    local fromY, toY = Height(first), Height(last)
+    if first < 0 then
+        from, fromY = from + (to - from) * first / (first - last), 0
+    elseif last < 0 then
+        to, toY = from + (to - from) * first / (first - last), 0
+    end
+    edge:SetStartPoint("BOTTOMLEFT", chart, X(from), 2 + fromY)
+    edge:SetEndPoint("BOTTOMLEFT", chart, X(to), 2 + toY)
+    edge:Show()
+end
+
+--- Hides a chart's normal-range edge lines, when it has them.
+-- @param chart a chart
+local function HideEdges(chart)
+    for _, edge in ipairs(chart.edges or {}) do
+        edge:Hide()
+    end
+end
+
 -- The price charts Chart.Build made, so a view change redraws every one on screen.
 Chart.built = {}
 
 --- Draws the trend line and its normal range on a price chart, on the bars' axis: the band from
--- the first bar to the last slot (the guess included), reaching each next slot so it runs on
+-- the first bar to the last slot (the projection included), reaching each next slot so it runs on
 -- across a day gap; the line from the first bar's middle to the last slot's. Where the line would
 -- go under 0, it stops at 0 instead. Hides both without a fit.
 -- @param chart a chart from Chart.Build
 -- @param fit from PriceLedger.ChartFit, or nil
--- @param count slots drawn, the guess included
+-- @param count slots drawn, the projection included
 -- @param Left the x of a slot's left edge, as DrawBars places bars
 -- @param Height the height in pixels of a price on the axis
 -- @param barWidth the bars' width
@@ -49,6 +99,7 @@ local function DrawTrend(chart, fit, count, Left, Height, barWidth)
     if chart.line then
         chart.line:Hide()
     end
+    HideEdges(chart)
     if fit == nil then
         return
     end
@@ -93,13 +144,17 @@ local function DrawTrend(chart, fit, count, Left, Height, barWidth)
     chart.line:SetStartPoint("BOTTOMLEFT", chart, Middle(from), 2 + Height(fit.fit(from)))
     chart.line:SetEndPoint("BOTTOMLEFT", chart, Middle(to), 2 + Height(fit.fit(to)))
     chart.line:Show()
+    if spread > 0 then
+        DrawEdge(chart, chart.edges[1], function(x) return fit.fit(x) - spread end, fit.first, count, Middle, Height)
+        DrawEdge(chart, chart.edges[2], function(x) return fit.fit(x) + spread end, fit.first, count, Middle, Height)
+    end
 end
 
 --- Draws bars from chart slots: one bar per filled slot's low, a faint band up to its high, the
 -- last slot in gold. A slot that starts a new day gets CHART_DAY_GAP more space before it when
 -- `dayGaps` is set. With a fit, also the trend line and its normal range (DrawTrend), and the
--- guess as one more bar in purple, a gap apart. The axis runs from 0 to the highest of the
--- prices, the line's range and the guess, so none of them is cut off.
+-- projection as one more bar in purple, a gap apart. The axis runs from 0 to the highest of the
+-- prices, the line's range and the projection, so none of them is cut off.
 -- @param chart a chart from Chart.Build
 -- @param slots the slots, oldest first; a slot without `low` is left empty
 -- @param top the highest price in the slots
@@ -208,7 +263,7 @@ end
 -- oldest saved day (at least 7, at most the history length), so it grows as the history does.
 -- Scans: one bar per saved scan (at most PriceLedger.SCANS_KEPT), with a little space between
 -- days; an item saved before scans were kept says when they start instead.
--- The latest bar is gold. Both views add the trend line, its normal range and a purple guess at
+-- The latest bar is gold. Both views add the trend line, its normal range and a purple projection for
 -- the next day or scan from CHART_FIT_MIN_POINTS bars (PriceLedger.ChartFit). Hides the chart
 -- when there is no item.
 -- Saved data only.
@@ -280,10 +335,10 @@ local function ShowChartTip(chart)
         GameTooltip:AddLine("White line: which way the price is going. One odd listing can't tilt it.",
             0.8, 0.8, 0.8, true)
         if fit.spread > 0 then
-            GameTooltip:AddLine("Faint band: its normal range.", 0.8, 0.8, 0.8)
+            GameTooltip:AddLine("Shaded band and thin lines: its normal range.", 0.8, 0.8, 0.8)
         end
         if fit.estimate then
-            GameTooltip:AddLine("Purple: a guess at the next " .. chart.nextWord .. ", "
+            GameTooltip:AddLine("Purple: a projection for the next " .. chart.nextWord .. ", "
                 .. U.CopperToText(fit.estimate) .. ".", ESTIMATE_COLOR[1], ESTIMATE_COLOR[2], ESTIMATE_COLOR[3])
         end
     end
@@ -322,7 +377,7 @@ end
 --- Makes a price chart, hidden until Chart.Show fills it: a dark box, the top of its axis in its
 -- top-left corner, the Days and Scans buttons in its top-right, three textures per slot (the low's
 -- bar, the faint range band and the trend line's normal range), enough for the longest history
--- and for SCANS_KEPT plus the guess, and the trend line when the client can draw lines. What it
+-- and for SCANS_KEPT plus the projection, and the trend line when the client can draw lines. What it
 -- shows ("Daily low, 14 days") is in its hover tip. Chart.Show places as many as it needs.
 -- @param parent the panel it belongs to
 -- @param width the chart's width
@@ -357,7 +412,7 @@ function Chart.Build(parent, width, height)
     chart.barArea = height - 18
     chart.chartWidth = width
     chart.bars, chart.bands, chart.trendBands = {}, {}, {}
-    -- One more slot than the most days or scans, for the guess.
+    -- One more slot than the most days or scans, for the projection.
     local slots = math.max(Price.CHART_MAX_BARS, Price.SCANS_KEPT) + 1
     for index = 1, slots do
         local barTexture = chart:CreateTexture(nil, "ARTWORK")
@@ -376,6 +431,7 @@ function Chart.Build(parent, width, height)
         chart.line:SetThickness(2)
         chart.line:SetColorTexture(TREND_LINE_COLOR[1], TREND_LINE_COLOR[2], TREND_LINE_COLOR[3], TREND_LINE_COLOR[4])
         chart.line:Hide()
+        BuildEdges(chart)
     end
     Chart.built[#Chart.built + 1] = chart
     chart:Hide()
@@ -448,12 +504,18 @@ function Chart.ShowOverview(chart, overview)
         end
     end
     chart.slotCount = count
+    HideEdges(chart)
     if chart.line then
         if overview.fit then
             local half = slotWidth / 2
             chart.line:SetStartPoint("BOTTOMLEFT", chart, half, 2 + Height(overview.fit(1)))
             chart.line:SetEndPoint("BOTTOMLEFT", chart, (count - 1) * slotWidth + half, 2 + Height(overview.fit(count)))
             chart.line:Show()
+            if spread > 0 then
+                local function X(slot) return (slot - 1) * slotWidth + half end
+                DrawEdge(chart, chart.edges[1], function(x) return overview.fit(x) - spread end, 1, count, X, Height)
+                DrawEdge(chart, chart.edges[2], function(x) return overview.fit(x) + spread end, 1, count, X, Height)
+            end
         else
             chart.line:Hide()
         end
@@ -508,6 +570,7 @@ function Chart.BuildOverview(parent, width, height)
         chart.line:SetColorTexture(TREND_LINE_COLOR[1], TREND_LINE_COLOR[2], TREND_LINE_COLOR[3],
             TREND_LINE_COLOR[4])
         chart.line:Hide()
+        BuildEdges(chart)
     end
     chart:Hide()
     return chart

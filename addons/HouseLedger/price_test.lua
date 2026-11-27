@@ -956,7 +956,7 @@ do
     title, lines = P.OverviewLines(overview, Coins)
     Check("with days of scans: average, trend, next day and the totals",
         lines[1].right == "6,580 at the last scan (avg 5,900)" and lines[2].right == "+3.1% a day"
-        and lines[3].left == "Next day, about" and lines[3].right == "6,900 items"
+        and lines[3].left == "Next day, projected" and lines[3].right == "6,900 items"
         and lines[4].left == "Listings / units" and lines[4].right == "41,230 / 1,204,553"
         and lines[5].left == "Value at lowest prices" and lines[5].right == "987654321c")
     overview.trendPct = -0.004
@@ -1606,7 +1606,7 @@ end
 
 P.DAYS_KEPT = 14
 
--- Chart line: a fit one odd listing can't tilt, its normal range and the next slot's guess
+-- Chart line: a fit one odd listing can't tilt, its normal range and the next slot's projection
 do
     --- Chart slots from a list of lows; false leaves a slot empty.
     local function Slots(lows)
@@ -1627,7 +1627,7 @@ do
     Check("chart line: a straight run is fit exactly", fit and fit.points == 5 and Near(fit.slope, 10)
         and Near(fit.intercept, 90) and Near(fit.fit(3), 120) and fit.first == 1)
     Check("chart line: bars on the line have no band", fit.spread == 0)
-    Check("chart line: the next slot's guess carries the line on", fit.estimate == 150)
+    Check("chart line: the next slot's projection carries the line on", fit.estimate == 150)
 
     fit = P.ChartFit(Slots({ 100, 100, 100, 5, 100, 100 }))
     Check("chart line: one odd cheap listing doesn't tilt it", Near(fit.slope, 0) and Near(fit.fit(1), 100)
@@ -1641,7 +1641,7 @@ do
     Check("chart line: 5 bars hold back one odd latest listing", Near(fit.slope, 0) and fit.spread == 0)
 
     fit = P.ChartFit(Slots({ 50, 40, 30, 20, 10 }))
-    Check("chart line: no guess at 0 or below", Near(fit.slope, -10) and fit.estimate == nil)
+    Check("chart line: no projection at 0 or below", Near(fit.slope, -10) and fit.estimate == nil)
 
     fit = P.ChartFit(Slots({ 100, 120, 100, 120, 100, 120 }))
     Check("chart line: up-and-down prices get a flat line through their middle",
