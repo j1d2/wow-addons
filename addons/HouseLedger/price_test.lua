@@ -1637,6 +1637,15 @@ do
         return math.abs(a - b) < 1e-9
     end
 
+    -- Axis cap: one far-off bar mustn't flatten the rest (in game: a 28s day among ~2s days).
+    local lute = Slots({ 200, 210, 190, 2800, 205, 195, 200 })
+    local cap = P.ChartCap(lute, P.ChartFit(lute), 8)
+    Check("chart cap: 3 x the median low when that is above the line's range", cap == 600)
+    Check("chart cap: none without a line", P.ChartCap(lute, nil, 8) == nil)
+    local spread = Slots({ 100, 300, 100, 300, 100, 300 })
+    Check("chart cap: never under the line's range", P.ChartCap(spread, P.ChartFit(spread), 7)
+        >= P.ChartFit(spread).fit(7) + P.ChartFit(spread).spread)
+
     Check("chart line: none under 5 bars", P.ChartFit(Slots({ 100, false, 110, 120, 130 })) == nil
         and P.ChartFit({}) == nil and P.ChartFit(nil) == nil)
 

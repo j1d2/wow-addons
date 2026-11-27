@@ -17,6 +17,9 @@ local CHART_RANGE_COLOR = { 0.35, 0.6, 1, 0.3 }
 -- the trend line in white, and the next day's (or scan's) projection in purple, so it doesn't
 -- read as one more bar.
 local TREND_BAND_COLOR = { 1, 1, 1, 0.2 }
+-- A bar cut at the top of the axis (PriceLedger.ChartCap) gets a white tip this tall.
+local CUT_TIP_COLOR = { 1, 1, 1, 0.95 }
+local CUT_TIP_HEIGHT = 3
 local TREND_LINE_COLOR = { 1, 1, 1, 0.8 }
 local ESTIMATE_COLOR = { 0.72, 0.45, 1, 0.85 }
 
@@ -100,7 +103,8 @@ end
 -- last slot in gold. A slot that starts a new day gets CHART_DAY_GAP more space before it when
 -- `dayGaps` is set. With a fit, also the trend line and its normal range (DrawTrend), and the
 -- projection as one more bar in purple, a gap apart. The axis runs from 0 to the highest of the
--- prices, the line's range and the projection, so none of them is cut off.
+-- prices, the line's range and the projection, but stops at PriceLedger.ChartCap: a bar past it
+-- is cut at the top with a white tip, and `chart.cutHigh` keeps the highest such price for the tip.
 -- @param chart a chart from Chart.Build
 -- @param slots the slots, oldest first; a slot without `low` is left empty
 -- @param top the highest price in the slots
@@ -126,6 +130,11 @@ local function DrawBars(chart, slots, top, dayGaps, fit)
     if fit then
         -- A straight line is highest at one of its ends; the top stays a whole copper, as it's shown.
         top = math.ceil(math.max(top, fit.fit(fit.first) + fit.spread, fit.fit(count) + fit.spread))
+        top = math.min(top, Price.ChartCap(slots, fit, count))
+    end
+    chart.cutHigh = nil
+    for index = 1, #chart.cutTips do
+        chart.cutTips[index]:Hide()
     end
     local area = chart.barArea
     local slotWidth = (chart.chartWidth - gaps * CHART_DAY_GAP) / math.max(1, count)
@@ -156,6 +165,15 @@ local function DrawBars(chart, slots, top, dayGaps, fit)
             local color = index == #slots and CHART_LATEST_COLOR or CHART_BAR_COLOR
             bar:SetColorTexture(color[1], color[2], color[3], color[4])
             bar:Show()
+            if slot.low > top then
+                local tip = chart.cutTips[index]
+                tip:ClearAllPoints()
+                tip:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, 0)
+                tip:SetWidth(barWidth)
+                tip:SetHeight(CUT_TIP_HEIGHT)
+                tip:Show()
+                chart.cutHigh = math.max(chart.cutHigh or 0, slot.low)
+            end
             if high > low then
                 band:SetPoint("BOTTOMLEFT", bar, "TOPLEFT", 0, 0)
                 band:SetHeight(high - low)
@@ -286,6 +304,10 @@ local function ShowChartTip(chart)
         if fit.spread > 0 then
             GameTooltip:AddLine("Shaded band: its normal range.", 0.8, 0.8, 0.8)
         end
+        if chart.cutHigh then
+            GameTooltip:AddLine("White tip: too high to fit, up to "
+                .. U.CopperToText(Price.RoundCoins(chart.cutHigh, CHART_COIN)) .. ".", 0.8, 0.8, 0.8, true)
+        end
         if fit.estimate then
             GameTooltip:AddLine("Purple: a projection for the next " .. chart.nextWord .. ", "
                 .. U.CopperToText(Price.RoundCoins(fit.estimate, CHART_COIN)) .. ".", ESTIMATE_COLOR[1], ESTIMATE_COLOR[2], ESTIMATE_COLOR[3])
@@ -360,7 +382,7 @@ function Chart.Build(parent, width, height)
     -- Room under the top line for the bars.
     chart.barArea = height - 18
     chart.chartWidth = width
-    chart.bars, chart.bands, chart.trendBands = {}, {}, {}
+    chart.bars, chart.bands, chart.trendBands, chart.cutTips = {}, {}, {}, {}
     -- One more slot than the most days or scans, for the projection.
     local slots = math.max(Price.CHART_MAX_BARS, Price.SCANS_KEPT) + 1
     for index = 1, slots do
@@ -374,6 +396,10 @@ function Chart.Build(parent, width, height)
         trendBand:SetColorTexture(TREND_BAND_COLOR[1], TREND_BAND_COLOR[2], TREND_BAND_COLOR[3], TREND_BAND_COLOR[4])
         trendBand:Hide()
         chart.bars[index], chart.bands[index], chart.trendBands[index] = barTexture, band, trendBand
+        local cutTip = chart:CreateTexture(nil, "OVERLAY")
+        cutTip:SetColorTexture(CUT_TIP_COLOR[1], CUT_TIP_COLOR[2], CUT_TIP_COLOR[3], CUT_TIP_COLOR[4])
+        cutTip:Hide()
+        chart.cutTips[index] = cutTip
     end
     if type(chart.CreateLine) == "function" then
         chart.line = chart:CreateLine(nil, "OVERLAY")

@@ -2886,6 +2886,24 @@ do
 end
 
 do
+    -- One far-off day (in game: 28s among ~2s days) mustn't flatten the rest: the axis stops at
+    -- 3 x the median low, and that bar is cut at the top with a white tip.
+    Setup({ screenRight = 1400 })
+    Load()
+    SaveDailyPrices({ 200, 210, 190, 2800, 205, 195, 200 })
+    local chart = ShowBuyChart()
+    Check("an outlier: the axis stops at 3 x the median low", chart.topText.text == "<money 600>")
+    Check("an outlier: its bar reaches the top with a white tip, the rest keep their height",
+        chart.bars[4].height == chart.barArea and chart.cutTips[4].shown and not chart.cutTips[3].shown
+        and chart.bars[1].height == math.floor(200 / 600 * chart.barArea + 0.5))
+    Check("an outlier: the tip gives its real price", TipHas(ChartTipLines(chart), "White tip: too high to fit, up to <money 2800>."))
+    SaveDailyPrices({ 200, 210, 190, 220, 205, 195, 200 })
+    local row = ResultRows()[1]
+    row:GetScript("OnClick")(row)
+    Check("no outlier: no cut, no tip line", not chart.cutTips[4].shown and not TipHas(ChartTipLines(chart), "White tip"))
+end
+
+do
     -- A steep rise: the line would start under 0, so it starts where it crosses 0.
     Setup({ screenRight = 1400 })
     Load()

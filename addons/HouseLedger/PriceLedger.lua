@@ -1547,6 +1547,30 @@ function PriceLedger.ChartFit(slots)
     return result
 end
 
+-- A price chart's axis stops at this many times the median low (or the top of the line's normal
+-- range, if higher), so one far-off day or scan doesn't flatten every other bar.
+PriceLedger.CHART_CAP_MEDIAN = 3
+
+--- Where a price chart's axis may stop: the higher of CHART_CAP_MEDIAN x the median low and the
+-- top of the line's normal range, in whole copper. Bars above it are drawn cut at the top.
+-- @param slots chart slots from ChartDays or ChartScans
+-- @param fit from ChartFit for these slots, or nil
+-- @param last the last slot drawn (the projection's, when there is one)
+-- @return the cap, or nil without a fit (too few bars to tell what is far off)
+function PriceLedger.ChartCap(slots, fit, last)
+    if type(slots) ~= "table" or fit == nil then
+        return nil
+    end
+    local lows = {}
+    for _, slot in ipairs(slots) do
+        if type(slot.low) == "number" then
+            lows[#lows + 1] = slot.low
+        end
+    end
+    return math.ceil(math.max(PriceLedger.CHART_CAP_MEDIAN * Median(lows),
+        fit.fit(fit.first) + fit.spread, fit.fit(last) + fit.spread))
+end
+
 --- A whole number with commas between thousands, like 1,234,567.
 -- @param number a number; rounded to whole
 -- @return the text
