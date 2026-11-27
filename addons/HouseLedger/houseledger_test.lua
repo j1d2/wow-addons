@@ -3369,6 +3369,22 @@ local function LinenListings()
 end
 
 do
+    -- In game: "Linen Cloth: 80 listings, 44412 for sale." Big counts get commas.
+    Setup()
+    Load()
+    world.commodities = { [2589] = true }
+    local panel = PickFirstResult({ { itemKey = { itemID = 2589, itemLevel = 0, itemSuffix = 0 }, minPrice = 24,
+        totalQuantity = 20624 } })
+    Press(panel.listingsButton)
+    world.commodityResults = {
+        { itemID = 2589, quantity = 306, unitPrice = 24, auctionID = 1, containsOwnerItem = false, numOwnerItems = 0 },
+        { itemID = 2589, quantity = 20318, unitPrice = 25, auctionID = 2, containsOwnerItem = false, numOwnerItems = 0 },
+    }
+    Fire("COMMODITY_SEARCH_RESULTS_UPDATED", 2589)
+    Check("listings: the status groups how many are for sale", StatusLine():find("2 listings, 20,624 for sale.", 1, true) ~= nil)
+end
+
+do
     -- Buying a stackable item: Listings, how many, Buy, the house's price, Confirm.
     Setup()
     Load()

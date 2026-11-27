@@ -86,8 +86,8 @@ local function ListingStatus()
     if #rows == 0 then
         text = listing.name .. ": nothing for sale with a buyout."
     elseif listing.commodity then
-        text = string.format("%s: %s, %d for sale. Type how many, then click Buy.", listing.name,
-            Counted(#rows, "listing"), rows[#rows].upTo)
+        text = string.format("%s: %s, %s for sale. Type how many, then click Buy.", listing.name,
+            Counted(#rows, "listing"), Price.Thousands(rows[#rows].upTo))
     else
         text = string.format("%s: %s. Click one, then click Buy.", listing.name, Counted(#rows, "listing"))
     end

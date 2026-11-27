@@ -793,6 +793,15 @@ do
     end
     bait[7] = Tier(100, 10 ^ 7)
     Check("post: at most 3 cheap listings are passed over", P.PostPrice("best", bait, nil, nil, true) == 4)
+    -- In game: 6 at 20c under 20,582 at 25c, with a 7-day typical of 21c. 20c is the usual price,
+    -- not bait, so Best price matches it instead of the wall above.
+    price, reason = P.PostPrice("best", { Tier(20, 6), Tier(25, 20582) }, { typical = 21 }, nil, true)
+    Check("post: a thin listing at the usual price is the price, not bait", price == 20
+        and reason == "Matching 6 listed at 20c.")
+    price = P.PostPrice("best", { Tier(20, 6), Tier(25, 20582) }, { typical = 30 }, nil, true)
+    Check("post: a thin listing well under the usual price is still passed over", price == 25)
+    price, reason = P.PostPrice("best", { Tier(5, 1), Tier(20, 20582) }, nil, nil, true)
+    Check("post: big counts in the reason get commas", reason:find("Matching 20,582 listed at 20c.", 1, true) ~= nil)
     local function Icons(copper) return "<" .. copper .. ">" end
     price, reason = P.PostPrice("best", { Tier(5, 1), Tier(20, 50) }, nil, nil, true, Icons)
     Check("post: the reason's prices use the coin writer it is given",

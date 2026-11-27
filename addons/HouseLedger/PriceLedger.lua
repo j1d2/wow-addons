@@ -2622,8 +2622,9 @@ function PriceLedger.RememberPost(db, houseKey, itemID, price, time)
 end
 
 --- True when the cheapest listing looks like bait rather than the price: a deal by the saved
--- prices, a thin listing far under a much bigger one, or (with no saved prices) under half the
--- next one.
+-- prices, a thin listing far under a much bigger one (and, with saved prices, under 90% of the
+-- 7-day typical: a thin listing at the usual price is the price, and the wall above it is the
+-- odd one), or (with no saved prices) under half the next one.
 -- @param tier the listing { price, quantity }
 -- @param nextTier the next one up
 -- @param stats the item's saved stats, or nil
@@ -2632,7 +2633,9 @@ local function LooksLikeBait(tier, nextTier, stats)
     if stats and PriceLedger.Judge(stats, tier.price).deal then
         return true
     end
-    if tier.quantity * 5 < nextTier.quantity and tier.price < nextTier.price * 0.9 then
+    local usual = stats and stats.typical
+    if tier.quantity * 5 < nextTier.quantity and tier.price < nextTier.price * 0.9
+        and (not usual or tier.price < usual * 0.9) then
         return true
     end
     return not (stats and stats.typical) and tier.price < nextTier.price * 0.5
@@ -2680,7 +2683,7 @@ function PriceLedger.PostPrice(pricing, tiers, stats, last, stackable, coins)
     local chosen = others[index]
     local reason
     if stackable then
-        reason = string.format("Matching %d listed at %s.", chosen.quantity, coins(chosen.price))
+        reason = string.format("Matching %s listed at %s.", PriceLedger.Thousands(chosen.quantity), coins(chosen.price))
     else
         reason = string.format("1c under the cheapest at %s (any item level).", coins(chosen.price))
     end
