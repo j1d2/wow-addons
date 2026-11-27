@@ -110,8 +110,8 @@ function R.EnsureDB(db)
     return db
 end
 
---- Make one character's saved data usable. It holds only the window's position, so each
--- character keeps its own spot.
+--- Make one character's saved data usable: the window's position, so each character keeps its
+-- own spot, and whether it uses the compact view.
 -- @param charDB the UnmakerCharDB table from the game, or nil on first load
 -- @return the same table, repaired, or a new one
 function R.EnsureCharDB(charDB)
@@ -122,6 +122,7 @@ function R.EnsureCharDB(charDB)
     local position = charDB.position
     charDB.position = type(position) == "table"
         and R.Position(position.point, position.relativePoint, position.x, position.y) or nil
+    charDB.compact = charDB.compact == true or nil
     return charDB
 end
 
@@ -373,6 +374,17 @@ function R.NextRow(rows)
         end
     end
     return nil
+end
+
+--- A copper amount shown with two coins at most: from 1 gold up, rounded to the nearest silver,
+-- so the copper is left out (it is a rounding error at that size).
+-- @param copper whole copper, or nil
+-- @return the rounded copper (nil stays nil)
+function R.TwoCoins(copper)
+    if type(copper) ~= "number" or copper < 10000 then
+        return copper
+    end
+    return math.floor(copper / 100 + 0.5) * 100
 end
 
 --- How many rows are checked.

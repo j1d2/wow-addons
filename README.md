@@ -166,7 +166,8 @@ Its Buy and Sell tabs switch Blizzard's tabs too, and the reverse.
 
 - **Open it** with `/unmaker` (or the short `/um`), or the **Unmaker** button above your bags.
 - **Every Uncommon, Rare and Epic** weapon and armor piece in your bags is listed, with its item level and vendor price. **Uncheck** what you want to keep; Unmaker remembers. Filter by quality and item level, and click a heading to sort.
-- **Disenchant next** disenchants the next checked item. One click per item, which is Blizzard's rule. Bind it to a key in the game's Key Bindings menu.
+- **Disenchant next** disenchants the next checked item. One click or key press per item, which is Blizzard's rule. Set its key with the **Set key** button beside it, or drag the small icon next to it onto an action bar.
+- **Compact view:** the condense button in the title bar shrinks the window to the next item and its button, for a corner of your screen.
 - **Epics and soulbound gear start unchecked.** Change that on the **Settings** tab.
 - **What it gives:** the **Gives** column shows each item's likely materials and their chances, and every item tooltip (bags, links, the auction house) says what it disenchants into. Once you've disenchanted 5 of a kind of item, your own results replace the guide's numbers.
 - **Stats and History tabs:** how many items you've unmade (this session, today, lifetime) on each character and all of them together, the materials you got, fun facts, and a sortable list of every recent disenchant.
@@ -182,7 +183,7 @@ Its Buy and Sell tabs switch Blizzard's tabs too, and the reverse.
 2. **Filters:** pick a quality ("Rare & down", "Uncommon & down") and an item level range. The line under the list says how many items the filters hide.
 3. **Headings:** click Item, ilvl or Vendor to sort, and again to reverse. **Vendor** is what a vendor would pay for the item.
 4. **Checkboxes:** uncheck what you want to keep. Unmaker remembers.
-5. **Disenchant next:** one click disenchants the next checked item shown in the list (filters and sorting change which one is next). You can bind it to a key.
+5. **Disenchant next:** one click disenchants the next checked item shown in the list (filters and sorting change which one is next). Left of it, **Set key** takes the next key you press (with Shift, Ctrl or Alt if you like; a key that already does something asks you to press it again; Escape cancels; right-click clears it), and the small icon goes on an action bar: drag it to a slot. It's a macro named "Unmaker" that clicks this button. The key also shows in the game's Key Bindings menu.
 6. **Disenchant selected:** disenchants only the row you clicked, if it's checked.
 7. **Tabs:** Items, Stats, History, Kept and Settings.
 
@@ -205,7 +206,7 @@ Its Buy and Sell tabs switch Blizzard's tabs too, and the reverse.
 1. **Characters:** show every character's disenchants, or just one character's.
 2. **Headings:** click one to sort, and again to reverse. Dates read month-day, then time; hover a row to see the year.
 3. **Who:** the character that unmade the item (names are hidden in this picture).
-4. **Got:** the materials each disenchant gave, as icons with names shortened to fit. Hover the row for the full names.
+4. **Got:** the materials each disenchant gave, as a count and an icon each. Hover an icon for its name, or the row for the full list.
 
 <p align="center">
   <img src="docs/screenshots/unmaker-settings.png" alt="Unmaker's Settings tab: keep epics, keep soulbound gear, hide equipment-set items, open when you loot, open and close with your bags, show the button above the bags" width="420">

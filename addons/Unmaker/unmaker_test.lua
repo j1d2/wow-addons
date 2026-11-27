@@ -60,6 +60,25 @@ local function NewFrame(kind, name, parent, template)
             end
         end
     end
+    -- Like Blizzard's MaximizeMinimizeButtonFrameTemplate: its two buttons call these, and each
+    -- runs the callback it was given unless told to skip it.
+    if template == "MaximizeMinimizeButtonFrameTemplate" then
+        f.SetOnMinimizedCallback = function(self, fn) self.onMinimized = fn end
+        f.SetOnMaximizedCallback = function(self, fn) self.onMaximized = fn end
+        f.Minimize = function(self, _, skipCallback)
+            if self.onMinimized and not skipCallback then
+                self:onMinimized()
+            end
+            self.isMinimized = true
+        end
+        f.Maximize = function(self, _, skipCallback)
+            if self.onMaximized and not skipCallback then
+                self.onMaximized(self)
+            end
+            self.isMinimized = false
+        end
+        f.IsMinimized = function(self) return self.isMinimized end
+    end
     if parent then
         parent.children[#parent.children + 1] = f
     end
@@ -130,9 +149,17 @@ function FrameMethods:SetPoint(...) self.point = { ... } end
 function FrameMethods:GetPoint() return unpack(self.point or {}) end
 -- A dropdown keeps the menu generator it was given, as Blizzard's DropdownButton does.
 function FrameMethods:SetupMenu(generator) self.menuGenerator = generator end
-for _, method in ipairs({ "SetSize", "SetAllPoints", "SetColorTexture", "SetJustifyH", "SetJustifyV",
-    "SetHeight", "SetWidth", "SetWordWrap",
-    "RegisterForDrag", "EnableMouse", "EnableMouseWheel", "SetMovable",
+function FrameMethods:SetSize(width, height) self.width, self.height = width, height end
+function FrameMethods:EnableKeyboard(on) self.keyboard = on end
+function FrameMethods:SetPropagateKeyboardInput(on) self.propagate = on end
+function FrameMethods:RegisterForDrag(...) self.drag = table.concat({ ... }, ",") end
+-- Where the window's corners are on screen (a test sets left and top).
+function FrameMethods:GetLeft() return self.left end
+function FrameMethods:GetTop() return self.top end
+function FrameMethods:SetWidth(width) self.width = width end
+for _, method in ipairs({ "SetAllPoints", "SetColorTexture", "SetJustifyH", "SetJustifyV",
+    "SetWordWrap",
+    "EnableMouse", "EnableMouseWheel", "SetMovable",
     "SetClampedToScreen", "SetFrameStrata", "SetTitle", "SetPortraitToAsset", "SetID",
     "SetAutoFocus", "SetNumeric", "SetMaxLetters", "ClearFocus" }) do
     FrameMethods[method] = function() end
@@ -320,6 +347,7 @@ local function Load(setup)
     _G.GameTooltip = { SetOwner = function() end, SetBagItem = function(_, bag, slot)
         world.tooltip = bag .. ":" .. slot end, Show = function() end, Hide = function() world.tooltip = nil end,
         SetHyperlink = function(_, link) world.tooltip = link end,
+        SetItemByID = function(_, itemID) world.tooltip = "item:" .. itemID end,
         AddLine = function(_, text)
             world.tooltipLine = text
             world.tooltipLines[#world.tooltipLines + 1] = text
@@ -347,6 +375,42 @@ local function Load(setup)
     -- Blizzard's own check, true while any bag window is open (world.bagsOpen).
     _G.IsAnyBagOpen = function() return world.bagsOpen == true end
     _G.SlashCmdList = {}
+    -- Key bindings and macros (UnmakerBind), recording every change.
+    world.bindings, world.bindingSaves, world.macros, world.picked = setup.bindings or {}, 0, {}, nil
+    world.mods = {}
+    _G.IsAltKeyDown = function() return world.mods.alt == true end
+    _G.IsControlKeyDown = function() return world.mods.ctrl == true end
+    _G.IsShiftKeyDown = function() return world.mods.shift == true end
+    _G.GetBindingAction = function(key) return world.bindings[key] or "" end
+    _G.GetBindingKey = function(action)
+        for key, bound in pairs(world.bindings) do
+            if bound == action then
+                return key
+            end
+        end
+    end
+    _G.GetBindingText = function(key) return key end
+    _G.SetBinding = function(key, action)
+        world.bindings[key] = action
+        return true
+    end
+    _G.GetCurrentBindingSet = function() return 1 end
+    _G.SaveBindings = function() world.bindingSaves = world.bindingSaves + 1 end
+    _G.BINDING_NAME_ACTIONBUTTON1 = "Action Button 1"
+    _G.GetNumMacros = function() return #world.macros, 0 end
+    _G.GetMacroInfo = function(index)
+        local macro = world.macros[index]
+        if macro then
+            return macro.name, macro.icon, macro.body
+        end
+    end
+    _G.CreateMacro = function(name, icon, body)
+        world.macros[#world.macros + 1] = { name = name, icon = icon, body = body }
+        return #world.macros
+    end
+    _G.PickupMacro = function(index) world.picked = index end
+    _G.Constants = { MacroConsts = { MAX_ACCOUNT_MACROS = 120 } }
+    _G.C_Spell = { GetSpellTexture = function() return 136244 end }
     -- Like the game: the .toc's files in order, each given the addon's name and one shared table.
     local ns = {}
     for line in io.lines(folder .. "/Unmaker.toc") do
@@ -1101,7 +1165,8 @@ do
     Check("clicking the Item heading sorts by name", historyRows[1].entry.name == "Blue Ring")
     headers.time:GetScript("OnClick")(headers.time)
     Check("clicking the When heading sorts newest first again", historyRows[1].entry.name == "Green Vest")
-    Check("each row shows its loot", historyRows[1].lootText.text:find("Strange Dust", 1, true) ~= nil)
+    Check("each row shows its loot as a count and an icon", historyRows[1].mats[1].count.text == "1"
+        and historyRows[1].mats[1].shown and not historyRows[1].mats[2].shown)
     world.tooltipLines = {}
     historyRows[1]:GetScript("OnEnter")(historyRows[1])
     Check("hovering a history row shows the item and who unmade it",
@@ -1458,7 +1523,28 @@ do
 end
 
 do
-    -- The Got column: each material's icon, and names cut with ".." to fit its share.
+    -- The window is narrower than the old 600: the History tab's Got column is icons and counts.
+    Start({ bags = StandardBags() })
+    _G.SlashCmdList.UNMAKER("")
+    Check("the window is 480 wide", _G.UnmakerFrame.width == 480)
+end
+
+do
+    -- Vendor prices of 1 gold or more leave out the copper, like HouseLedger's day lines.
+    local bags = PricedBags()
+    bags[0][1].sell = 12345
+    Start({ bags = bags })
+    _G.SlashCmdList.UNMAKER("")
+    local vendor = {}
+    for _, row in ipairs(ShownRows()) do
+        vendor[row.row.name] = row.vendorText.text
+    end
+    Check("vendor: from 1 gold the copper is left out", vendor["Green Vest"] == "<money 12300>"
+        and vendor["Purple Axe"] == "<money 500>")
+end
+
+do
+    -- The Got column: each material's count and icon; hovering an icon names it.
     local history = { { itemID = 7, name = "Old Cloak", quality = 2, level = 9, time = 1762800000, looted = true,
         mats = { { name = "Strange Dust", link = "|Hitem:10940|h[Strange Dust]|h", quantity = 2 },
             { name = "Lesser Magic Essence", quantity = 1 } } } }
@@ -1471,9 +1557,140 @@ do
             row = f
         end
     end
-    -- The fake measures 6 pixels a character and 12 an icon; each of two shares is 88 pixels.
-    Check("Got: icons, and names cut to fit with ..", row.lootText.text
-        == "2 |T" .. DUST_ICON .. ":0|t Strange..  1 Lesser Mag..")
+    local dust, essence = row.mats[1], row.mats[2]
+    Check("Got: a count and an icon per material, no names", dust.count.text == "2" and dust.icon.texture == DUST_ICON
+        and essence.count.text == "1" and essence.icon.texture == 134400 and not row.mats[3].shown)
+    world.tooltip, world.tooltipLines = nil, {}
+    dust:GetScript("OnEnter")(dust)
+    Check("Got: hovering an icon shows that material's item tooltip", world.tooltip == "|Hitem:10940|h[Strange Dust]|h")
+    dust:GetScript("OnLeave")(dust)
+    world.tooltipLines = {}
+    essence:GetScript("OnEnter")(essence)
+    Check("Got: a material without a link still says its name", world.tooltipLines[1] == "Lesser Magic Essence")
+end
+
+-- A key for Disenchant next, set from the Items tab.
+do
+    Start({ bags = StandardBags(), bindings = { ["1"] = "ACTIONBUTTON1" } })
+    _G.SlashCmdList.UNMAKER("")
+    local panel = _G.UnmakerNextButton.parent
+    local key = panel.keyButton
+    local action = "CLICK UnmakerNextButton:LeftButton"
+    Check("key: the Items tab has a key button, showing none set", key ~= nil and key.text == "Set key")
+    key:GetScript("OnClick")(key, "LeftButton")
+    local _, status = Lines()
+    Check("key: a click listens for the next key, and says how", key.text == "Press a key" and key.keyboard == true
+        and key.propagate == false and status:find("Escape", 1, true) ~= nil)
+    world.mods.shift = true
+    key:GetScript("OnKeyDown")(key, "LSHIFT")
+    Check("key: a modifier alone waits for the key", key.keyboard == true and world.bindingSaves == 0)
+    key:GetScript("OnKeyDown")(key, "F")
+    world.mods.shift = false
+    Check("key: Shift+F now runs Disenchant next, saved like the game's menu",
+        world.bindings["SHIFT-F"] == action and world.bindingSaves == 1 and key.keyboard == false
+        and key.text == "Key: SHIFT-F")
+
+    key:GetScript("OnClick")(key, "LeftButton")
+    key:GetScript("OnKeyDown")(key, "1")
+    _, status = Lines()
+    Check("key: a key with another use isn't taken; the button asks, and the keyboard goes back to the game",
+        world.bindings["1"] == "ACTIONBUTTON1" and status:find("Action Button 1", 1, true) ~= nil
+        and key.text == "Use 1?" and key.keyboard == false)
+    key:GetScript("OnClick")(key, "RightButton")
+    Check("key: a right-click on the question keeps both keys as they were", world.bindings["1"] == "ACTIONBUTTON1"
+        and world.bindings["SHIFT-F"] == action and key.text == "Key: SHIFT-F")
+    key:GetScript("OnClick")(key, "LeftButton")
+    key:GetScript("OnKeyDown")(key, "1")
+    key:GetScript("OnClick")(key, "LeftButton")
+    Check("key: a click on the question takes it, and the old key is freed", world.bindings["1"] == action
+        and world.bindings["SHIFT-F"] == nil and key.text == "Key: 1")
+
+    key:GetScript("OnClick")(key, "LeftButton")
+    key:GetScript("OnKeyDown")(key, "ESCAPE")
+    Check("key: Escape stops listening and changes nothing", key.keyboard == false and world.bindings["1"] == action
+        and key.text == "Key: 1")
+
+    key:GetScript("OnClick")(key, "RightButton")
+    Check("key: a right-click clears it", world.bindings["1"] == nil and key.text == "Set key")
+
+    world.bindings.G = action
+    Fire("UPDATE_BINDINGS")
+    Check("key: a change in the game's own menu shows here", key.text == "Key: G")
+
+    -- Listening never outlives the window or the tab: the keyboard always goes back to the game.
+    key:GetScript("OnClick")(key, "LeftButton")
+    _G.UnmakerFrameTab2:GetScript("OnClick")(_G.UnmakerFrameTab2)
+    Check("key: another tab stops listening", key.keyboard == false and key.text == "Key: G")
+    _G.UnmakerFrameTab1:GetScript("OnClick")(_G.UnmakerFrameTab1)
+    key:GetScript("OnClick")(key, "LeftButton")
+    _G.UnmakerFrame.hooks.OnHide(_G.UnmakerFrame)
+    Check("key: closing the window stops listening", key.keyboard == false and key.text == "Key: G")
+
+    world.inCombat = true
+    Fire("PLAYER_REGEN_DISABLED")
+    key:GetScript("OnClick")(key, "LeftButton")
+    Check("key: not in combat", key.keyboard ~= true and key.text == "Key: G")
+    world.inCombat = false
+    Fire("PLAYER_REGEN_ENABLED")
+end
+
+-- An action bar button for Disenchant next: a macro picked up onto the cursor.
+do
+    Start({ bags = StandardBags() })
+    _G.SlashCmdList.UNMAKER("")
+    local bar = _G.UnmakerNextButton.parent.barButton
+    Check("bar: the Items tab has a button to drag to an action bar", bar ~= nil and bar.drag == "LeftButton")
+    bar:GetScript("OnDragStart")(bar)
+    Check("bar: dragging it puts a /click macro on the cursor", #world.macros == 1
+        and world.macros[1].body == "/click UnmakerNextButton" and world.macros[1].icon == 136244 and world.picked == 1)
+    world.picked = nil
+    bar:GetScript("OnClick")(bar)
+    local _, status = Lines()
+    Check("bar: a click does the same, reusing the macro, and says where to drop it", #world.macros == 1
+        and world.picked == 1 and status:find("action bar", 1, true) ~= nil)
+end
+
+-- The compact view: the next item and its button, without the list and tabs.
+do
+    Start({ bags = StandardBags() })
+    _G.SlashCmdList.UNMAKER("")
+    local window = _G.UnmakerFrame
+    window.left, window.top = 100, 700
+    local panel = _G.UnmakerNextButton.parent
+    local toggle = window.compactToggle
+    Check("compact: the title bar has Blizzard's condense button", toggle ~= nil
+        and toggle.template == "MaximizeMinimizeButtonFrameTemplate")
+    toggle:Minimize()
+    Check("compact: smaller window", window.width == 320 and window.height == 180)
+    Check("compact: no list, filters, tabs or Disenchant selected", #ShownRows() == 0 and not panel.filterRow.shown
+        and not panel.header.shown and not _G.UnmakerFrameTab1.shown and not _G.UnmakerSelectedButton.shown)
+    Check("compact: Disenchant next, the key and the bar button stay", _G.UnmakerNextButton.shown
+        and panel.keyButton.shown and panel.barButton.shown)
+    Check("compact: the next item shows", panel.nextLine.shown and panel.nextLine.itemText.text:find("[Blue Ring]", 1, true))
+    Check("compact: the top-left corner stays put", window.point[1] == "TOPLEFT" and window.point[4] == 100
+        and window.point[5] == 700 and _G.UnmakerCharDB.compact == true)
+    Fire("BAG_UPDATE_DELAYED")
+    Check("compact: a bag change keeps the list hidden", #ShownRows() == 0)
+    Check("compact: a short count line, so it fits on one line", (Lines()) == "2 of 4 checked.")
+
+    world.inCombat = true
+    Fire("PLAYER_REGEN_DISABLED")
+    toggle:Maximize()
+    Check("compact: in combat the window waits; the button already shows the view to come",
+        window.width == 320 and toggle.isMinimized == false)
+    world.inCombat = false
+    Fire("PLAYER_REGEN_ENABLED")
+    Check("compact: the full view comes back when the fight ends", window.width == 480 and #ShownRows() > 0 and panel.filterRow.shown
+        and _G.UnmakerFrameTab1.shown and _G.UnmakerSelectedButton.shown and not panel.nextLine.shown
+        and not _G.UnmakerCharDB.compact)
+end
+
+do
+    -- Remembered for each character.
+    Start({ bags = StandardBags(), charDB = { compact = true } })
+    _G.SlashCmdList.UNMAKER("")
+    Check("compact: it opens the way it was left", _G.UnmakerFrame.width == 320 and #ShownRows() == 0
+        and _G.UnmakerFrame.compactToggle.isMinimized == true)
 end
 
 if failed > 0 then

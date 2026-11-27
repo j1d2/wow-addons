@@ -56,6 +56,8 @@ do
     Check("missing character data gets a table with no position", type(charDB) == "table"
         and charDB.version == R.CHAR_DB_VERSION and charDB.position == nil)
     Check("the account data holds no position", R.EnsureDB(nil).position == nil)
+    Check("compact view: kept when true, dropped otherwise", R.EnsureCharDB({ compact = true }).compact == true
+        and R.EnsureCharDB({ compact = "yes" }).compact == nil and R.EnsureCharDB({}).compact == nil)
     charDB = R.EnsureCharDB({ position = { point = "TOPLEFT", relativePoint = "TOPLEFT", x = 120.5, y = -80 } })
     Check("a good saved position is kept", charDB.position ~= nil and charDB.position.point == "TOPLEFT"
         and charDB.position.relativePoint == "TOPLEFT" and charDB.position.x == 120.5
@@ -282,6 +284,13 @@ do
     db = R.EnsureDB({ kept = { [100] = true }, keptInfo = { [100] = { name = 5 } } })
     Check("a damaged look is dropped", db.keptInfo[100] == nil)
     Check("damaged saved looks become an empty list", type(R.EnsureDB({ keptInfo = "broken" }).keptInfo) == "table")
+end
+
+do
+    -- Two coins at most: from 1 gold up the copper is left out, rounded to the nearest silver.
+    Check("two coins: under 1 gold stays exact", R.TwoCoins(9999) == 9999 and R.TwoCoins(57) == 57)
+    Check("two coins: 1 gold and up rounds to the silver", R.TwoCoins(12345) == 12300 and R.TwoCoins(10050) == 10100)
+    Check("two coins: no price stays no price", R.TwoCoins(nil) == nil)
 end
 
 if failed > 0 then

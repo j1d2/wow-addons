@@ -13,4 +13,5 @@
 UnmakerRules.lua
 UnmakerStats.lua
 UnmakerResults.lua
+UnmakerBind.lua
 Unmaker.lua
