@@ -527,7 +527,8 @@ local function RenderHistory()
                 cell.mat = mat
                 cell.count:SetText(mat and tostring(mat.quantity) or "")
                 cell.icon:SetTexture(mat and (KnownIcon(mat) or UNKNOWN_ICON) or nil)
-                cell.icon:SetShown(mat ~= nil)
+                -- An empty cell hides, so hovering there still shows the row's tooltip.
+                cell:SetShown(mat ~= nil)
             end
             rowFrame.whenText:SetText(FormatWhen(entry.time))
             rowFrame:Show()
@@ -705,6 +706,7 @@ local function SelectTab(id)
         return
     end
     currentTab = id
+    quick.StopListening()
     PanelTemplates_SetTab(frame, id)
     itemsPanel:SetShown(id == 1)
     statsPanel:SetShown(id == 2)
@@ -1258,14 +1260,16 @@ end
 --- The key button's text: the key Disenchant next has now, or an offer to set one.
 function quick.RefreshKey()
     local button = quick.keyButton
-    if button == nil or quick.listening then
+    if button == nil or quick.listening or quick.pendingChord then
         return
     end
     local key = B.KeyText()
     button:SetText(key and ("Key: " .. key) or "Set key")
 end
 
---- Stops listening for a key, and lets the game have the keyboard again.
+--- Stops listening for a key (and drops a key waiting for its question), and lets the game have
+-- the keyboard again. Runs whenever the window hides, the tab changes or the view toggles, so the
+-- button never keeps the keyboard.
 function quick.StopListening()
     quick.listening, quick.pendingChord = false, nil
     if quick.keyButton then
@@ -1274,8 +1278,22 @@ function quick.StopListening()
     quick.RefreshKey()
 end
 
---- A key pressed while listening: Escape cancels; a key with another use asks to be pressed again;
--- any other key becomes Disenchant next's key.
+--- Makes a key Disenchant next's key and says so.
+-- @param chord the key, like "SHIFT-F"
+function quick.UseKey(chord)
+    quick.StopListening()
+    if B.SetKey(chord) then
+        quick.RefreshKey()
+        Status(string.format("%s now disenchants the next checked item. Right-click the key button to clear it.",
+            chord))
+    else
+        Status(string.format("The game didn't take %s. The old key stays.", chord))
+    end
+end
+
+--- A key pressed while listening: Escape cancels; a key with another use is asked about on the
+-- button (a mouse click there takes it, never another key press, so a key pressed twice by habit
+-- is never taken); any other key becomes Disenchant next's key.
 -- @param key the key the game reported
 function quick.OnKey(key)
     if key == "ESCAPE" then
@@ -1288,25 +1306,34 @@ function quick.OnKey(key)
         return -- a modifier alone: wait for the key
     end
     local other = B.OtherUse(chord)
-    if other and quick.pendingChord ~= chord then
+    if other then
+        quick.listening = false
+        quick.keyButton:EnableKeyboard(false)
         quick.pendingChord = chord
-        Status(string.format("%s already does %s. Press it again to use it for Unmaker instead, "
-            .. "or Escape to keep it.", chord, other))
+        quick.keyButton:SetText("Use " .. chord .. "?")
+        Status(string.format("%s already does %s. Click \"Use %s?\" to use it for Unmaker instead, or "
+            .. "right-click it to keep it.", chord, other, chord))
         return
     end
-    quick.StopListening()
-    if B.SetKey(chord) then
-        quick.RefreshKey()
-        Status(string.format("%s now disenchants the next checked item. Right-click the key button to clear it.",
-            chord))
-    end
+    quick.UseKey(chord)
 end
 
---- The key button: a left click listens for a key, a right click clears it. Not in combat.
+--- The key button: a left click listens for a key (or takes the key it asks about), a right click
+-- clears it (or keeps things as they were). Not in combat.
 -- @param mouseButton which mouse button clicked
 function quick.OnKeyClick(mouseButton)
     if InCombat() then
         Status("In combat. Set the key when the fight ends.")
+        return
+    end
+    local pending = quick.pendingChord
+    if pending then
+        if mouseButton == "RightButton" then
+            quick.StopListening()
+            Status("No key changed.")
+        else
+            quick.UseKey(pending)
+        end
         return
     end
     if mouseButton == "RightButton" then
@@ -1410,19 +1437,18 @@ function quick.BuildCompact()
 end
 
 --- Switches between the full window and the compact view, keeping the window's top-left corner
--- where it is. The window is protected (its secure buttons), so not in combat: the button then
--- shows the view that stays.
+-- where it is. The window is protected (its secure buttons), so in combat the change waits for the
+-- fight to end (wanted.compact).
 -- @param on true for the compact view
 function quick.SetCompact(on)
     if Locked(frame) then
-        Status("In combat. Change the view when the fight ends.")
-        if on then
-            quick.toggle:Maximize(true, true)
-        else
-            quick.toggle:Minimize(true, true)
-        end
+        -- The button already shows the view asked for; the window follows when the fight ends.
+        wanted.compact = on
+        Status("In combat. The view changes when the fight ends.")
         return
     end
+    wanted.compact = nil
+    quick.StopListening()
     quick.compact = on
     charDB.compact = on or nil
     if on then
@@ -1599,6 +1625,10 @@ local function BuildFrame()
         if not Locked(self) then
             self:StartMoving()
         end
+    end)
+    -- Closing the window gives the keyboard back if the key button was listening.
+    frame:HookScript("OnHide", function()
+        quick.StopListening()
     end)
     frame:SetScript("OnDragStop", function(self)
         if not Locked(self) then
@@ -1954,6 +1984,9 @@ function handlers.PLAYER_REGEN_ENABLED()
     ClearCast(nextButton)
     if wanted.shown ~= nil then
         SetShown(wanted.shown)
+    end
+    if wanted.compact ~= nil then
+        quick.SetCompact(wanted.compact)
     end
     SelectTab(currentTab)
     Status("")

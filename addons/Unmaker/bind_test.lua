@@ -29,10 +29,17 @@ local game -- the fake game's state, reset by Fake()
 local function Fake(setup)
     setup = setup or {}
     game = { bindings = setup.bindings or {}, saved = 0, macros = setup.macros or {}, created = {}, picked = nil,
-        account = setup.account or #(setup.macros or {}), inCombat = setup.inCombat == true }
+        account = setup.account or #(setup.macros or {}), inCombat = setup.inCombat == true, contexts = {},
+        refuse = setup.refuse }
+    -- Like Forever's: each binding call can name the action's context; the fake records it.
+    _G.C_KeyBindings = { GetBindingContextForAction = function(action) return action == ACTION and 7 or 1 end }
     _G.InCombatLockdown = function() return game.inCombat end
-    _G.GetBindingAction = function(key) return game.bindings[key] or "" end
-    _G.GetBindingKey = function(action)
+    _G.GetBindingAction = function(key, _, context)
+        game.contexts[#game.contexts + 1] = context
+        return game.bindings[key] or ""
+    end
+    _G.GetBindingKey = function(action, _, context)
+        game.contexts[#game.contexts + 1] = context
         local keys = {}
         for key, bound in pairs(game.bindings) do
             if bound == action then
@@ -42,7 +49,11 @@ local function Fake(setup)
         table.sort(keys)
         return unpack(keys)
     end
-    _G.SetBinding = function(key, action)
+    _G.SetBinding = function(key, action, context)
+        game.contexts[#game.contexts + 1] = context
+        if action and key == game.refuse then
+            return false
+        end
         game.bindings[key] = action
         return true
     end
@@ -54,13 +65,11 @@ local function Fake(setup)
     _G.GetBindingText = function(key) return "<" .. key .. ">" end
     _G.BINDING_NAME_ACTIONBUTTON1 = "Action Button 1"
     _G.GetNumMacros = function() return game.account, 0 end
-    _G.GetMacroIndexByName = function(name)
-        for index, macro in ipairs(game.macros) do
-            if macro[1] == name then
-                return index
-            end
+    _G.GetMacroInfo = function(index)
+        local macro = game.macros[index]
+        if macro then
+            return macro[1], macro[2], macro[3]
         end
-        return 0
     end
     _G.CreateMacro = function(name, icon, body, perCharacter)
         game.macros[#game.macros + 1] = { name, icon, body }
@@ -98,6 +107,17 @@ do
         and B.KeyText() == "<G>")
     B.ClearKey()
     Check("key: clear unbinds it and saves", game.bindings.G == nil and B.KeyText() == nil and game.saved == 3)
+    local allContext = #game.contexts > 0
+    for _, context in ipairs(game.contexts) do
+        allContext = allContext and context == 7
+    end
+    Check("key: every call names the action's binding context, as Blizzard's menu does", allContext)
+end
+
+do
+    Fake({ bindings = { F = ACTION }, refuse = "Q" })
+    Check("key: a key the game refuses keeps the old one", B.SetKey("Q") == false and game.bindings.F == ACTION
+        and game.bindings.Q == nil)
 end
 
 do

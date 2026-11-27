@@ -55,10 +55,19 @@ function B.Chord(key, alt, ctrl, shift)
     return (alt and "ALT-" or "") .. (ctrl and "CTRL-" or "") .. (shift and "SHIFT-" or "") .. key
 end
 
+--- The binding context of Disenchant next's action, which Blizzard's own Key Bindings menu passes
+-- to every binding call; nil where the game has no contexts.
+-- @return the context, or nil
+local function Context()
+    if C_KeyBindings and C_KeyBindings.GetBindingContextForAction then
+        return C_KeyBindings.GetBindingContextForAction(B.ACTION)
+    end
+end
+
 --- The key that runs Disenchant next, as the game writes it, or nil when none is set.
 -- @return the text
 function B.KeyText()
-    local key = GetBindingKey(B.ACTION)
+    local key = GetBindingKey(B.ACTION, nil, Context())
     if key == nil then
         return nil
     end
@@ -69,7 +78,7 @@ end
 -- @param chord the key, like "SHIFT-F"
 -- @return the other action's name, or nil when the key is free or already Unmaker's
 function B.OtherUse(chord)
-    local action = GetBindingAction(chord)
+    local action = GetBindingAction(chord, nil, Context())
     if action == nil or action == "" or action == B.ACTION then
         return nil
     end
@@ -82,26 +91,28 @@ local function Save()
     SaveBindings(GetCurrentBindingSet()) -- reviewed: the player picked this key in Unmaker's window
 end
 
---- Removes every key from Disenchant next.
-local function Unbind()
-    local keys = { GetBindingKey(B.ACTION) }
-    for _, key in ipairs(keys) do
-        SetBinding(key) -- reviewed: clears Unmaker's own key, on the player's click
-    end
-end
-
 --- Makes a key run Disenchant next, replacing the key it had. The caller has asked the player
--- first when the key did something else.
+-- first when the key did something else. If the game refuses the key, the old key comes back,
+-- as in Blizzard's menu.
 -- @param chord the key, like "SHIFT-F"
--- @return true when set; false in combat
+-- @return true when set; false in combat or when the game refused the key
 function B.SetKey(chord)
     if InCombat() then
         return false
     end
-    Unbind()
-    SetBinding(chord, B.ACTION) -- reviewed: the key the player pressed for Disenchant next
+    local context = Context()
+    local old = { GetBindingKey(B.ACTION, nil, context) }
+    for _, key in ipairs(old) do
+        SetBinding(key, nil, context) -- reviewed: frees Unmaker's old key for the new one
+    end
+    local ok = SetBinding(chord, B.ACTION, context) -- reviewed: the key the player chose for Disenchant next
+    if not ok then
+        for _, key in ipairs(old) do
+            SetBinding(key, B.ACTION, context) -- reviewed: puts back the old key after a refused one
+        end
+    end
     Save()
-    return true
+    return ok == true
 end
 
 --- Takes the key off Disenchant next.
@@ -110,9 +121,23 @@ function B.ClearKey()
     if InCombat() then
         return false
     end
-    Unbind()
+    local context = Context()
+    for _, key in ipairs({ GetBindingKey(B.ACTION, nil, context) }) do
+        SetBinding(key, nil, context) -- reviewed: clears Unmaker's own key, on the player's right-click
+    end
     Save()
     return true
+end
+
+--- The account macro slot holding the Disenchant next macro, found by its name.
+-- @return the index, or nil
+local function FindMacro()
+    local account = GetNumMacros()
+    for index = 1, account or 0 do
+        if GetMacroInfo(index) == B.MACRO_NAME then
+            return index
+        end
+    end
 end
 
 --- Puts the Disenchant next macro on the cursor, making it first if there isn't one.
@@ -121,11 +146,10 @@ function B.PickupMacro()
     if InCombat() then
         return false, "Not in combat. Try again when the fight ends."
     end
-    local index = GetMacroIndexByName(B.MACRO_NAME)
-    if index == nil or index == 0 then
+    local index = FindMacro()
+    if index == nil then
         local limit = Constants.MacroConsts.MAX_ACCOUNT_MACROS
-        local account = GetNumMacros()
-        if account >= limit then
+        if (GetNumMacros() or 0) >= limit then
             return false, string.format("Your account macros are full (%d). Delete one in the game's macro "
                 .. "window, then try again.", limit)
         end

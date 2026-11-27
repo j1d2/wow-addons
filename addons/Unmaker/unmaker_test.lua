@@ -398,13 +398,11 @@ local function Load(setup)
     _G.SaveBindings = function() world.bindingSaves = world.bindingSaves + 1 end
     _G.BINDING_NAME_ACTIONBUTTON1 = "Action Button 1"
     _G.GetNumMacros = function() return #world.macros, 0 end
-    _G.GetMacroIndexByName = function(name)
-        for index, macro in ipairs(world.macros) do
-            if macro.name == name then
-                return index
-            end
+    _G.GetMacroInfo = function(index)
+        local macro = world.macros[index]
+        if macro then
+            return macro.name, macro.icon, macro.body
         end
-        return 0
     end
     _G.CreateMacro = function(name, icon, body)
         world.macros[#world.macros + 1] = { name = name, icon = icon, body = body }
@@ -1168,7 +1166,7 @@ do
     headers.time:GetScript("OnClick")(headers.time)
     Check("clicking the When heading sorts newest first again", historyRows[1].entry.name == "Green Vest")
     Check("each row shows its loot as a count and an icon", historyRows[1].mats[1].count.text == "1"
-        and historyRows[1].mats[1].icon.shown and not historyRows[1].mats[2].icon.shown)
+        and historyRows[1].mats[1].shown and not historyRows[1].mats[2].shown)
     world.tooltipLines = {}
     historyRows[1]:GetScript("OnEnter")(historyRows[1])
     Check("hovering a history row shows the item and who unmade it",
@@ -1561,7 +1559,7 @@ do
     end
     local dust, essence = row.mats[1], row.mats[2]
     Check("Got: a count and an icon per material, no names", dust.count.text == "2" and dust.icon.texture == DUST_ICON
-        and essence.count.text == "1" and essence.icon.texture == 134400 and not row.mats[3].icon.shown)
+        and essence.count.text == "1" and essence.icon.texture == 134400 and not row.mats[3].shown)
     world.tooltip, world.tooltipLines = nil, {}
     dust:GetScript("OnEnter")(dust)
     Check("Got: hovering an icon shows that material's item tooltip", world.tooltip == "|Hitem:10940|h[Strange Dust]|h")
@@ -1595,10 +1593,16 @@ do
     key:GetScript("OnClick")(key, "LeftButton")
     key:GetScript("OnKeyDown")(key, "1")
     _, status = Lines()
-    Check("key: a key with another use isn't taken at once; the status names that use",
-        world.bindings["1"] == "ACTIONBUTTON1" and status:find("Action Button 1", 1, true) ~= nil and key.keyboard == true)
+    Check("key: a key with another use isn't taken; the button asks, and the keyboard goes back to the game",
+        world.bindings["1"] == "ACTIONBUTTON1" and status:find("Action Button 1", 1, true) ~= nil
+        and key.text == "Use 1?" and key.keyboard == false)
+    key:GetScript("OnClick")(key, "RightButton")
+    Check("key: a right-click on the question keeps both keys as they were", world.bindings["1"] == "ACTIONBUTTON1"
+        and world.bindings["SHIFT-F"] == action and key.text == "Key: SHIFT-F")
+    key:GetScript("OnClick")(key, "LeftButton")
     key:GetScript("OnKeyDown")(key, "1")
-    Check("key: pressing it again takes it, and the old key is freed", world.bindings["1"] == action
+    key:GetScript("OnClick")(key, "LeftButton")
+    Check("key: a click on the question takes it, and the old key is freed", world.bindings["1"] == action
         and world.bindings["SHIFT-F"] == nil and key.text == "Key: 1")
 
     key:GetScript("OnClick")(key, "LeftButton")
@@ -1612,6 +1616,15 @@ do
     world.bindings.G = action
     Fire("UPDATE_BINDINGS")
     Check("key: a change in the game's own menu shows here", key.text == "Key: G")
+
+    -- Listening never outlives the window or the tab: the keyboard always goes back to the game.
+    key:GetScript("OnClick")(key, "LeftButton")
+    _G.UnmakerFrameTab2:GetScript("OnClick")(_G.UnmakerFrameTab2)
+    Check("key: another tab stops listening", key.keyboard == false and key.text == "Key: G")
+    _G.UnmakerFrameTab1:GetScript("OnClick")(_G.UnmakerFrameTab1)
+    key:GetScript("OnClick")(key, "LeftButton")
+    _G.UnmakerFrame.hooks.OnHide(_G.UnmakerFrame)
+    Check("key: closing the window stops listening", key.keyboard == false and key.text == "Key: G")
 
     world.inCombat = true
     Fire("PLAYER_REGEN_DISABLED")
@@ -1662,12 +1675,12 @@ do
 
     world.inCombat = true
     Fire("PLAYER_REGEN_DISABLED")
-    toggle.onMaximized(toggle)
-    Check("compact: in combat the view stays", window.width == 320 and toggle.isMinimized == true)
+    toggle:Maximize()
+    Check("compact: in combat the window waits; the button already shows the view to come",
+        window.width == 320 and toggle.isMinimized == false)
     world.inCombat = false
     Fire("PLAYER_REGEN_ENABLED")
-    toggle:Maximize()
-    Check("compact: the full view comes back", window.width == 480 and #ShownRows() > 0 and panel.filterRow.shown
+    Check("compact: the full view comes back when the fight ends", window.width == 480 and #ShownRows() > 0 and panel.filterRow.shown
         and _G.UnmakerFrameTab1.shown and _G.UnmakerSelectedButton.shown and not panel.nextLine.shown
         and not _G.UnmakerCharDB.compact)
 end
