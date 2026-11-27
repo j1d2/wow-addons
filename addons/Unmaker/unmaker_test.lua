@@ -60,6 +60,25 @@ local function NewFrame(kind, name, parent, template)
             end
         end
     end
+    -- Like Blizzard's MaximizeMinimizeButtonFrameTemplate: its two buttons call these, and each
+    -- runs the callback it was given unless told to skip it.
+    if template == "MaximizeMinimizeButtonFrameTemplate" then
+        f.SetOnMinimizedCallback = function(self, fn) self.onMinimized = fn end
+        f.SetOnMaximizedCallback = function(self, fn) self.onMaximized = fn end
+        f.Minimize = function(self, _, skipCallback)
+            if self.onMinimized and not skipCallback then
+                self:onMinimized()
+            end
+            self.isMinimized = true
+        end
+        f.Maximize = function(self, _, skipCallback)
+            if self.onMaximized and not skipCallback then
+                self.onMaximized(self)
+            end
+            self.isMinimized = false
+        end
+        f.IsMinimized = function(self) return self.isMinimized end
+    end
     if parent then
         parent.children[#parent.children + 1] = f
     end
@@ -131,10 +150,16 @@ function FrameMethods:GetPoint() return unpack(self.point or {}) end
 -- A dropdown keeps the menu generator it was given, as Blizzard's DropdownButton does.
 function FrameMethods:SetupMenu(generator) self.menuGenerator = generator end
 function FrameMethods:SetSize(width, height) self.width, self.height = width, height end
+function FrameMethods:EnableKeyboard(on) self.keyboard = on end
+function FrameMethods:SetPropagateKeyboardInput(on) self.propagate = on end
+function FrameMethods:RegisterForDrag(...) self.drag = table.concat({ ... }, ",") end
+-- Where the window's corners are on screen (a test sets left and top).
+function FrameMethods:GetLeft() return self.left end
+function FrameMethods:GetTop() return self.top end
 function FrameMethods:SetWidth(width) self.width = width end
 for _, method in ipairs({ "SetAllPoints", "SetColorTexture", "SetJustifyH", "SetJustifyV",
     "SetWordWrap",
-    "RegisterForDrag", "EnableMouse", "EnableMouseWheel", "SetMovable",
+    "EnableMouse", "EnableMouseWheel", "SetMovable",
     "SetClampedToScreen", "SetFrameStrata", "SetTitle", "SetPortraitToAsset", "SetID",
     "SetAutoFocus", "SetNumeric", "SetMaxLetters", "ClearFocus" }) do
     FrameMethods[method] = function() end
@@ -350,6 +375,44 @@ local function Load(setup)
     -- Blizzard's own check, true while any bag window is open (world.bagsOpen).
     _G.IsAnyBagOpen = function() return world.bagsOpen == true end
     _G.SlashCmdList = {}
+    -- Key bindings and macros (UnmakerBind), recording every change.
+    world.bindings, world.bindingSaves, world.macros, world.picked = setup.bindings or {}, 0, {}, nil
+    world.mods = {}
+    _G.IsAltKeyDown = function() return world.mods.alt == true end
+    _G.IsControlKeyDown = function() return world.mods.ctrl == true end
+    _G.IsShiftKeyDown = function() return world.mods.shift == true end
+    _G.GetBindingAction = function(key) return world.bindings[key] or "" end
+    _G.GetBindingKey = function(action)
+        for key, bound in pairs(world.bindings) do
+            if bound == action then
+                return key
+            end
+        end
+    end
+    _G.GetBindingText = function(key) return key end
+    _G.SetBinding = function(key, action)
+        world.bindings[key] = action
+        return true
+    end
+    _G.GetCurrentBindingSet = function() return 1 end
+    _G.SaveBindings = function() world.bindingSaves = world.bindingSaves + 1 end
+    _G.BINDING_NAME_ACTIONBUTTON1 = "Action Button 1"
+    _G.GetNumMacros = function() return #world.macros, 0 end
+    _G.GetMacroIndexByName = function(name)
+        for index, macro in ipairs(world.macros) do
+            if macro.name == name then
+                return index
+            end
+        end
+        return 0
+    end
+    _G.CreateMacro = function(name, icon, body)
+        world.macros[#world.macros + 1] = { name = name, icon = icon, body = body }
+        return #world.macros
+    end
+    _G.PickupMacro = function(index) world.picked = index end
+    _G.Constants = { MacroConsts = { MAX_ACCOUNT_MACROS = 120 } }
+    _G.C_Spell = { GetSpellTexture = function() return 136244 end }
     -- Like the game: the .toc's files in order, each given the addon's name and one shared table.
     local ns = {}
     for line in io.lines(folder .. "/Unmaker.toc") do
@@ -1506,6 +1569,115 @@ do
     world.tooltipLines = {}
     essence:GetScript("OnEnter")(essence)
     Check("Got: a material without a link still says its name", world.tooltipLines[1] == "Lesser Magic Essence")
+end
+
+-- A key for Disenchant next, set from the Items tab.
+do
+    Start({ bags = StandardBags(), bindings = { ["1"] = "ACTIONBUTTON1" } })
+    _G.SlashCmdList.UNMAKER("")
+    local panel = _G.UnmakerNextButton.parent
+    local key = panel.keyButton
+    local action = "CLICK UnmakerNextButton:LeftButton"
+    Check("key: the Items tab has a key button, showing none set", key ~= nil and key.text == "Set key")
+    key:GetScript("OnClick")(key, "LeftButton")
+    local _, status = Lines()
+    Check("key: a click listens for the next key, and says how", key.text == "Press a key" and key.keyboard == true
+        and key.propagate == false and status:find("Escape", 1, true) ~= nil)
+    world.mods.shift = true
+    key:GetScript("OnKeyDown")(key, "LSHIFT")
+    Check("key: a modifier alone waits for the key", key.keyboard == true and world.bindingSaves == 0)
+    key:GetScript("OnKeyDown")(key, "F")
+    world.mods.shift = false
+    Check("key: Shift+F now runs Disenchant next, saved like the game's menu",
+        world.bindings["SHIFT-F"] == action and world.bindingSaves == 1 and key.keyboard == false
+        and key.text == "Key: SHIFT-F")
+
+    key:GetScript("OnClick")(key, "LeftButton")
+    key:GetScript("OnKeyDown")(key, "1")
+    _, status = Lines()
+    Check("key: a key with another use isn't taken at once; the status names that use",
+        world.bindings["1"] == "ACTIONBUTTON1" and status:find("Action Button 1", 1, true) ~= nil and key.keyboard == true)
+    key:GetScript("OnKeyDown")(key, "1")
+    Check("key: pressing it again takes it, and the old key is freed", world.bindings["1"] == action
+        and world.bindings["SHIFT-F"] == nil and key.text == "Key: 1")
+
+    key:GetScript("OnClick")(key, "LeftButton")
+    key:GetScript("OnKeyDown")(key, "ESCAPE")
+    Check("key: Escape stops listening and changes nothing", key.keyboard == false and world.bindings["1"] == action
+        and key.text == "Key: 1")
+
+    key:GetScript("OnClick")(key, "RightButton")
+    Check("key: a right-click clears it", world.bindings["1"] == nil and key.text == "Set key")
+
+    world.bindings.G = action
+    Fire("UPDATE_BINDINGS")
+    Check("key: a change in the game's own menu shows here", key.text == "Key: G")
+
+    world.inCombat = true
+    Fire("PLAYER_REGEN_DISABLED")
+    key:GetScript("OnClick")(key, "LeftButton")
+    Check("key: not in combat", key.keyboard ~= true and key.text == "Key: G")
+    world.inCombat = false
+    Fire("PLAYER_REGEN_ENABLED")
+end
+
+-- An action bar button for Disenchant next: a macro picked up onto the cursor.
+do
+    Start({ bags = StandardBags() })
+    _G.SlashCmdList.UNMAKER("")
+    local bar = _G.UnmakerNextButton.parent.barButton
+    Check("bar: the Items tab has a button to drag to an action bar", bar ~= nil and bar.drag == "LeftButton")
+    bar:GetScript("OnDragStart")(bar)
+    Check("bar: dragging it puts a /click macro on the cursor", #world.macros == 1
+        and world.macros[1].body == "/click UnmakerNextButton" and world.macros[1].icon == 136244 and world.picked == 1)
+    world.picked = nil
+    bar:GetScript("OnClick")(bar)
+    local _, status = Lines()
+    Check("bar: a click does the same, reusing the macro, and says where to drop it", #world.macros == 1
+        and world.picked == 1 and status:find("action bar", 1, true) ~= nil)
+end
+
+-- The compact view: the next item and its button, without the list and tabs.
+do
+    Start({ bags = StandardBags() })
+    _G.SlashCmdList.UNMAKER("")
+    local window = _G.UnmakerFrame
+    window.left, window.top = 100, 700
+    local panel = _G.UnmakerNextButton.parent
+    local toggle = window.compactToggle
+    Check("compact: the title bar has Blizzard's condense button", toggle ~= nil
+        and toggle.template == "MaximizeMinimizeButtonFrameTemplate")
+    toggle:Minimize()
+    Check("compact: smaller window", window.width == 320 and window.height == 180)
+    Check("compact: no list, filters, tabs or Disenchant selected", #ShownRows() == 0 and not panel.filterRow.shown
+        and not panel.header.shown and not _G.UnmakerFrameTab1.shown and not _G.UnmakerSelectedButton.shown)
+    Check("compact: Disenchant next, the key and the bar button stay", _G.UnmakerNextButton.shown
+        and panel.keyButton.shown and panel.barButton.shown)
+    Check("compact: the next item shows", panel.nextLine.shown and panel.nextLine.itemText.text:find("[Blue Ring]", 1, true))
+    Check("compact: the top-left corner stays put", window.point[1] == "TOPLEFT" and window.point[4] == 100
+        and window.point[5] == 700 and _G.UnmakerCharDB.compact == true)
+    Fire("BAG_UPDATE_DELAYED")
+    Check("compact: a bag change keeps the list hidden", #ShownRows() == 0)
+    Check("compact: a short count line, so it fits on one line", (Lines()) == "2 of 4 checked.")
+
+    world.inCombat = true
+    Fire("PLAYER_REGEN_DISABLED")
+    toggle.onMaximized(toggle)
+    Check("compact: in combat the view stays", window.width == 320 and toggle.isMinimized == true)
+    world.inCombat = false
+    Fire("PLAYER_REGEN_ENABLED")
+    toggle:Maximize()
+    Check("compact: the full view comes back", window.width == 480 and #ShownRows() > 0 and panel.filterRow.shown
+        and _G.UnmakerFrameTab1.shown and _G.UnmakerSelectedButton.shown and not panel.nextLine.shown
+        and not _G.UnmakerCharDB.compact)
+end
+
+do
+    -- Remembered for each character.
+    Start({ bags = StandardBags(), charDB = { compact = true } })
+    _G.SlashCmdList.UNMAKER("")
+    Check("compact: it opens the way it was left", _G.UnmakerFrame.width == 320 and #ShownRows() == 0
+        and _G.UnmakerFrame.compactToggle.isMinimized == true)
 end
 
 if failed > 0 then

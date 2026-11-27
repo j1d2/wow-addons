@@ -7,6 +7,8 @@ All notable changes to Unmaker. The format follows [Keep a Changelog](https://ke
 ### Added
 
 - **What it gives.** A **Gives** column on the Items tab shows each item's likely materials, with an icon and its chance, and item tooltips everywhere (bags, links, the auction house) say what an item disenchants into, in two short lines: icons with their chances. Your own results take over once you've disenchanted 5 of that kind of item; until then the numbers come from warcraft.wiki.gg's tables, with Forever's own differences for blues below item level 20 and green weapons from 21 to 30. Turn the tooltip lines off in Settings.
+- **Set key** and an **action bar** icon beside **Disenchant next**: click Set key and press a key (a key that already does something asks you to press it again first), or drag the icon onto an action bar. It's still one press per item. The key is the same one the game's Key Bindings menu shows.
+- A **compact view**: the condense button in the title bar shrinks the window to the next item, the count and the Disenchant next button. The expand button brings the full window back, and each character remembers which it used. Restart the game once after updating (a new file).
 - **Scroll bars** on the Items, History and Kept lists when they hold more than fits. Drag one, click its arrows, or keep using the mouse wheel.
 - `/um`, a short way to type `/unmaker`.
 - A **Kept** tab: every item you've unchecked so Unmaker keeps it, whether it's in your bags or not. **Forget** puts one back, checked again unless a setting keeps it. Items you kept before this update show once the game has loaded them.

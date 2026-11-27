@@ -16,7 +16,7 @@ those wait until the fight ends, as in HouseLedger.
 
 -- The rules and stats modules, shared through the addon's own table (never globals).
 local _, ns = ...
-local R, S, D = ns.Rules, ns.Stats, ns.Results
+local R, S, D, B = ns.Rules, ns.Stats, ns.Results, ns.Bind
 
 local DISENCHANT_SPELL = 13262
 local BAGS = { 0, 1, 2, 3, 4 } -- the backpack and four bags; the reagent bag holds no gear
@@ -43,6 +43,11 @@ layout.GIVES_SHOWN, layout.GIVES_SLOT, layout.GIVES_ICON = 3, 40, 14
 layout.VENDOR_RIGHT, layout.GIVES_RIGHT, layout.LEVEL_RIGHT, layout.NAME_RIGHT = -4, -68, -192, -230
 -- The vendor column's width: room for two coins (VendorText leaves out the copper from 1 gold).
 layout.VENDOR_WIDTH = 60
+-- The bottom row: the two cast buttons, and between them the key button and the action bar
+-- button for Disenchant next.
+layout.CAST_WIDTH, layout.KEY_WIDTH, layout.BAR_SIZE = 150, 90, 24
+-- The compact view: the next item, the count and status lines, and the bottom row.
+layout.COMPACT_WIDTH, layout.COMPACT_HEIGHT = 320, 180
 local SORT_FIRST_ASCENDING = { name = true, ilvl = false, vendor = false }
 -- History headings that sort A to Z (the rest sort highest or newest first).
 local HISTORY_ASCENDING = { name = true, who = true }
@@ -116,6 +121,9 @@ local scroll = { bars = {} }
 -- The game's question-mark icon, for a kept item it hasn't loaded yet.
 local UNKNOWN_ICON = 134400
 local selectedButton, nextButton
+-- The key and action bar buttons for Disenchant next, the compact view and its toggle, and the
+-- key being listened for: { keyButton, barButton, nextLine, toggle, listening, pendingChord }.
+local quick = {}
 local rowFrames = {}
 local settingBoxes = {}
 -- The Unmaker buttons above the game's bag windows, kept here, not on Blizzard's frames.
@@ -417,11 +425,15 @@ local function Render()
             end
             rowFrame.check:SetChecked(row.checked)
             rowFrame.highlight:SetShown(row == selected)
-            rowFrame:Show()
+            rowFrame:SetShown(not quick.compact)
         else
             rowFrame:Hide()
         end
     end
+    if quick.compact then
+        scroll.bars.items:Hide()
+    end
+    quick.RenderNextLine()
     unmadeText:SetText(string.format("Unmade: %d this session, %d lifetime", session.unmade, db.stats.total))
     if not KnowsDisenchant() then
         countText:SetText("This character doesn't know Disenchant. Learn Enchanting first.")
@@ -431,8 +443,10 @@ local function Render()
         countText:SetText(string.format("Nothing matches the filters (%d hidden).", #allRows))
     else
         local hidden = #allRows - #rows
-        countText:SetText(string.format("%d of %d checked%s. One click disenchants one item.",
-            R.CountChecked(rows), #rows, hidden > 0 and string.format(" (%d hidden by filters)", hidden) or ""))
+        -- The compact view is narrow: just the counts there.
+        countText:SetText(string.format("%d of %d checked%s.%s", R.CountChecked(rows), #rows,
+            hidden > 0 and string.format(" (%d hidden by filters)", hidden) or "",
+            quick.compact and "" or " One click disenchants one item."))
     end
     UpdateButtons()
 end
@@ -795,7 +809,7 @@ end
 -- @return the button
 local function BuildCastButton(name, label, pick)
     local button = CreateFrame("Button", name, itemsPanel, "UIPanelButtonTemplate,SecureActionButtonTemplate")
-    button:SetSize(170, 24)
+    button:SetSize(layout.CAST_WIDTH, 24)
     button:SetText(label)
     button:RegisterForClicks("LeftButtonUp") -- only a left click casts; a key binding sends one too
     button:SetAttribute("useOnKeyDown", false)
@@ -1224,6 +1238,222 @@ local function SavePosition(window)
     end
 end
 
+--- The compact view's next item: its icon, link and item level, or why there is none.
+function quick.RenderNextLine()
+    local line = quick.nextLine
+    if line == nil then
+        return
+    end
+    local row = R.NextRow(rows)
+    line.row = row
+    line.icon:SetTexture(row and row.icon or nil)
+    line.icon:SetShown(row ~= nil)
+    if row then
+        line.itemText:SetText((row.link or row.name) .. (row.level and ("  |cffffd100" .. row.level .. "|r") or ""))
+    else
+        line.itemText:SetText("Nothing checked to disenchant.")
+    end
+end
+
+--- The key button's text: the key Disenchant next has now, or an offer to set one.
+function quick.RefreshKey()
+    local button = quick.keyButton
+    if button == nil or quick.listening then
+        return
+    end
+    local key = B.KeyText()
+    button:SetText(key and ("Key: " .. key) or "Set key")
+end
+
+--- Stops listening for a key, and lets the game have the keyboard again.
+function quick.StopListening()
+    quick.listening, quick.pendingChord = false, nil
+    if quick.keyButton then
+        quick.keyButton:EnableKeyboard(false)
+    end
+    quick.RefreshKey()
+end
+
+--- A key pressed while listening: Escape cancels; a key with another use asks to be pressed again;
+-- any other key becomes Disenchant next's key.
+-- @param key the key the game reported
+function quick.OnKey(key)
+    if key == "ESCAPE" then
+        quick.StopListening()
+        Status("No key changed.")
+        return
+    end
+    local chord = B.Chord(key, IsAltKeyDown(), IsControlKeyDown(), IsShiftKeyDown())
+    if chord == nil then
+        return -- a modifier alone: wait for the key
+    end
+    local other = B.OtherUse(chord)
+    if other and quick.pendingChord ~= chord then
+        quick.pendingChord = chord
+        Status(string.format("%s already does %s. Press it again to use it for Unmaker instead, "
+            .. "or Escape to keep it.", chord, other))
+        return
+    end
+    quick.StopListening()
+    if B.SetKey(chord) then
+        quick.RefreshKey()
+        Status(string.format("%s now disenchants the next checked item. Right-click the key button to clear it.",
+            chord))
+    end
+end
+
+--- The key button: a left click listens for a key, a right click clears it. Not in combat.
+-- @param mouseButton which mouse button clicked
+function quick.OnKeyClick(mouseButton)
+    if InCombat() then
+        Status("In combat. Set the key when the fight ends.")
+        return
+    end
+    if mouseButton == "RightButton" then
+        quick.StopListening()
+        B.ClearKey()
+        quick.RefreshKey()
+        Status("Disenchant next has no key now.")
+        return
+    end
+    quick.listening, quick.pendingChord = true, nil
+    quick.keyButton:SetText("Press a key")
+    -- While listening, the key goes to this button, not to the game.
+    quick.keyButton:EnableKeyboard(true)
+    quick.keyButton:SetPropagateKeyboardInput(false)
+    Status("Press the key (with Shift, Ctrl or Alt if you like) for Disenchant next. Escape cancels.")
+end
+
+--- Puts the Disenchant next macro on the cursor, to drop on an action bar.
+function quick.PickupBar()
+    local ok, why = B.PickupMacro()
+    Status(ok and "Drop it on an action bar slot: one press disenchants the next checked item." or why)
+end
+
+--- Builds the key button and the action bar button, left of Disenchant next.
+function quick.BuildBindButtons()
+    local bar = CreateFrame("Button", nil, itemsPanel)
+    bar:SetSize(layout.BAR_SIZE, layout.BAR_SIZE)
+    bar:SetPoint("RIGHT", nextButton, "LEFT", -6, 0)
+    bar.icon = bar:CreateTexture(nil, "ARTWORK")
+    bar.icon:SetAllPoints()
+    bar.icon:SetTexture(PORTRAIT_ICON)
+    bar:RegisterForDrag("LeftButton")
+    bar:SetScript("OnDragStart", quick.PickupBar)
+    bar:SetScript("OnClick", quick.PickupBar)
+    bar:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:AddLine("Disenchant next, for an action bar")
+        GameTooltip:AddLine("Drag this (or click it) onto an action bar slot. One press disenchants the next "
+            .. "checked item.", 1, 1, 1, true)
+        GameTooltip:Show()
+    end)
+    bar:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    itemsPanel.barButton, quick.barButton = bar, bar
+
+    local key = CreateFrame("Button", nil, itemsPanel, "UIPanelButtonTemplate")
+    key:SetSize(layout.KEY_WIDTH, 24)
+    key:SetPoint("RIGHT", bar, "LEFT", -4, 0)
+    key:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    key:SetScript("OnClick", function(_, mouseButton)
+        quick.OnKeyClick(mouseButton)
+    end)
+    key:SetScript("OnKeyDown", function(_, pressed)
+        quick.OnKey(pressed)
+    end)
+    itemsPanel.keyButton, quick.keyButton = key, key
+    quick.RefreshKey()
+end
+
+--- Builds the compact view's next item line and the title bar's condense button.
+function quick.BuildCompact()
+    local line = CreateFrame("Button", nil, itemsPanel)
+    line:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -62)
+    line:SetPoint("RIGHT", frame, "RIGHT", -16, 0)
+    line:SetHeight(layout.ROW_HEIGHT)
+    line.icon = line:CreateTexture(nil, "ARTWORK")
+    line.icon:SetSize(layout.ROW_HEIGHT - 4, layout.ROW_HEIGHT - 4)
+    line.icon:SetPoint("LEFT", line, "LEFT", 0, 0)
+    line.itemText = line:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
+    line.itemText:SetPoint("LEFT", line.icon, "RIGHT", 6, 0)
+    line.itemText:SetPoint("RIGHT", line, "RIGHT", 0, 0)
+    line.itemText:SetJustifyH("LEFT")
+    line.itemText:SetWordWrap(false)
+    line:SetScript("OnEnter", function(self)
+        if self.row then
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:SetBagItem(self.row.bag, self.row.slot)
+            GameTooltip:Show()
+        end
+    end)
+    line:SetScript("OnLeave", function()
+        GameTooltip:Hide()
+    end)
+    line:Hide()
+    itemsPanel.nextLine, quick.nextLine = line, line
+
+    local toggle = CreateFrame("Frame", nil, frame, "MaximizeMinimizeButtonFrameTemplate")
+    if frame.CloseButton then
+        toggle:SetPoint("RIGHT", frame.CloseButton, "LEFT", 10, 0)
+    else
+        toggle:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -24, 0)
+    end
+    toggle:SetOnMinimizedCallback(function()
+        quick.SetCompact(true)
+    end)
+    toggle:SetOnMaximizedCallback(function()
+        quick.SetCompact(false)
+    end)
+    frame.compactToggle, quick.toggle = toggle, toggle
+end
+
+--- Switches between the full window and the compact view, keeping the window's top-left corner
+-- where it is. The window is protected (its secure buttons), so not in combat: the button then
+-- shows the view that stays.
+-- @param on true for the compact view
+function quick.SetCompact(on)
+    if Locked(frame) then
+        Status("In combat. Change the view when the fight ends.")
+        if on then
+            quick.toggle:Maximize(true, true)
+        else
+            quick.toggle:Minimize(true, true)
+        end
+        return
+    end
+    quick.compact = on
+    charDB.compact = on or nil
+    if on then
+        SelectTab(1)
+    end
+    local left, top = frame:GetLeft(), frame:GetTop()
+    if left and top then
+        frame:ClearAllPoints()
+        frame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, top)
+    end
+    frame:SetSize(on and layout.COMPACT_WIDTH or layout.WIDTH, on and layout.COMPACT_HEIGHT or layout.HEIGHT)
+    if left and top then
+        SavePosition(frame)
+    end
+    itemsPanel.filterRow:SetShown(not on)
+    itemsPanel.header:SetShown(not on)
+    selectedButton:SetShown(not on)
+    quick.nextLine:SetShown(on)
+    for id = 1, 5 do
+        _G["UnmakerFrameTab" .. id]:SetShown(not on)
+    end
+    countText:ClearAllPoints()
+    if on then
+        countText:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -92)
+    else
+        countText:SetPoint("TOPLEFT", frame, "TOPLEFT", 16, -(layout.LIST_START + layout.LIST_HEIGHT + 8))
+    end
+    countText:SetPoint("RIGHT", frame, "RIGHT", -16, 0)
+    Render()
+end
+
 --- Build the window: the frame, the Items and Settings tabs, the list, the two cast buttons,
 -- and the bag window buttons.
 --- The column headings' text: an arrow on the column the list is sorted by.
@@ -1262,6 +1492,7 @@ end
 -- headings, which sort the list when clicked.
 local function BuildFilterAndHeader()
     local filterRow = CreateFrame("Frame", nil, itemsPanel)
+    itemsPanel.filterRow = filterRow
     filterRow:SetPoint("TOPLEFT", itemsPanel, "TOPLEFT", 0, 0)
     filterRow:SetPoint("RIGHT", itemsPanel, "RIGHT", 0, 0)
     filterRow:SetHeight(layout.FILTER_HEIGHT)
@@ -1313,6 +1544,7 @@ local function BuildFilterAndHeader()
 
     -- Headings line up with the row cells: name after the checkbox and icon, ilvl, then vendor.
     local header = CreateFrame("Frame", nil, itemsPanel)
+    itemsPanel.header = header
     header:SetPoint("TOPLEFT", itemsPanel, "TOPLEFT", 4, -layout.FILTER_HEIGHT)
     header:SetSize(layout.WIDTH - 40, layout.HEADER_HEIGHT)
     local places = {
@@ -1415,6 +1647,8 @@ local function BuildFrame()
         return R.NextRow(rows)
     end)
     nextButton:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -14, 8)
+    quick.BuildBindButtons()
+    quick.BuildCompact()
 
     unmadeText = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     unmadeText:SetPoint("TOP", frame, "TOP", 20, -38)
@@ -1435,6 +1669,9 @@ local function BuildFrame()
     AddBagButton(_G.ContainerFrame1)
     UpdateBagButtons()
     built = true
+    if charDB.compact then
+        quick.toggle:Minimize()
+    end
 end
 
 --- The links of every row now, to spot new gear for "Open when I loot".
@@ -1691,7 +1928,18 @@ end
 
 function handlers.PLAYER_REGEN_DISABLED()
     if built then
+        -- A key being set waits too: the keyboard goes back to the game.
+        if quick.listening then
+            quick.StopListening()
+        end
         Status("In combat. Disenchanting waits until the fight ends.")
+    end
+end
+
+--- A key changed, here or in the game's Key Bindings menu: show Disenchant next's key now.
+function handlers.UPDATE_BINDINGS()
+    if built then
+        quick.RefreshKey()
     end
 end
 

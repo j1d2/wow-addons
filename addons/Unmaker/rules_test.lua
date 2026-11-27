@@ -56,6 +56,8 @@ do
     Check("missing character data gets a table with no position", type(charDB) == "table"
         and charDB.version == R.CHAR_DB_VERSION and charDB.position == nil)
     Check("the account data holds no position", R.EnsureDB(nil).position == nil)
+    Check("compact view: kept when true, dropped otherwise", R.EnsureCharDB({ compact = true }).compact == true
+        and R.EnsureCharDB({ compact = "yes" }).compact == nil and R.EnsureCharDB({}).compact == nil)
     charDB = R.EnsureCharDB({ position = { point = "TOPLEFT", relativePoint = "TOPLEFT", x = 120.5, y = -80 } })
     Check("a good saved position is kept", charDB.position ~= nil and charDB.position.point == "TOPLEFT"
         and charDB.position.relativePoint == "TOPLEFT" and charDB.position.x == 120.5
