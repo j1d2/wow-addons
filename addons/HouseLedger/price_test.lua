@@ -340,6 +340,13 @@ do
 end
 
 do
+    -- Today's scan: the house's last scan on the local calendar day of now.
+    Check("scanned today: a scan earlier today counts", P.ScannedToday({ scannedAt = At(0) }, At(0) + 60))
+    Check("scanned today: yesterday's doesn't", not P.ScannedToday({ scannedAt = At(-1) }, At(0)))
+    Check("scanned today: no scan or no house doesn't", not P.ScannedToday({}, At(0)) and not P.ScannedToday(nil, At(0)))
+end
+
+do
     Check("scan button: ready", P.ScanButtonText(0) == "Scan")
     Check("scan button: seconds under a minute", P.ScanButtonText(45) == "Scan (45s)")
     Check("scan button: whole minutes, rounded up", P.ScanButtonText(61) == "Scan (2m)"

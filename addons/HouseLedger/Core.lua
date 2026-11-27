@@ -79,6 +79,8 @@ C.MARKET_VIEWS = {
 C.BUY_HELP = "Type an item name. One click sends one search."
 -- Shown large in the middle of the empty Buy list.
 C.BUY_START = "Type a name or pick a quality, then click Search."
+-- Under the start message, in red, until the house has a scan from today.
+C.SCAN_REMINDER = "You haven't scanned today. Click Scan once a day to build your price history."
 
 -- Frames more than one file uses, set when they are built (Window.Build, PC.Build). The rest
 -- start nil: frame, searchBox, statusText, scanText, scanBar (the read's progress, shown only
