@@ -98,7 +98,22 @@ local function SetListMessage(text)
     if ui.buyPanel and ui.buyPanel.listMessage then
         ui.buyPanel.listMessage:SetText(text or "")
         if text then ui.buyPanel.listMessage:Show() else ui.buyPanel.listMessage:Hide() end
+        Buy.RefreshScanReminder()
     end
+end
+
+--- Shows the red "haven't scanned today" line while the start message shows and the house the
+-- window reads has no scan from today (local day). Recomputed when the message changes, when
+-- the house opens and after a scan; it never scans.
+function Buy.RefreshScanReminder()
+    local reminder = ui.buyPanel and ui.buyPanel.scanReminder
+    if reminder == nil then
+        return
+    end
+    local message = ui.buyPanel.listMessage
+    local starting = message:IsShown() and message:GetText() == C.BUY_START and not ui.buyPanel.marketMode
+    local house = (HouseLedgerDB.houses or {})[U.ViewHouseKey()]
+    reminder:SetShown(starting and not Price.ScannedToday(house, time()))
 end
 Buy.SetListMessage = SetListMessage
 
@@ -440,6 +455,7 @@ function Buy.RefreshOverview()
     if not rowShown and not ui.buyPanel.marketMode then
         Buy.ShowOverview()
     end
+    Buy.RefreshScanReminder()
 end
 
 --- Clears a picked row from the details block: the house overview on Buy, the hint on Market.

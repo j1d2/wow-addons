@@ -252,6 +252,17 @@ function Window.Build()
     listMessage:SetWordWrap(true)
     listMessage:SetText(C.BUY_START)
     ui.buyPanel.listMessage = listMessage
+    -- A red line under the start message until today's scan (Buy.RefreshScanReminder). Only text:
+    -- the Scan button is still the one way to scan.
+    local reminder = U.Cell(ui.buyPanel, "GameFontNormal", "CENTER")
+    reminder:SetPoint("TOP", listMessage, "BOTTOM", 0, -14)
+    reminder:SetPoint("LEFT", list, "LEFT", 30, 0)
+    reminder:SetPoint("RIGHT", list, "RIGHT", -30, 0)
+    reminder:SetWordWrap(true)
+    reminder:SetTextColor(1, 0.25, 0.25)
+    reminder:SetText(C.SCAN_REMINDER)
+    reminder:Hide()
+    ui.buyPanel.scanReminder = reminder
     for index = 1, C.VISIBLE_ROWS do
         ui.rows[index] = Buy.BuildRow(list, index)
     end

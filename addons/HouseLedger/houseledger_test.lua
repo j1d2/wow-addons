@@ -1300,11 +1300,12 @@ do
     Setup()
     Load()
     local lines = {}
-    -- The large list message and the orange note beside the filters are meant to wrap.
+    -- The large list message, the scan reminder under it and the orange note beside the filters
+    -- are meant to wrap.
     local panel = MainFrame().buyPanel
     for _, owner in ipairs({ MainFrame(), panel, MainFrame().sellPanel }) do
         for _, line in ipairs(owner.fontStrings) do
-            if line ~= panel.listMessage and line ~= panel.notice then
+            if line ~= panel.listMessage and line ~= panel.notice and line ~= panel.scanReminder then
                 lines[#lines + 1] = line
             end
         end
@@ -4262,6 +4263,32 @@ do
     row:GetScript("OnClick")(row)
     Check("item chart: never under 150 px wide; the lines round instead", chart.chartWidth == 150)
     world.charWidth = nil
+end
+
+-- A reminder to scan once a day, in red under the Buy tab's start message.
+do
+    Setup({ listings = ManyListings(10) })
+    Load()
+    OpenHouse()
+    local panel = MainFrame().buyPanel
+    local reminder = panel.scanReminder
+    Check("reminder: never scanned, it asks for today's scan, in red", reminder ~= nil and reminder.shown
+        and reminder.text:find("haven't scanned today", 1, true) ~= nil and reminder.color[1] == 1
+        and reminder.color[2] < 0.5)
+    Check("reminder: it only says so; nothing is sent", world.replicateCalls == 0 and #world.browseQueries == 0)
+    Click("Scan")
+    Fire("REPLICATE_ITEM_LIST_UPDATE")
+    RunTimers()
+    Check("reminder: gone once today's scan is saved", not reminder.shown)
+    world.now = world.now + 24 * 60 * 60
+    CloseHouse()
+    OpenHouse()
+    Check("reminder: back the next day", reminder.shown)
+    world.browseResults = BrowseResults(1, 3)
+    Fire("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
+    Check("reminder: only with the start message, never over results", not reminder.shown)
+    Click("Clear")
+    Check("reminder: back with the start message after Clear", reminder.shown)
 end
 
 -- Money that can't fit its cell is rounded (amounts of 1 gold or more lose copper, then silver)

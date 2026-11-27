@@ -185,6 +185,15 @@ function PriceLedger.DayKey(seconds)
     return tonumber(FormatTime("%Y%m%d", seconds))
 end
 
+--- Whether a house was scanned on the local calendar day of `now`.
+-- @param house a saved house, or nil
+-- @param now the current time
+-- @return true when its last scan was today
+function PriceLedger.ScannedToday(house, now)
+    return type(house) == "table" and type(house.scannedAt) == "number"
+        and PriceLedger.DayKey(house.scannedAt) == PriceLedger.DayKey(now)
+end
+
 -- The realm part of a house key when the realm isn't known.
 PriceLedger.UNKNOWN_REALM = "Forever"
 
