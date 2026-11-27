@@ -24,7 +24,7 @@ local BAGS = { 0, 1, 2, 3, 4 } -- the backpack and four bags; the reagent bag ho
 local layout = {}
 layout.ROW_COUNT = 10
 layout.ROW_HEIGHT = 24
-layout.WIDTH = 600
+layout.WIDTH = 480
 layout.LIST_TOP = 64 -- the Items tab starts this far below the window's top edge
 -- On the Items tab: the filter row, then the column headings, then the list.
 layout.FILTER_HEIGHT = 26
@@ -38,9 +38,11 @@ layout.HEIGHT = layout.LIST_START + layout.LIST_HEIGHT + layout.TEXT_HEIGHT + la
 -- Items tab columns: their headings, and the way each first sorts when clicked (true is A to Z).
 local COLUMN_LABELS = { name = "Item", ilvl = "ilvl", gives = "Gives", vendor = "Vendor" }
 -- The Gives column: up to this many materials, each an icon and its chance, most likely first.
-layout.GIVES_SHOWN, layout.GIVES_SLOT, layout.GIVES_ICON = 3, 46, 14
+layout.GIVES_SHOWN, layout.GIVES_SLOT, layout.GIVES_ICON = 3, 40, 14
 -- Items tab cells, from the row's right edge: vendor price, then Gives, then item level.
-layout.VENDOR_RIGHT, layout.GIVES_RIGHT, layout.LEVEL_RIGHT, layout.NAME_RIGHT = -4, -100, -244, -284
+layout.VENDOR_RIGHT, layout.GIVES_RIGHT, layout.LEVEL_RIGHT, layout.NAME_RIGHT = -4, -68, -192, -230
+-- The vendor column's width: room for two coins (VendorText leaves out the copper from 1 gold).
+layout.VENDOR_WIDTH = 60
 local SORT_FIRST_ASCENDING = { name = true, ilvl = false, vendor = false }
 -- History headings that sort A to Z (the rest sort highest or newest first).
 local HISTORY_ASCENDING = { name = true, who = true }
@@ -96,10 +98,9 @@ local factLines = {}
 local matLines = {}
 local historyRowFrames = {}
 local historyEmpty
-local historyMeasure -- a hidden font string that measures Got text (FitsGot)
--- The History tab's Got column: its width, and the space between two materials in it (the two
--- spaces S.LootText puts between them).
-layout.GOT_WIDTH, layout.GOT_GAP = 185, 8
+-- The History tab's Got column: up to GOT_SHOWN materials, each a count and an icon in a cell
+-- GOT_CELL wide; hovering an icon names the material.
+layout.GOT_SHOWN, layout.GOT_CELL, layout.GOT_ICON = 3, 34, 16
 local historyOffset = 0
 local historySort = "time"
 local historyReverse = false -- a second click on the same heading reverses its sort
@@ -401,7 +402,7 @@ local function Render()
             rowFrame.icon:SetTexture(row.icon)
             rowFrame.nameText:SetText(row.link or row.name)
             rowFrame.levelText:SetText(row.level and tostring(row.level) or "")
-            rowFrame.vendorText:SetText(row.vendor and MoneyText(row.vendor) or "-")
+            rowFrame.vendorText:SetText(row.vendor and MoneyText(R.TwoCoins(row.vendor)) or "-")
             local prediction = Prediction(row)
             for slot, cell in ipairs(rowFrame.gives) do
                 local result = prediction and prediction.results[slot]
@@ -492,17 +493,6 @@ local function RenderStats()
     chart:Show()
 end
 
---- True when a material's text fits its share of the History tab's Got column, measured in
--- the column's own font, so each name is cut just where the game would run out of room.
--- @param text one material: count, icon and name
--- @param count how many materials share the column
--- @return true when it fits
-local function FitsGot(text, count)
-    local share = (layout.GOT_WIDTH - (count - 1) * layout.GOT_GAP) / count
-    historyMeasure:SetText(text)
-    return historyMeasure:GetStringWidth() <= share
-end
-
 --- Fill the History tab from the saved history, sorted by the chosen heading.
 local function RenderHistory()
     if not built then
@@ -518,7 +508,13 @@ local function RenderHistory()
             rowFrame.itemText:SetText(entry.link or entry.name)
             rowFrame.levelText:SetText(entry.level and tostring(entry.level) or "")
             rowFrame.whoText:SetText(S.WhoText(entry, playerRealm))
-            rowFrame.lootText:SetText(S.LootText(entry, KnownIcon, FitsGot))
+            for slot, cell in ipairs(rowFrame.mats) do
+                local mat = entry.mats and entry.mats[slot]
+                cell.mat = mat
+                cell.count:SetText(mat and tostring(mat.quantity) or "")
+                cell.icon:SetTexture(mat and (KnownIcon(mat) or UNKNOWN_ICON) or nil)
+                cell.icon:SetShown(mat ~= nil)
+            end
             rowFrame.whenText:SetText(FormatWhen(entry.time))
             rowFrame:Show()
         else
@@ -746,7 +742,7 @@ local function BuildRow(index)
 
     rowFrame.vendorText = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     rowFrame.vendorText:SetPoint("RIGHT", rowFrame, "RIGHT", layout.VENDOR_RIGHT, 0)
-    rowFrame.vendorText:SetWidth(90)
+    rowFrame.vendorText:SetWidth(layout.VENDOR_WIDTH)
     rowFrame.vendorText:SetJustifyH("RIGHT")
     rowFrame.vendorText:SetWordWrap(false)
 
@@ -898,11 +894,11 @@ end
 
 -- History columns: x offset and width of each, inside the History panel.
 local HISTORY_COLUMNS = {
-    { key = "name", label = "Item", x = 0, width = 150 },
-    { key = "level", label = "ilvl", x = 155, width = 35 },
-    { key = "who", label = "Who", x = 195, width = 80 },
-    { key = nil, label = "Got", x = 280, width = layout.GOT_WIDTH },
-    { key = "time", label = "When", x = 470, width = 80 },
+    { key = "name", label = "Item", x = 0, width = 135 },
+    { key = "level", label = "ilvl", x = 139, width = 30 },
+    { key = "who", label = "Who", x = 173, width = 70 },
+    { key = nil, label = "Got", x = 247, width = layout.GOT_SHOWN * layout.GOT_CELL },
+    { key = "time", label = "When", x = 353, width = 70 },
 }
 
 --- Build the History tab: clickable headings that sort, then ten rows, newest first by default.
@@ -970,8 +966,7 @@ local function BuildHistory()
         rowFrame.historyRow = true
         rowFrame:SetSize(layout.WIDTH - 40, layout.ROW_HEIGHT)
         rowFrame:SetPoint("TOPLEFT", historyPanel, "TOPLEFT", 0, -(layout.FILTER_HEIGHT + 20 + (index - 1) * layout.ROW_HEIGHT))
-        for _, field in ipairs({ { "itemText", 1 }, { "levelText", 2 }, { "whoText", 3 }, { "lootText", 4 },
-            { "whenText", 5 } }) do
+        for _, field in ipairs({ { "itemText", 1 }, { "levelText", 2 }, { "whoText", 3 }, { "whenText", 5 } }) do
             local column = HISTORY_COLUMNS[field[2]]
             local text = rowFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
             text:SetPoint("LEFT", rowFrame, "LEFT", column.x, 0)
@@ -979,6 +974,38 @@ local function BuildHistory()
             text:SetJustifyH("LEFT")
             text:SetWordWrap(false) -- long loot text is cut off, not wrapped into the next row
             rowFrame[field[1]] = text
+        end
+        -- Got: a count and an icon per material. The icon's own tooltip names it.
+        rowFrame.mats = {}
+        for slot = 1, layout.GOT_SHOWN do
+            local cell = CreateFrame("Frame", nil, rowFrame)
+            cell:SetSize(layout.GOT_CELL, layout.ROW_HEIGHT)
+            cell:SetPoint("LEFT", rowFrame, "LEFT", HISTORY_COLUMNS[4].x + (slot - 1) * layout.GOT_CELL, 0)
+            cell:EnableMouse(true)
+            cell.count = cell:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+            cell.count:SetPoint("LEFT", cell, "LEFT", 0, 0)
+            cell.icon = cell:CreateTexture(nil, "ARTWORK")
+            cell.icon:SetSize(layout.GOT_ICON, layout.GOT_ICON)
+            cell.icon:SetPoint("LEFT", cell.count, "RIGHT", 2, 0)
+            cell:SetScript("OnEnter", function()
+                local mat = cell.mat
+                if mat == nil then
+                    return
+                end
+                GameTooltip:SetOwner(cell, "ANCHOR_RIGHT")
+                if mat.link then
+                    GameTooltip:SetHyperlink(mat.link)
+                elseif mat.id then
+                    GameTooltip:SetItemByID(mat.id)
+                else
+                    GameTooltip:AddLine(mat.name)
+                end
+                GameTooltip:Show()
+            end)
+            cell:SetScript("OnLeave", function()
+                GameTooltip:Hide()
+            end)
+            rowFrame.mats[slot] = cell
         end
         rowFrame:SetScript("OnEnter", function()
             local entry = rowFrame.entry
@@ -997,9 +1024,6 @@ local function BuildHistory()
         end)
         historyRowFrames[index] = rowFrame
     end
-    -- Never shown: measures loot text in the Got column's font (FitsGot).
-    historyMeasure = historyPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    historyMeasure:Hide()
     historyEmpty = historyPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     historyEmpty:SetPoint("TOPLEFT", historyPanel, "TOPLEFT", 0, -(layout.FILTER_HEIGHT + 24))
     historyEmpty:SetText("Nothing unmade yet. Disenchant something on the Items tab.")
@@ -1296,7 +1320,7 @@ local function BuildFilterAndHeader()
         { key = "ilvl", point = "RIGHT", x = layout.LEVEL_RIGHT, width = 50, justify = "RIGHT" },
         { key = "gives", point = "RIGHT", x = layout.GIVES_RIGHT, width = layout.GIVES_SHOWN * layout.GIVES_SLOT, justify = "LEFT",
             fixed = true },
-        { key = "vendor", point = "RIGHT", x = layout.VENDOR_RIGHT, width = 90, justify = "RIGHT" },
+        { key = "vendor", point = "RIGHT", x = layout.VENDOR_RIGHT, width = layout.VENDOR_WIDTH, justify = "RIGHT" },
     }
     itemsPanel.headerTexts, itemsPanel.sortButtons = {}, {}
     for _, place in ipairs(places) do

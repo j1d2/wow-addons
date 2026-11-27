@@ -130,8 +130,10 @@ function FrameMethods:SetPoint(...) self.point = { ... } end
 function FrameMethods:GetPoint() return unpack(self.point or {}) end
 -- A dropdown keeps the menu generator it was given, as Blizzard's DropdownButton does.
 function FrameMethods:SetupMenu(generator) self.menuGenerator = generator end
-for _, method in ipairs({ "SetSize", "SetAllPoints", "SetColorTexture", "SetJustifyH", "SetJustifyV",
-    "SetHeight", "SetWidth", "SetWordWrap",
+function FrameMethods:SetSize(width, height) self.width, self.height = width, height end
+function FrameMethods:SetWidth(width) self.width = width end
+for _, method in ipairs({ "SetAllPoints", "SetColorTexture", "SetJustifyH", "SetJustifyV",
+    "SetWordWrap",
     "RegisterForDrag", "EnableMouse", "EnableMouseWheel", "SetMovable",
     "SetClampedToScreen", "SetFrameStrata", "SetTitle", "SetPortraitToAsset", "SetID",
     "SetAutoFocus", "SetNumeric", "SetMaxLetters", "ClearFocus" }) do
@@ -320,6 +322,7 @@ local function Load(setup)
     _G.GameTooltip = { SetOwner = function() end, SetBagItem = function(_, bag, slot)
         world.tooltip = bag .. ":" .. slot end, Show = function() end, Hide = function() world.tooltip = nil end,
         SetHyperlink = function(_, link) world.tooltip = link end,
+        SetItemByID = function(_, itemID) world.tooltip = "item:" .. itemID end,
         AddLine = function(_, text)
             world.tooltipLine = text
             world.tooltipLines[#world.tooltipLines + 1] = text
@@ -1101,7 +1104,8 @@ do
     Check("clicking the Item heading sorts by name", historyRows[1].entry.name == "Blue Ring")
     headers.time:GetScript("OnClick")(headers.time)
     Check("clicking the When heading sorts newest first again", historyRows[1].entry.name == "Green Vest")
-    Check("each row shows its loot", historyRows[1].lootText.text:find("Strange Dust", 1, true) ~= nil)
+    Check("each row shows its loot as a count and an icon", historyRows[1].mats[1].count.text == "1"
+        and historyRows[1].mats[1].icon.shown and not historyRows[1].mats[2].icon.shown)
     world.tooltipLines = {}
     historyRows[1]:GetScript("OnEnter")(historyRows[1])
     Check("hovering a history row shows the item and who unmade it",
@@ -1458,7 +1462,28 @@ do
 end
 
 do
-    -- The Got column: each material's icon, and names cut with ".." to fit its share.
+    -- The window is narrower than the old 600: the History tab's Got column is icons and counts.
+    Start({ bags = StandardBags() })
+    _G.SlashCmdList.UNMAKER("")
+    Check("the window is 480 wide", _G.UnmakerFrame.width == 480)
+end
+
+do
+    -- Vendor prices of 1 gold or more leave out the copper, like HouseLedger's day lines.
+    local bags = PricedBags()
+    bags[0][1].sell = 12345
+    Start({ bags = bags })
+    _G.SlashCmdList.UNMAKER("")
+    local vendor = {}
+    for _, row in ipairs(ShownRows()) do
+        vendor[row.row.name] = row.vendorText.text
+    end
+    Check("vendor: from 1 gold the copper is left out", vendor["Green Vest"] == "<money 12300>"
+        and vendor["Purple Axe"] == "<money 500>")
+end
+
+do
+    -- The Got column: each material's count and icon; hovering an icon names it.
     local history = { { itemID = 7, name = "Old Cloak", quality = 2, level = 9, time = 1762800000, looted = true,
         mats = { { name = "Strange Dust", link = "|Hitem:10940|h[Strange Dust]|h", quantity = 2 },
             { name = "Lesser Magic Essence", quantity = 1 } } } }
@@ -1471,9 +1496,16 @@ do
             row = f
         end
     end
-    -- The fake measures 6 pixels a character and 12 an icon; each of two shares is 88 pixels.
-    Check("Got: icons, and names cut to fit with ..", row.lootText.text
-        == "2 |T" .. DUST_ICON .. ":0|t Strange..  1 Lesser Mag..")
+    local dust, essence = row.mats[1], row.mats[2]
+    Check("Got: a count and an icon per material, no names", dust.count.text == "2" and dust.icon.texture == DUST_ICON
+        and essence.count.text == "1" and essence.icon.texture == 134400 and not row.mats[3].icon.shown)
+    world.tooltip, world.tooltipLines = nil, {}
+    dust:GetScript("OnEnter")(dust)
+    Check("Got: hovering an icon shows that material's item tooltip", world.tooltip == "|Hitem:10940|h[Strange Dust]|h")
+    dust:GetScript("OnLeave")(dust)
+    world.tooltipLines = {}
+    essence:GetScript("OnEnter")(essence)
+    Check("Got: a material without a link still says its name", world.tooltipLines[1] == "Lesser Magic Essence")
 end
 
 if failed > 0 then

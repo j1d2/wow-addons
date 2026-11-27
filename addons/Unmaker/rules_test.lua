@@ -284,6 +284,13 @@ do
     Check("damaged saved looks become an empty list", type(R.EnsureDB({ keptInfo = "broken" }).keptInfo) == "table")
 end
 
+do
+    -- Two coins at most: from 1 gold up the copper is left out, rounded to the nearest silver.
+    Check("two coins: under 1 gold stays exact", R.TwoCoins(9999) == 9999 and R.TwoCoins(57) == 57)
+    Check("two coins: 1 gold and up rounds to the silver", R.TwoCoins(12345) == 12300 and R.TwoCoins(10050) == 10100)
+    Check("two coins: no price stays no price", R.TwoCoins(nil) == nil)
+end
+
 if failed > 0 then
     io.write(string.format("%d failed\n", failed))
     os.exit(1)

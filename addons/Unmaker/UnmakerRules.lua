@@ -375,6 +375,17 @@ function R.NextRow(rows)
     return nil
 end
 
+--- A copper amount shown with two coins at most: from 1 gold up, rounded to the nearest silver,
+-- so the copper is left out (it is a rounding error at that size).
+-- @param copper whole copper, or nil
+-- @return the rounded copper (nil stays nil)
+function R.TwoCoins(copper)
+    if type(copper) ~= "number" or copper < 10000 then
+        return copper
+    end
+    return math.floor(copper / 100 + 0.5) * 100
+end
+
 --- How many rows are checked.
 -- @param rows the window's rows
 -- @return the count

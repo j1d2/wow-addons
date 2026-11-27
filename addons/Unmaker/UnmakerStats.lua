@@ -450,59 +450,19 @@ function S.CountOnDay(db, seconds, key)
     return Totals(db, key).days[DayKey(seconds)] or 0
 end
 
---- A text without its last character (a whole UTF-8 character, so a name is never cut mid-letter).
--- @param text the text, not empty
--- @return the shorter text
-local function DropLastCharacter(text)
-    local last = #text
-    while last > 1 and text:byte(last) >= 128 and text:byte(last) < 192 do
-        last = last - 1
-    end
-    return text:sub(1, last - 1)
-end
-
---- One material of a history entry, shortened with ".." until it fits its share of the column.
--- @param lead the count and icon before the name
--- @param name the material's name
--- @param fits function(text) true when the text fits
--- @return the text
-local function FitMaterial(lead, name, fits)
-    if fits(lead .. name) then
-        return lead .. name
-    end
-    local short = name
-    while short ~= "" do
-        short = DropLastCharacter(short):gsub("%s+$", "")
-        if short ~= "" and fits(lead .. short .. "..") then
-            return lead .. short .. ".."
-        end
-    end
-    return (lead:gsub("%s+$", ""))
-end
-
---- One history entry's loot as short text. Plain: "4 Strange Dust, 1 Small Glimmering Shard".
--- With icons: "4 [icon] Strange Dust  1 [icon] Small Glim..", each material's name cut to its
--- share of the column.
+--- One history entry's loot as short text, for the row's tooltip: "4 Strange Dust, 1 Small
+-- Glimmering Shard".
 -- @param entry a history entry
--- @param iconOf optional function(mat) returning the material's icon, or nil
--- @param fits optional function(text, count) true when the text fits one of count equal shares
 -- @return the text, or "-" when no loot was recorded
-function S.LootText(entry, iconOf, fits)
+function S.LootText(entry)
     if type(entry.mats) ~= "table" or #entry.mats == 0 then
         return "-"
     end
-    local count = #entry.mats
     local parts = {}
     for _, mat in ipairs(entry.mats) do
-        local icon = iconOf and iconOf(mat)
-        local lead = mat.quantity .. " " .. (icon and ("|T" .. icon .. ":0|t ") or "")
-        if fits then
-            parts[#parts + 1] = FitMaterial(lead, mat.name, function(text) return fits(text, count) end)
-        else
-            parts[#parts + 1] = lead .. mat.name
-        end
+        parts[#parts + 1] = mat.quantity .. " " .. mat.name
     end
-    return table.concat(parts, fits and "  " or ", ")
+    return table.concat(parts, ", ")
 end
 
 --- The Stats tab's chart: disenchants per calendar day over the last 14 days, ending today.
