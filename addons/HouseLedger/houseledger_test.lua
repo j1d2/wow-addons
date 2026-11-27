@@ -4052,6 +4052,9 @@ do
     Fire("AUCTION_HOUSE_AUCTION_CREATED", 77)
     Check("post: the house made it: says so and remembers the price", SellStatus():find("Posted 60 Item 2589", 1, true)
         and HouseLedgerDB.lastPosts["Alliance|TestRealm"][2589][1] == 97 and panel.postButton.text == "Post")
+    -- In game the house's answer came before the bags updated, so How many still said all of them.
+    Check("post: How many drops to what's left, before the bags catch up", panel.qtyBox.text == "0")
+    Type(panel.qtyBox, "60")
 
     Fire("COMMODITY_SEARCH_RESULTS_UPDATED", 2589)
     Check("post: new listings never change a price already there", boxes.copper.text == "97")
@@ -4265,16 +4268,20 @@ do
     row:GetScript("OnClick")(row)
     local chart = panel.chart
     local function Coarse(text) return text:find("%d+s") == nil and text:find("%d+c") == nil end
-    Check("fit money: what fits stays exact", chart.topText.text:find("^%d+g %d+s %d+c$") ~= nil
+    Check("fit money: what fits stays whole, two coins from 1 gold up", chart.topText.text:find("^%d+g %d+s$") ~= nil
         and panel.detailLines[1].right.text:find("^%d+g %d+s$") ~= nil and row.typicalText.text:find("%d+c$") ~= nil)
-    -- The top price has the chart's width less the view buttons: 170 - 90 = 80 px.
-    world.charWidth = 8
+    local tip = ChartTipLines(chart)
+    local projection
+    for _, line in ipairs(tip) do
+        projection = line:find("Purple", 1, true) and line or projection
+    end
+    Check("fit money: the tip's projection shows two coins too", projection ~= nil
+        and projection:find("%d+g %d+s%.$") ~= nil)
+    -- The top price has the chart's width less the view buttons.
+    world.charWidth = 12
     row:GetScript("OnClick")(row)
-    Check("fit money: too wide for copper, the axis price drops it", chart.topText.text:find("^%d+g %d+s$") ~= nil
-        and #chart.topText.text * 8 <= 80)
-    world.charWidth = 20
-    row:GetScript("OnClick")(row)
-    Check("fit money: then its silver", chart.topText.text:find("^%d+g$") ~= nil)
+    Check("fit money: too wide for silver, the axis price drops it", chart.topText.text:find("^%d+g$") ~= nil
+        and #chart.topText.text * 12 <= chart.chartWidth - 91)
     world.charWidth = 50
     Fire("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
     row = ResultRows()[1]

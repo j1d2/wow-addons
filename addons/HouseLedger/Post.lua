@@ -346,10 +346,15 @@ local function EndPost(text, posted)
     if posted then
         Price.RememberPost(HouseLedgerDB, U.ViewHouseKey(), post.itemID, post.price, time())
     end
+    local left = Available()
+    if posted and post.before then
+        -- The house's answer can come before the bags update, which still count the posted ones.
+        left = math.max(0, math.min(left, post.before - post.quantity))
+    end
     post = nil
     Sell.SetStatus(text)
     if item and item.commodity then
-        ui.postPanel.qtyBox:SetText(tostring(Available()))
+        ui.postPanel.qtyBox:SetText(tostring(left))
     end
     Post.Refresh()
 end

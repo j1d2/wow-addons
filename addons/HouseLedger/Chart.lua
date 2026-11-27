@@ -195,12 +195,15 @@ local function MarkView(chart, view)
     end
 end
 
+-- Chart prices from 1 gold up leave out the copper, like the day lines (two coins at most).
+local CHART_COIN = 100
+
 --- Writes the axis's top price, rounded when the whole price can't fit left of the view buttons.
 -- @param chart from Chart.Build
 -- @param top copper at the top of the axis
 local function SetTopPrice(chart, top)
     U.FitMoney(chart.topText, chart.chartWidth - TOP_TEXT_MARGIN, function(coins)
-        return coins(top)
+        return coins(Price.RoundCoins(top, CHART_COIN))
     end)
 end
 
@@ -285,7 +288,7 @@ local function ShowChartTip(chart)
         end
         if fit.estimate then
             GameTooltip:AddLine("Purple: a projection for the next " .. chart.nextWord .. ", "
-                .. U.CopperToText(fit.estimate) .. ".", ESTIMATE_COLOR[1], ESTIMATE_COLOR[2], ESTIMATE_COLOR[3])
+                .. U.CopperToText(Price.RoundCoins(fit.estimate, CHART_COIN)) .. ".", ESTIMATE_COLOR[1], ESTIMATE_COLOR[2], ESTIMATE_COLOR[3])
         end
     end
     GameTooltip:AddLine("Click Days or Scans to switch.", 0.8, 0.8, 0.8)

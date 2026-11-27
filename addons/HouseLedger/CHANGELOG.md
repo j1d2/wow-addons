@@ -25,7 +25,7 @@ All notable changes to HouseLedger. The format follows [Keep a Changelog](https:
 ### Changed
 
 - The Buy tab's price chart and the house overview chart are bigger: as tall as the space under the list, centred in it, and as wide as the room beside the price lines.
-- The 1, 3, 7 and 14-day lines and the std dev leave out the copper on amounts of 1 gold or more, so they show two coins at most ("12g 34s"). The current price and the price you'd pay stay exact.
+- The 1, 3, 7 and 14-day lines and the std dev leave out the copper on amounts of 1 gold or more, so they show two coins at most ("12g 34s"), and so do a chart's top price and its projection. The current price and the price you'd pay stay exact.
 - Each day's prices are now saved as an average and spread rounded to a few digits, instead of exact running totals. On a very busy auction house with many scans a day, the exact totals could make the saved file too big for the game to load, which can lose your saved prices. Typical prices and spreads may change by a fraction of a percent; your saved history converts by itself the first time it loads. Going back to an older HouseLedger after that isn't supported: it would show wrong averages.
 - HouseLedger's code is now split into smaller files. Nothing looks or works differently, but restart the game once after updating: a `/reload` doesn't pick up new files.
 - The Market tab opens about 6 times faster, and price tooltips and details take about 5 times less work. The numbers are the same as before.
