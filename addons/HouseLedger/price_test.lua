@@ -329,6 +329,14 @@ do
     local longer = P.WindowLines(P.Stats(History({ 100, 100, 100, 100, 100, 100, 100, 100, 100 }, 100)), Coins)
     Check("window lines: a window with more scans than the last shows its numbers",
         longer[4].left == "14 days, 10 scans" and not longer[4].right:find("same as", 1, true))
+
+    -- From 1 gold up the copper is a rounding error: those amounts drop it (rounded to the silver),
+    -- so a line never shows more than two coins.
+    local gold = P.WindowLines(P.Stats(History({ 9999, 15049, 2500051 }, 1234567)), P.CoinText)
+    Check("window lines: 1 gold and up drop their copper, under 1 gold keeps it", gold[1].right == "123g 46s"
+        and gold[2].right:find("(1g 50s - 250g 1s)", 1, true) ~= nil and gold[3].right:find("(99s 99c - 250g 1s)", 1, true)
+        and not gold[2].right:find("^avg %d+g %d+s %d+c"))
+    Check("window lines: so does a big std dev", gold[5].right:find("%d+c$") == nil and gold[5].right:find("g") ~= nil)
 end
 
 do
@@ -411,6 +419,9 @@ do
             == "|A:NPE_ArrowDown:14:14:0:0:255:32:32|a|cffff2020-20%|r")
     Check("flat trend shows nothing", P.TrendText({ trend = "flat", trendPct = 0.02 }, "buyer") == "")
     Check("no trend yet shows nothing", P.TrendText({}, "buyer") == "")
+    Check("a drop that rounds to 100% shows -99%: only a free item is -100%",
+        P.TrendText({ trend = "down", trendPct = -0.9988 }, "buyer"):find("-99%", 1, true) ~= nil)
+    Check("a rise is not capped", P.TrendText({ trend = "up", trendPct = 1.5 }, "buyer"):find("+150%", 1, true) ~= nil)
     Check("deal icon is the yellow burst", P.DEAL_ICON == "|A:Bonus-Objective-Star:16:16:0:0|a")
 end
 
@@ -485,6 +496,14 @@ do
     Check("silver alone", P.CoinText(500) == "5s")
     Check("large gold is not split", P.CoinText(12345678) == "1234g 56s 78c")
     Check("zero shows as copper", P.CoinText(0) == "0c")
+    Check("round coins: unit 1 keeps the amount", P.RoundCoins(1234567, 1) == 1234567)
+    Check("round coins: 1 gold and up loses its copper, to the nearest silver",
+        P.RoundCoins(1234567, 100) == 1234600 and P.RoundCoins(10049, 100) == 10000)
+    Check("round coins: then its silver, to the nearest gold", P.RoundCoins(1234567, 10000) == 1230000
+        and P.RoundCoins(15000, 10000) == 20000)
+    Check("round coins: under 1 gold stays exact", P.RoundCoins(9999, 10000) == 9999 and P.RoundCoins(57, 100) == 57)
+    Check("round coins: no price stays no price", P.RoundCoins(nil, 100) == nil)
+    Check("listing text groups thousands", P.ListingText({ total = 40223, listings = 1070 }) == "40,223 in 1,070 listings")
 end
 
 do
@@ -782,6 +801,23 @@ do
     end
     bait[7] = Tier(100, 10 ^ 7)
     Check("post: at most 3 cheap listings are passed over", P.PostPrice("best", bait, nil, nil, true) == 4)
+    -- In game: 6 at 20c under 20,582 at 25c, with a 7-day typical of 21c. 20c is the usual price,
+    -- not bait, so Best price matches it instead of the wall above.
+    price, reason = P.PostPrice("best", { Tier(20, 6), Tier(25, 20582) }, { typical = 21 }, nil, true)
+    Check("post: a thin listing at the usual price is the price, not bait", price == 20
+        and reason == "Matching 6 listed at 20c.")
+    price = P.PostPrice("best", { Tier(20, 6), Tier(25, 20582) }, { typical = 30 }, nil, true)
+    Check("post: a thin listing well under the usual price is still passed over", price == 25)
+    price, reason = P.PostPrice("best", { Tier(5, 1), Tier(20, 20582) }, nil, nil, true)
+    Check("post: big counts in the reason get commas", reason:find("Matching 20,582 listed at 20c.", 1, true) ~= nil)
+    local function Icons(copper) return "<" .. copper .. ">" end
+    price, reason = P.PostPrice("best", { Tier(5, 1), Tier(20, 50) }, nil, nil, true, Icons)
+    Check("post: the reason's prices use the coin writer it is given",
+        reason == "Skipping the cheapest (<5>): it looks far too cheap. Matching 50 listed at <20>.")
+    price, reason = P.PostPrice("last", {}, nil, nil, false, Icons)
+    Check("post: the fallback reason uses it too", reason:find("Nobody else", 1, true) ~= nil)
+    price, reason = P.PostPrice("last", { Tier(20, 1) }, nil, nil, false, Icons)
+    Check("post: and the 1c-under reason", reason == "No last price yet. 1c under the cheapest at <20> (any item level).")
 
     Check("cut: 5% at the faction houses, unknown at the goblin house", P.HouseCut("Horde|R") == 0.05
         and P.HouseCut("Alliance|R") == 0.05 and P.HouseCut("Neutral|R") == nil)
@@ -937,7 +973,7 @@ do
     title, lines = P.OverviewLines(overview, Coins)
     Check("with days of scans: average, trend, next day and the totals",
         lines[1].right == "6,580 at the last scan (avg 5,900)" and lines[2].right == "+3.1% a day"
-        and lines[3].left == "Next day, about" and lines[3].right == "6,900 items"
+        and lines[3].left == "Next day, projected" and lines[3].right == "6,900 items"
         and lines[4].left == "Listings / units" and lines[4].right == "41,230 / 1,204,553"
         and lines[5].left == "Value at lowest prices" and lines[5].right == "987654321c")
     overview.trendPct = -0.004
@@ -1587,7 +1623,7 @@ end
 
 P.DAYS_KEPT = 14
 
--- Chart line: a fit one odd listing can't tilt, its normal range and the next slot's guess
+-- Chart line: a fit one odd listing can't tilt, its normal range and the next slot's projection
 do
     --- Chart slots from a list of lows; false leaves a slot empty.
     local function Slots(lows)
@@ -1601,6 +1637,15 @@ do
         return math.abs(a - b) < 1e-9
     end
 
+    -- Axis cap: one far-off bar mustn't flatten the rest (in game: a 28s day among ~2s days).
+    local lute = Slots({ 200, 210, 190, 2800, 205, 195, 200 })
+    local cap = P.ChartCap(lute, P.ChartFit(lute), 8)
+    Check("chart cap: 3 x the median low when that is above the line's range", cap == 600)
+    Check("chart cap: none without a line", P.ChartCap(lute, nil, 8) == nil)
+    local spread = Slots({ 100, 300, 100, 300, 100, 300 })
+    Check("chart cap: never under the line's range", P.ChartCap(spread, P.ChartFit(spread), 7)
+        >= P.ChartFit(spread).fit(7) + P.ChartFit(spread).spread)
+
     Check("chart line: none under 5 bars", P.ChartFit(Slots({ 100, false, 110, 120, 130 })) == nil
         and P.ChartFit({}) == nil and P.ChartFit(nil) == nil)
 
@@ -1608,7 +1653,7 @@ do
     Check("chart line: a straight run is fit exactly", fit and fit.points == 5 and Near(fit.slope, 10)
         and Near(fit.intercept, 90) and Near(fit.fit(3), 120) and fit.first == 1)
     Check("chart line: bars on the line have no band", fit.spread == 0)
-    Check("chart line: the next slot's guess carries the line on", fit.estimate == 150)
+    Check("chart line: the next slot's projection carries the line on", fit.estimate == 150)
 
     fit = P.ChartFit(Slots({ 100, 100, 100, 5, 100, 100 }))
     Check("chart line: one odd cheap listing doesn't tilt it", Near(fit.slope, 0) and Near(fit.fit(1), 100)
@@ -1622,7 +1667,7 @@ do
     Check("chart line: 5 bars hold back one odd latest listing", Near(fit.slope, 0) and fit.spread == 0)
 
     fit = P.ChartFit(Slots({ 50, 40, 30, 20, 10 }))
-    Check("chart line: no guess at 0 or below", Near(fit.slope, -10) and fit.estimate == nil)
+    Check("chart line: no projection at 0 or below", Near(fit.slope, -10) and fit.estimate == nil)
 
     fit = P.ChartFit(Slots({ 100, 120, 100, 120, 100, 120 }))
     Check("chart line: up-and-down prices get a flat line through their middle",

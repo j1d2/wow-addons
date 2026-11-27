@@ -184,6 +184,8 @@ function Post.Refresh()
     local usable = item ~= nil and item.location ~= nil
     panel.qtyBox:SetShown(usable and item.commodity)
     panel.maxButton:SetShown(usable and item.commodity)
+    -- No item, or one followed from Blizzard's window: no count to set, so no label either.
+    panel.qtyLabel:SetShown(usable)
     panel.qtyLabel:SetText((usable and not item.commodity) and "One copy per post" or "How many")
     if item ~= nil and item.location == nil then
         panel.reasonText:SetText("Drop the item on the slot above to post it from here.")
@@ -195,7 +197,8 @@ end
 --- Fills in the price from the listings with the chosen pricing, and says why.
 local function Prefill()
     local last = (HouseLedgerDB.lastPosts[U.ViewHouseKey()] or {})[item.itemID]
-    local price, reason = Price.PostPrice(Pricing(), tiers, U.SavedStats(item.itemID), last, item.commodity)
+    local price, reason = Price.PostPrice(Pricing(), tiers, U.SavedStats(item.itemID), last, item.commodity,
+        U.CopperToText)
     SetPrice(price)
     ui.postPanel.reasonText:SetText(reason)
 end
@@ -343,10 +346,15 @@ local function EndPost(text, posted)
     if posted then
         Price.RememberPost(HouseLedgerDB, U.ViewHouseKey(), post.itemID, post.price, time())
     end
+    local left = Available()
+    if posted and post.before then
+        -- The house's answer can come before the bags update, which still count the posted ones.
+        left = math.max(0, math.min(left, post.before - post.quantity))
+    end
     post = nil
     Sell.SetStatus(text)
     if item and item.commodity then
-        ui.postPanel.qtyBox:SetText(tostring(Available()))
+        ui.postPanel.qtyBox:SetText(tostring(left))
     end
     Post.Refresh()
 end

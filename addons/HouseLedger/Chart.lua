@@ -1,7 +1,7 @@
 --[[
 The price chart, used by Buy, Market, Sell and Price Check: one bar per day's lowest price with a
-faint band up to its highest, or one bar per saved scan, picked with the Days | Scans words in its
-corner (one saved choice for every chart), with a trend line, its normal range and a guess at the
+faint band up to its highest, or one bar per saved scan, picked with the Days and Scans buttons in its
+corner (one saved choice for every chart), with a trend line, its normal range and a projection for the
 next day or scan (PriceLedger.ChartFit). And the house overview chart (items listed a day, with the
 same three) on Buy. Both draw saved data only.
 ]]
@@ -13,30 +13,36 @@ local Price, U, Chart = ns.Price, ns.U, ns.Chart
 local CHART_BAR_COLOR = { 0.35, 0.6, 1, 0.9 }
 local CHART_LATEST_COLOR = { 1, 0.82, 0, 1 }
 local CHART_RANGE_COLOR = { 0.35, 0.6, 1, 0.3 }
--- Both kinds of chart: the normal range around the trend line as a faint band, the trend line in
--- white, and the next day's (or scan's) guess in purple, so it doesn't read as one more bar.
-local TREND_BAND_COLOR = { 1, 1, 1, 0.12 }
+-- Both kinds of chart: the normal range around the trend line as a shaded band behind the bars,
+-- the trend line in white, and the next day's (or scan's) projection in purple, so it doesn't
+-- read as one more bar.
+local TREND_BAND_COLOR = { 1, 1, 1, 0.2 }
+-- A bar cut at the top of the axis (PriceLedger.ChartCap) gets a white tip this tall.
+local CUT_TIP_COLOR = { 1, 1, 1, 0.95 }
+local CUT_TIP_HEIGHT = 3
 local TREND_LINE_COLOR = { 1, 1, 1, 0.8 }
 local ESTIMATE_COLOR = { 0.72, 0.45, 1, 0.85 }
 
 -- Extra space between two days' scans on the scan view, in pixels.
 local CHART_DAY_GAP = 3
--- The view words: the one in use bright, the other grey.
-local VIEW_ON_COLOR = { 1, 1, 1 }
-local VIEW_OFF_COLOR = { 0.5, 0.5, 0.5 }
--- What each view word says, by view.
+-- The view buttons: small game buttons, the one in use lit. What each says, by view.
 local VIEW_WORDS = { days = "Days", scans = "Scans" }
+local VIEW_BUTTON_WIDTH = 40
+local VIEW_BUTTON_HEIGHT = 16
+-- The chart width the top price can't use: its 3 px inset, the 4 px gap before the Days button,
+-- and the two buttons (1 px from the corner, 2 px apart). Chart.Build anchors them that way.
+local TOP_TEXT_MARGIN = 3 + 4 + VIEW_BUTTON_WIDTH + 2 + VIEW_BUTTON_WIDTH + 1
 
 -- The price charts Chart.Build made, so a view change redraws every one on screen.
 Chart.built = {}
 
 --- Draws the trend line and its normal range on a price chart, on the bars' axis: the band from
--- the first bar to the last slot (the guess included), reaching each next slot so it runs on
+-- the first bar to the last slot (the projection included), reaching each next slot so it runs on
 -- across a day gap; the line from the first bar's middle to the last slot's. Where the line would
 -- go under 0, it stops at 0 instead. Hides both without a fit.
 -- @param chart a chart from Chart.Build
 -- @param fit from PriceLedger.ChartFit, or nil
--- @param count slots drawn, the guess included
+-- @param count slots drawn, the projection included
 -- @param Left the x of a slot's left edge, as DrawBars places bars
 -- @param Height the height in pixels of a price on the axis
 -- @param barWidth the bars' width
@@ -96,8 +102,9 @@ end
 --- Draws bars from chart slots: one bar per filled slot's low, a faint band up to its high, the
 -- last slot in gold. A slot that starts a new day gets CHART_DAY_GAP more space before it when
 -- `dayGaps` is set. With a fit, also the trend line and its normal range (DrawTrend), and the
--- guess as one more bar in purple, a gap apart. The axis runs from 0 to the highest of the
--- prices, the line's range and the guess, so none of them is cut off.
+-- projection as one more bar in purple, a gap apart. The axis runs from 0 to the highest of the
+-- prices, the line's range and the projection, but stops at PriceLedger.ChartCap: a bar past it
+-- is cut at the top with a white tip, and `chart.cutHigh` keeps the highest such price for the tip.
 -- @param chart a chart from Chart.Build
 -- @param slots the slots, oldest first; a slot without `low` is left empty
 -- @param top the highest price in the slots
@@ -123,6 +130,11 @@ local function DrawBars(chart, slots, top, dayGaps, fit)
     if fit then
         -- A straight line is highest at one of its ends; the top stays a whole copper, as it's shown.
         top = math.ceil(math.max(top, fit.fit(fit.first) + fit.spread, fit.fit(count) + fit.spread))
+        top = math.min(top, Price.ChartCap(slots, fit, count))
+    end
+    chart.cutHigh = nil
+    for index = 1, #chart.cutTips do
+        chart.cutTips[index]:Hide()
     end
     local area = chart.barArea
     local slotWidth = (chart.chartWidth - gaps * CHART_DAY_GAP) / math.max(1, count)
@@ -153,6 +165,15 @@ local function DrawBars(chart, slots, top, dayGaps, fit)
             local color = index == #slots and CHART_LATEST_COLOR or CHART_BAR_COLOR
             bar:SetColorTexture(color[1], color[2], color[3], color[4])
             bar:Show()
+            if slot.low > top then
+                local tip = chart.cutTips[index]
+                tip:ClearAllPoints()
+                tip:SetPoint("TOPLEFT", bar, "TOPLEFT", 0, 0)
+                tip:SetWidth(barWidth)
+                tip:SetHeight(CUT_TIP_HEIGHT)
+                tip:Show()
+                chart.cutHigh = math.max(chart.cutHigh or 0, slot.low)
+            end
             if high > low then
                 band:SetPoint("BOTTOMLEFT", bar, "TOPLEFT", 0, 0)
                 band:SetHeight(high - low)
@@ -179,14 +200,29 @@ local function DrawBars(chart, slots, top, dayGaps, fit)
     return top
 end
 
---- Shows which view is in use: its word bright, the other grey.
+--- Shows which view is in use: its button stays lit, as if under the mouse.
 -- @param chart a chart from Chart.Build
 -- @param view one of PriceLedger.CHART_VIEWS
 local function MarkView(chart, view)
-    for name, word in pairs(chart.viewWords) do
-        local color = name == view and VIEW_ON_COLOR or VIEW_OFF_COLOR
-        word.label:SetTextColor(color[1], color[2], color[3])
+    for name, button in pairs(chart.viewButtons) do
+        if name == view then
+            button:LockHighlight()
+        else
+            button:UnlockHighlight()
+        end
     end
+end
+
+-- Chart prices from 1 gold up leave out the copper, like the day lines (two coins at most).
+local CHART_COIN = 100
+
+--- Writes the axis's top price, rounded when the whole price can't fit left of the view buttons.
+-- @param chart from Chart.Build
+-- @param top copper at the top of the axis
+local function SetTopPrice(chart, top)
+    U.FitMoney(chart.topText, chart.chartWidth - TOP_TEXT_MARGIN, function(coins)
+        return coins(Price.RoundCoins(top, CHART_COIN))
+    end)
 end
 
 --- Draws an item's saved prices on a chart, in the saved view.
@@ -194,7 +230,7 @@ end
 -- oldest saved day (at least 7, at most the history length), so it grows as the history does.
 -- Scans: one bar per saved scan (at most PriceLedger.SCANS_KEPT), with a little space between
 -- days; an item saved before scans were kept says when they start instead.
--- The latest bar is gold. Both views add the trend line, its normal range and a purple guess at
+-- The latest bar is gold. Both views add the trend line, its normal range and a purple projection for
 -- the next day or scan from CHART_FIT_MIN_POINTS bars (PriceLedger.ChartFit). Hides the chart
 -- when there is no item.
 -- Saved data only.
@@ -220,7 +256,7 @@ function Chart.Show(chart, info)
         local top = DrawBars(chart, data.slots, data.top, true, chart.fit)
         chart.caption:SetText("Each scan, " .. data.count .. (data.count == 1 and " scan" or " scans"))
         chart.span = Price.ScanSpanText(data)
-        chart.topText:SetText(U.CopperToText(top))
+        SetTopPrice(chart, top)
         chart:Show()
         return
     end
@@ -234,7 +270,7 @@ function Chart.Show(chart, info)
     local top = DrawBars(chart, data.slots, data.top, false, chart.fit)
     chart.caption:SetText("Daily low, " .. data.days .. " days"
         .. (data.perBar > 1 and " (" .. data.perBar .. " days per bar)" or ""))
-    chart.topText:SetText(U.CopperToText(top))
+    SetTopPrice(chart, top)
     chart:Show()
 end
 
@@ -266,11 +302,15 @@ local function ShowChartTip(chart)
         GameTooltip:AddLine("White line: which way the price is going. One odd listing can't tilt it.",
             0.8, 0.8, 0.8, true)
         if fit.spread > 0 then
-            GameTooltip:AddLine("Faint band: its normal range.", 0.8, 0.8, 0.8)
+            GameTooltip:AddLine("Shaded band: its normal range.", 0.8, 0.8, 0.8)
+        end
+        if chart.cutHigh then
+            GameTooltip:AddLine("White tip: too high to fit, up to "
+                .. U.CopperToText(Price.RoundCoins(chart.cutHigh, CHART_COIN)) .. ".", 0.8, 0.8, 0.8, true)
         end
         if fit.estimate then
-            GameTooltip:AddLine("Purple: a guess at the next " .. chart.nextWord .. ", "
-                .. U.CopperToText(fit.estimate) .. ".", ESTIMATE_COLOR[1], ESTIMATE_COLOR[2], ESTIMATE_COLOR[3])
+            GameTooltip:AddLine("Purple: a projection for the next " .. chart.nextWord .. ", "
+                .. U.CopperToText(Price.RoundCoins(fit.estimate, CHART_COIN)) .. ".", ESTIMATE_COLOR[1], ESTIMATE_COLOR[2], ESTIMATE_COLOR[3])
         end
     end
     GameTooltip:AddLine("Click Days or Scans to switch.", 0.8, 0.8, 0.8)
@@ -284,37 +324,37 @@ local function HideChartTip()
     end
 end
 
---- Makes one view word: a small button that switches every price chart to its view.
+--- Makes one view button: a small game button that switches every price chart to its view.
 -- @param chart the chart it sits on
 -- @param view one of PriceLedger.CHART_VIEWS
--- @return the button, with its label
-local function ViewWord(chart, view)
-    local word = CreateFrame("Button", nil, chart)
-    word.label = U.Cell(word, "GameFontHighlightSmall", "RIGHT")
-    word.label:SetText(VIEW_WORDS[view])
-    word.label:SetPoint("RIGHT", word, "RIGHT", 0, 0)
-    word:SetSize(math.max(20, math.ceil(word.label:GetStringWidth() or 0) + 2), 14)
-    word:SetScript("OnClick", function()
+-- @return the button
+local function ViewButton(chart, view)
+    local button = CreateFrame("Button", nil, chart, "UIPanelButtonTemplate")
+    button:SetSize(VIEW_BUTTON_WIDTH, VIEW_BUTTON_HEIGHT)
+    button:SetNormalFontObject("GameFontNormalSmall")
+    button:SetHighlightFontObject("GameFontHighlightSmall")
+    button:SetText(VIEW_WORDS[view])
+    button:SetScript("OnClick", function()
         Chart.SetView(view)
         ShowChartTip(chart)
     end)
-    word:SetScript("OnEnter", function()
+    button:SetScript("OnEnter", function()
         ShowChartTip(chart)
     end)
-    word:SetScript("OnLeave", HideChartTip)
-    return word
+    button:SetScript("OnLeave", HideChartTip)
+    return button
 end
 
 --- Makes a price chart, hidden until Chart.Show fills it: a dark box, the top of its axis in its
--- top-left corner, the Days | Scans words in its top-right, three textures per slot (the low's
+-- top-left corner, the Days and Scans buttons in its top-right, three textures per slot (the low's
 -- bar, the faint range band and the trend line's normal range), enough for the longest history
--- and for SCANS_KEPT plus the guess, and the trend line when the client can draw lines. What it
+-- and for SCANS_KEPT plus the projection, and the trend line when the client can draw lines. What it
 -- shows ("Daily low, 14 days") is in its hover tip. Chart.Show places as many as it needs.
 -- @param parent the panel it belongs to
 -- @param width the chart's width
 -- @param height the chart's height
 -- @return the chart frame, with bars, bands, trendBands, line, barArea, topText, caption,
---   viewWords and emptyText
+--   viewButtons and emptyText
 function Chart.Build(parent, width, height)
     local chart = CreateFrame("Frame", nil, parent)
     chart:SetSize(width, height)
@@ -323,15 +363,14 @@ function Chart.Build(parent, width, height)
     background:SetColorTexture(0, 0, 0, 0.3)
     chart.topText = U.Cell(chart, "GameFontHighlightSmall", "LEFT")
     chart.topText:SetPoint("TOPLEFT", chart, "TOPLEFT", 3, -2)
-    -- What the chart shows; kept for the hover tip, not drawn (the view words use that corner).
+    -- What the chart shows; kept for the hover tip, not drawn (the view buttons use that corner).
     chart.caption = U.Cell(chart, "GameFontDisableSmall", "RIGHT")
     chart.caption:Hide()
-    chart.viewWords = { days = ViewWord(chart, "days"), scans = ViewWord(chart, "scans") }
-    chart.viewWords.scans:SetPoint("TOPRIGHT", chart, "TOPRIGHT", -3, -2)
-    local bar = U.Cell(chart, "GameFontDisableSmall", "RIGHT")
-    bar:SetText("|")
-    bar:SetPoint("RIGHT", chart.viewWords.scans, "LEFT", -3, 0)
-    chart.viewWords.days:SetPoint("RIGHT", bar, "LEFT", -3, 0)
+    chart.viewButtons = { days = ViewButton(chart, "days"), scans = ViewButton(chart, "scans") }
+    chart.viewButtons.scans:SetPoint("TOPRIGHT", chart, "TOPRIGHT", -1, -1)
+    chart.viewButtons.days:SetPoint("RIGHT", chart.viewButtons.scans, "LEFT", -2, 0)
+    -- A long price is cut short before it reaches the buttons.
+    chart.topText:SetPoint("RIGHT", chart.viewButtons.days, "LEFT", -4, 0)
     chart.emptyText = U.Cell(chart, "GameFontDisableSmall", "LEFT")
     chart.emptyText:SetPoint("LEFT", chart, "LEFT", 6, -6)
     chart.emptyText:SetPoint("RIGHT", chart, "RIGHT", -6, -6)
@@ -343,8 +382,8 @@ function Chart.Build(parent, width, height)
     -- Room under the top line for the bars.
     chart.barArea = height - 18
     chart.chartWidth = width
-    chart.bars, chart.bands, chart.trendBands = {}, {}, {}
-    -- One more slot than the most days or scans, for the guess.
+    chart.bars, chart.bands, chart.trendBands, chart.cutTips = {}, {}, {}, {}
+    -- One more slot than the most days or scans, for the projection.
     local slots = math.max(Price.CHART_MAX_BARS, Price.SCANS_KEPT) + 1
     for index = 1, slots do
         local barTexture = chart:CreateTexture(nil, "ARTWORK")
@@ -357,6 +396,10 @@ function Chart.Build(parent, width, height)
         trendBand:SetColorTexture(TREND_BAND_COLOR[1], TREND_BAND_COLOR[2], TREND_BAND_COLOR[3], TREND_BAND_COLOR[4])
         trendBand:Hide()
         chart.bars[index], chart.bands[index], chart.trendBands[index] = barTexture, band, trendBand
+        local cutTip = chart:CreateTexture(nil, "OVERLAY")
+        cutTip:SetColorTexture(CUT_TIP_COLOR[1], CUT_TIP_COLOR[2], CUT_TIP_COLOR[3], CUT_TIP_COLOR[4])
+        cutTip:Hide()
+        chart.cutTips[index] = cutTip
     end
     if type(chart.CreateLine) == "function" then
         chart.line = chart:CreateLine(nil, "OVERLAY")

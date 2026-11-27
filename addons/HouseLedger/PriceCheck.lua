@@ -8,6 +8,8 @@ local C, ui, state, Price, U, Chart, PC = ns.C, ns.ui, ns.state, ns.Price, ns.U,
 -- Price Check layout: column headings under the search box, the rows, then the details and the
 -- chart.
 PC.WIDTH = 400
+-- A details line's price ends this far from the right edge.
+local DETAIL_RIGHT = 16
 PC.HEADER_HEIGHT = 18
 PC.ROWS = 12
 PC.LIST_TOP = 64
@@ -50,6 +52,7 @@ end
 --- Draws Price Check's rows from the scroll position, and the status line.
 function PC.Render()
     local list = ui.priceCheck.found
+    U.SetScrollBar(ui.priceCheck.scrollBar, ui.priceCheck.offset, PC.ROWS, #list)
     for index, row in ipairs(ui.priceCheck.rows) do
         local entry = list[ui.priceCheck.offset + index]
         row.entry = entry
@@ -181,11 +184,7 @@ function PC.ShowDetails(row)
     local info = Price.Lookup(HouseLedgerDB, entry.itemID, U.PlayerHouseKey())
     local stats = info and info.stats
     ui.priceCheck.detailTitle:SetText(stats and (entry.name .. ", " .. Price.CountText(stats)) or entry.name)
-    local lines = stats and Price.WindowLines(stats, U.CopperToText) or {}
-    for index, line in ipairs(ui.priceCheck.detailLines) do
-        line.left:SetText(lines[index] and lines[index].left or "")
-        line.right:SetText(lines[index] and lines[index].right or "")
-    end
+    U.ShowWindowLines(ui.priceCheck.detailLines, stats, PC.WIDTH - C.DETAIL_VALUE_LEFT - DETAIL_RIGHT)
     Chart.Show(ui.priceCheck.chart, info)
 end
 
@@ -293,7 +292,7 @@ function PC.Build()
     local headerRow = CreateFrame("Frame", nil, ui.priceCheck)
     headerRow:SetHeight(PC.HEADER_HEIGHT)
     headerRow:SetPoint("TOPLEFT", ui.priceCheck, "TOPLEFT", 12, -PC.LIST_TOP)
-    headerRow:SetPoint("RIGHT", ui.priceCheck, "RIGHT", -12, 0)
+    headerRow:SetPoint("RIGHT", ui.priceCheck, "RIGHT", -12 - C.SCROLL_GUTTER, 0)
     local trendHeading = U.Cell(headerRow, "GameFontNormalSmall", "RIGHT")
     trendHeading:SetPoint("RIGHT", headerRow, "RIGHT", -4, 0)
     trendHeading:SetWidth(70)
@@ -322,6 +321,9 @@ function PC.Build()
     ui.priceCheck:SetScript("OnMouseWheel", function(_, delta)
         PC.Scroll(-delta * C.WHEEL_STEP)
     end)
+    ui.priceCheck.scrollBar = U.ScrollBar(ui.priceCheck, PC.Scroll)
+    ui.priceCheck.scrollBar:SetPoint("TOPRIGHT", ui.priceCheck, "TOPRIGHT", -14, -PC.ROWS_TOP)
+    ui.priceCheck.scrollBar:SetHeight(PC.ROWS * C.ROW_HEIGHT)
     if type(ChatFrameUtil) == "table" and type(ChatFrameUtil.InsertLink) == "function" then
         hooksecurefunc(ChatFrameUtil, "InsertLink", PC.FollowLink)
     end
@@ -331,7 +333,7 @@ function PC.Build()
         local row = CreateFrame("Button", nil, ui.priceCheck)
         row:SetHeight(C.ROW_HEIGHT)
         row:SetPoint("TOPLEFT", ui.priceCheck, "TOPLEFT", 12, -PC.ROWS_TOP - (index - 1) * C.ROW_HEIGHT)
-        row:SetPoint("RIGHT", ui.priceCheck, "RIGHT", -12, 0)
+        row:SetPoint("RIGHT", ui.priceCheck, "RIGHT", -12 - C.SCROLL_GUTTER, 0)
         row:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
         U.AddSelection(row)
         row.icon = row:CreateTexture(nil, "ARTWORK")
@@ -373,8 +375,8 @@ function PC.Build()
         left:SetPoint("TOPLEFT", ui.priceCheck, "TOPLEFT", 24, y)
         left:SetWidth(150)
         local right = U.Cell(ui.priceCheck, "GameFontHighlightSmall", "LEFT")
-        right:SetPoint("TOPLEFT", ui.priceCheck, "TOPLEFT", 180, y)
-        right:SetPoint("RIGHT", ui.priceCheck, "RIGHT", -16, 0)
+        right:SetPoint("TOPLEFT", ui.priceCheck, "TOPLEFT", C.DETAIL_VALUE_LEFT, y)
+        right:SetPoint("RIGHT", ui.priceCheck, "RIGHT", -DETAIL_RIGHT, 0)
         ui.priceCheck.detailLines[index] = { left = left, right = right }
     end
     ui.priceCheck.chart = Chart.Build(ui.priceCheck, PC.WIDTH - 40, 64)

@@ -8,8 +8,6 @@ local C, ui, state, U, Chart, Scan, Tooltip, Buy, Sell, Purchase, Post, PC, Hist
     ns.ui, ns.state, ns.U, ns.Chart, ns.Scan, ns.Tooltip, ns.Buy, ns.Sell, ns.Purchase, ns.Post, ns.PC, ns.History,
     ns.Settings, ns.Window
 
--- The Buy chart's height, beside the details block.
-local CHART_HEIGHT = 74
 local SELL_TAB = 2
 -- History and Settings are ours alone, like Market.
 local HISTORY_TAB = 4
@@ -51,6 +49,13 @@ local function SelectTab(id)
         end
     end
     shown:Show()
+    -- The dark box ends above the details block. History and Settings have no details block, so
+    -- it reaches down to History's totals there (on Settings, that space would be an empty band).
+    local inset = ui.frame.Inset
+    if type(inset) == "table" then
+        local tall = shown == ui.historyPanel or shown == ui.settingsPanel
+        inset:SetPoint("BOTTOMRIGHT", ui.frame, "BOTTOMRIGHT", -6, tall and History.INSET_BOTTOM or C.LIST_BOTTOM)
+    end
     if shown == ui.historyPanel then
         History.Render()
     elseif shown == ui.buyPanel then
@@ -224,11 +229,17 @@ function Window.Build()
 
     local list = CreateFrame("Frame", nil, ui.buyPanel)
     list:SetPoint("TOPLEFT", ui.frame, "TOPLEFT", 8, -C.LIST_TOP - 2 - C.FILTER_HEIGHT)
-    list:SetPoint("BOTTOMRIGHT", ui.frame, "BOTTOMRIGHT", -10, C.LIST_BOTTOM + 2)
+    list:SetPoint("BOTTOMRIGHT", ui.frame, "BOTTOMRIGHT", -10 - C.SCROLL_GUTTER, C.LIST_BOTTOM + 2)
     list:EnableMouseWheel(true)
     list:SetScript("OnMouseWheel", function(_, delta)
         Buy.Scroll(-delta * C.WHEEL_STEP)
     end)
+    -- Search results, Market and an item's listings share the rows, so they share one bar.
+    ui.buyPanel.scrollBar = U.ScrollBar(ui.buyPanel, function(rowsDown)
+        Buy.Scroll(rowsDown)
+    end)
+    ui.buyPanel.scrollBar:SetPoint("TOPLEFT", list, "TOPRIGHT", 4, -C.HEADER_HEIGHT)
+    ui.buyPanel.scrollBar:SetPoint("BOTTOMLEFT", list, "BOTTOMRIGHT", 4, 0)
     Buy.BuildHeader(list)
     ui.buyPanel.priceHeading = ui.header.priceText
     ui.buyPanel.headerTexts, ui.buyPanel.sortButtons = ui.header.texts, ui.header.sortButtons
@@ -244,12 +255,14 @@ function Window.Build()
     for index = 1, C.VISIBLE_ROWS do
         ui.rows[index] = Buy.BuildRow(list, index)
     end
-    -- The price chart sits right of the details lines, above the status lines.
-    ui.buyPanel.chart = Chart.Build(ui.buyPanel, C.CHART_WIDTH, CHART_HEIGHT)
-    ui.buyPanel.chart:SetPoint("BOTTOMRIGHT", ui.frame, "BOTTOMRIGHT", -16, C.STATUS_HEIGHT + 4)
+    -- The price chart sits right of the details lines, as tall as the details block less an even
+    -- margin above and below.
+    ui.buyPanel.chart = Chart.Build(ui.buyPanel, C.CHART_WIDTH, C.DETAIL_CHART_HEIGHT)
+    ui.buyPanel.chart:SetPoint("BOTTOMRIGHT", ui.frame, "BOTTOMRIGHT", -16, C.STATUS_HEIGHT + C.DETAIL_CHART_MARGIN)
     -- The house overview's chart takes the same spot while no row is picked.
-    ui.buyPanel.overviewChart = Chart.BuildOverview(ui.buyPanel, C.CHART_WIDTH, CHART_HEIGHT)
-    ui.buyPanel.overviewChart:SetPoint("BOTTOMRIGHT", ui.frame, "BOTTOMRIGHT", -16, C.STATUS_HEIGHT + 4)
+    ui.buyPanel.overviewChart = Chart.BuildOverview(ui.buyPanel, C.CHART_WIDTH, C.DETAIL_CHART_HEIGHT)
+    ui.buyPanel.overviewChart:SetPoint("BOTTOMRIGHT", ui.frame, "BOTTOMRIGHT", -16,
+        C.STATUS_HEIGHT + C.DETAIL_CHART_MARGIN)
     Buy.LayoutColumns(C.FRAME_WIDTH_MIN)
 
     ui.statusText = ui.buyPanel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
@@ -271,7 +284,7 @@ function Window.Build()
         left:SetPoint("TOPLEFT", ui.frame, "BOTTOMLEFT", 24, y)
         left:SetWidth(150)
         local right = U.Cell(ui.buyPanel, "GameFontHighlightSmall", "LEFT")
-        right:SetPoint("TOPLEFT", ui.frame, "BOTTOMLEFT", 180, y)
+        right:SetPoint("TOPLEFT", ui.frame, "BOTTOMLEFT", C.DETAIL_VALUE_LEFT, y)
         right:SetPoint("RIGHT", ui.frame, "RIGHT", -16, 0)
         ui.buyPanel.detailLines[index] = { left = left, right = right }
     end

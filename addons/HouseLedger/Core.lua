@@ -32,7 +32,13 @@ C.FRAME_WIDTH_MIN = 440
 C.STATUS_HEIGHT = 48
 C.DETAIL_LINES = 5
 C.DETAIL_LINE_HEIGHT = 15
+-- Where a details line's price starts, from the window's left edge (Buy and Price Check).
+C.DETAIL_VALUE_LEFT = 180
 C.DETAIL_HEIGHT = (C.DETAIL_LINES + 1) * C.DETAIL_LINE_HEIGHT + 10
+-- The Buy details charts (an item's prices, the house overview) fill the details block's height,
+-- this far from the dark box above and the status lines below.
+C.DETAIL_CHART_MARGIN = 6
+C.DETAIL_CHART_HEIGHT = C.DETAIL_HEIGHT - 2 * C.DETAIL_CHART_MARGIN
 
 -- The results list sits in the template's inset, between the search
 -- bar (60 from the top) and the details block. The filter row (quality, item level, and
@@ -45,7 +51,10 @@ C.FILTER_HEIGHT = 26
 -- (538 - 60 - 26 - 148 - 26) / 18 = 15 rows.
 C.VISIBLE_ROWS = math.floor((C.HOUSE_HEIGHT - C.LIST_TOP - C.FILTER_HEIGHT - C.LIST_BOTTOM - C.HEADER_HEIGHT) / C.ROW_HEIGHT)
 C.WHEEL_STEP = 3
--- The price chart's width beside the Buy details on a wide window.
+-- Room kept at a list's right edge for its scroll bar (Blizzard's MinimalScrollBar is 8 wide),
+-- whether or not the bar shows, so the columns never jump.
+C.SCROLL_GUTTER = 14
+-- The Buy details charts' width when built; Buy sizes them to the window when it lays out.
 C.CHART_WIDTH = 170
 
 -- Column headings, and the way each first sorts when clicked (true is low to high, A to Z).
@@ -168,6 +177,60 @@ function U.CopperToText(copper)
         return GetMoneyString(copper, true)
     end
     return Price.CoinText(copper)
+end
+
+--- The width of a cell's whole text, even when the cell cuts it short.
+-- @param cell a font string
+-- @return pixels
+function U.TextWidth(cell)
+    -- GetStringWidth can stop at the cell's width; the unbounded width is the whole text's.
+    return cell.GetUnboundedStringWidth and cell:GetUnboundedStringWidth() or cell:GetStringWidth() or 0
+end
+
+-- The coin sizes FitMoney tries, smallest kept coin first: every coin, then no copper on amounts
+-- of 1 gold or more, then no silver either.
+local MONEY_UNITS = { 1, 100, 10000 }
+
+--- Writes text holding money into a cell, rounding amounts of 1 gold or more until it fits.
+-- A cell cuts long text with "...", and a cut through a coin icon's markup leaves a stray "|".
+-- The width is the one the code gave the cell, not the cell's own: a cell's size can be unknown
+-- until the game first lays it out.
+-- @param cell the font string
+-- @param width the room it has, in pixels
+-- @param build function(coins) returning the text, writing each amount with coins(copper)
+-- @return the text it set
+function U.FitMoney(cell, width, build)
+    local text
+    for _, unit in ipairs(MONEY_UNITS) do
+        text = build(function(copper)
+            return U.CopperToText(Price.RoundCoins(copper, unit))
+        end)
+        cell:SetText(text)
+        if U.TextWidth(cell) <= width then
+            break
+        end
+    end
+    return text
+end
+
+--- Fills the details block's lines from PriceLedger.WindowLines. A price line is rounded (FitMoney)
+-- only when it can't fit whole.
+-- @param lines the line cells: { left, right } each
+-- @param stats the item's saved stats, or nil to empty the lines
+-- @param width the room each line's right cell has, in pixels
+function U.ShowWindowLines(lines, stats, width)
+    local exact = stats and Price.WindowLines(stats, U.CopperToText) or {}
+    for index, line in ipairs(lines) do
+        local source = exact[index]
+        line.left:SetText(source and source.left or "")
+        if source then
+            U.FitMoney(line.right, width, function(coins)
+                return Price.WindowLines(stats, coins)[index].right
+            end)
+        else
+            line.right:SetText("")
+        end
+    end
 end
 
 --- A wait as whole minutes (rounded up) from 60 seconds on, otherwise seconds.
@@ -485,6 +548,61 @@ function U.Cell(parent, font, justify)
     -- wrapping onto the line below.
     text:SetWordWrap(false)
     return text
+end
+
+--- Puts Blizzard's thin scroll bar (MinimalScrollBar) beside a list. It shows only while the
+-- list has more rows than fit. Its thumb, arrows and wheel move the list through the list's own
+-- scroll function, so they read rows already received and send nothing.
+-- @param parent the frame that owns the bar
+-- @param scroll the list's scroll function, called with the rows to move (negative moves up)
+-- @return the bar; place it with SetPoint, then call U.SetScrollBar on every render
+function U.ScrollBar(parent, scroll)
+    local bar = CreateFrame("EventFrame", nil, parent, "MinimalScrollBar")
+    bar.offset, bar.maxOffset = 0, 0
+    -- The wheel over the bar moves as far as the wheel over the list: WHEEL_STEP rows (the
+    -- game's default is two arrow clicks).
+    bar.wheelPanScalar = C.WHEEL_STEP
+    bar:SetHideIfUnscrollable(true)
+    bar:RegisterCallback("OnScroll", function(_, percentage)
+        local target = U.ScrollTarget(percentage, bar.maxOffset)
+        if target ~= bar.offset then
+            -- The list redraws and calls U.SetScrollBar; the bar is already where the hand put it.
+            bar.moving = true
+            scroll(target - bar.offset)
+            bar.moving = false
+        end
+    end, bar)
+    return bar
+end
+
+--- The first row to show for a scroll bar position.
+-- @param percentage the bar's position, 0 (top) to 1 (bottom)
+-- @param maxOffset the last offset the list can scroll to
+-- @return the offset, a whole row
+function U.ScrollTarget(percentage, maxOffset)
+    if maxOffset <= 0 or type(percentage) ~= "number" then
+        return 0
+    end
+    return math.max(0, math.min(maxOffset, math.floor(percentage * maxOffset + 0.5)))
+end
+
+--- Matches a scroll bar to its list: thumb size from how much shows, thumb place from the offset,
+-- one row per arrow click. The bar hides itself when everything fits.
+-- @param bar a bar from U.ScrollBar
+-- @param offset the list's first shown row, from 0
+-- @param shown how many rows fit
+-- @param total how many rows the list has
+function U.SetScrollBar(bar, offset, shown, total)
+    if bar == nil then
+        return
+    end
+    local maxOffset = math.max(0, total - shown)
+    bar.offset, bar.maxOffset = math.min(offset, maxOffset), maxOffset
+    bar:SetVisibleExtentPercentage(total > 0 and math.min(1, shown / total) or 1)
+    bar:SetPanExtentPercentage(maxOffset > 0 and 1 / maxOffset or 1)
+    if not bar.moving then
+        bar:SetScrollPercentage(maxOffset > 0 and bar.offset / maxOffset or 0)
+    end
 end
 
 --- The cells of the header or of a row, in the form AnchorCells takes.

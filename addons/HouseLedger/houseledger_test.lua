@@ -91,6 +91,8 @@ function FrameMethods:SetWidth(width) NoteIfBlocked(self) self.width = width end
 function FrameMethods:GetWidth() return self.width end
 function FrameMethods:GetRight() return self.right end
 function FrameMethods:GetHeight() return self.height end
+-- Text width: world.charWidth per character (0 unless a test sets it).
+function FrameMethods:GetStringWidth() return #(self.text or "") * (world.charWidth or 0) end
 function FrameMethods:SetTextColor(r, g, b) self.color = { r, g, b } end
 function FrameMethods:SetAlpha(alpha) self.alpha = alpha end
 function FrameMethods:SetTexture(texture) self.texture = texture end
@@ -303,6 +305,27 @@ local function Setup(opts)
         object.template = template
         if template == "ButtonFrameTemplate" then
             object.Inset = NewObject("Frame")
+        end
+        -- Like Blizzard's MinimalScrollBar: a set position fires OnScroll, as the game's does, and
+        -- with hideIfUnscrollable it shows only while part of the list is out of view.
+        if template == "MinimalScrollBar" then
+            object.callbacks = {}
+            object.RegisterCallback = function(self, event, fn, owner) self.callbacks[event] = { fn, owner } end
+            object.SetHideIfUnscrollable = function(self, hide) self.hideIfUnscrollable = hide end
+            object.SetPanExtentPercentage = function(self, pan) self.pan = pan end
+            object.SetVisibleExtentPercentage = function(self, visible)
+                self.visible = visible
+                if self.hideIfUnscrollable then
+                    self.shown = visible > 0 and visible < 1
+                end
+            end
+            object.SetScrollPercentage = function(self, percentage)
+                self.percentage = percentage
+                local callback = self.callbacks.OnScroll
+                if callback then
+                    callback[1](callback[2], percentage)
+                end
+            end
         end
         -- Like the game's secure click button: protected, and so is its
         -- parent. Its click runs Blizzard's code, which may press the
@@ -1385,6 +1408,16 @@ do
         WheelDown()
     end
     Check("scroll stops at the last result", rows[15].nameText.text == "Item 30" and rows[1].nameText.text == "Item 16")
+    local bar = MainFrame().buyPanel.scrollBar
+    Check("scroll bar: shows while rows are out of view, its thumb at the bottom, half the list in view",
+        bar.shown and bar.template == "MinimalScrollBar" and bar.percentage == 1 and bar.visible == 15 / 30)
+    bar:SetScrollPercentage(0)
+    Check("scroll bar: dragging it to the top moves the list there and sends nothing",
+        rows[1].nameText.text == "Item 1" and StatusLine() == "Showing 1-15 of 30." and #world.browseQueries == queries)
+    bar:SetScrollPercentage(0.5)
+    Check("scroll bar: halfway shows the middle rows, a whole row at a time", rows[1].nameText.text == "Item 9"
+        and bar.offset == 8)
+    bar:SetScrollPercentage(0)
     for _ = 1, 6 do
         WheelUp()
     end
@@ -2474,15 +2507,23 @@ do
     Check("with saved scans, Buy shows the house overview",
         panel.detailTitle.text == "House overview, 5 days of scans"
         and Line(1) == "Items listed = 1 at the last scan (avg 1)" and Line(2) == "Trend = steady"
-        and Line(3) == "Next day, about = 1 item" and Line(4) == "Listings / units = from your next scan")
-    Check("its chart shows each day and the next day's estimate", chart.shown and chart.slotCount == 8
+        and Line(3) == "Next day, projected = 1 item" and Line(4) == "Listings / units = from your next scan")
+    Check("its chart shows each day and the next day's projection", chart.shown and chart.slotCount == 8
         and chart.caption.text == "Items listed, 7 days" and chart.bars[7].shown and chart.bars[8].shown
         and not chart.bars[1].shown and not chart.bars[9].shown)
-    Check("the last scan's day is gold, the estimate purple", chart.bars[7].colorTexture[1] == 1
+    Check("the last scan's day is gold, the projection purple", chart.bars[7].colorTexture[1] == 1
         and chart.bars[8].colorTexture[3] == 1 and chart.bars[8].colorTexture[2] < 0.5
         and chart.bars[6].colorTexture[1] < 1)
-    Check("the overview chart fills the room right of its lines", chart.chartWidth == MainFrame().width - 396
-        and chart.barArea == 62)
+    -- The details block runs from 48 (the status lines) to 148 (the dark box) above the window's
+    -- bottom; the chart fills it less 6 px above and below.
+    local anchor = chart.points[#chart.points]
+    Check("the overview chart fills the room right of its lines, centred in the details block",
+        chart.chartWidth == MainFrame().width - 396 and chart.barArea + 18 == 88 and anchor[1] == "BOTTOMRIGHT"
+        and anchor[5] == 54 and 54 + 88 == 148 - 6)
+    local panel = MainFrame().buyPanel
+    local titleRight = panel.detailTitle.points[#panel.detailTitle.points]
+    Check("the overview's title and lines end clear of its chart", titleRight[1] == "RIGHT"
+        and titleRight[4] == -(16 + chart.chartWidth + 10))
     Check("the trend line runs across the chart", chart.line.shown and chart.line.startPoint ~= nil
         and chart.line.endPoint[4] > chart.line.startPoint[3])
     Check("the overview sends nothing", #world.browseQueries == 0 and world.replicateCalls == 0)
@@ -2595,13 +2636,13 @@ do
     row:GetScript("OnClick")(row)
     local chart = panel.chart
     local heights = BarHeights(chart)
-    Check("a row click shows its chart, 7 days for a young item, and the next day's guess",
+    Check("a row click shows its chart, 7 days for a young item, and the next day's projection",
         chart.shown and chart.slotCount == 8 and chart.caption.text == "Daily low, 7 days" and #chart.bars == 31)
     Check("days with scans have bars, the rest none", heights[7] and heights[3] and not heights[2] and not heights[1]
         and heights[8] and not heights[9] and not heights[31])
     Check("bars scale to the chart's top price", heights[7] == chart.barArea and heights[3] == chart.barArea)
     Check("the latest day is gold", chart.bars[7].colorTexture[1] == 1 and chart.bars[6].colorTexture[1] < 1)
-    Check("7 days and the guess share the chart's width, the guess a gap apart",
+    Check("7 days and the projection share the chart's width, the projection a gap apart",
         chart.bars[2].points[1][4] == math.floor((chart.chartWidth - 3) / 8) + 1)
     Check("the chart says its top price", chart.topText.text == "<money 100>")
     Check("the chart sends nothing", #world.browseQueries == queries)
@@ -2618,7 +2659,9 @@ do
     Fire("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
     local row = ResultRows()[1]
     row:GetScript("OnClick")(row)
-    Check("a narrow window leaves the chart out", not MainFrame().buyPanel.chart.shown)
+    local title = MainFrame().buyPanel.detailTitle
+    Check("a narrow window leaves the chart out, and the details run to the margin",
+        not MainFrame().buyPanel.chart.shown and title.points[#title.points][4] == -16)
 end
 
 do
@@ -2633,6 +2676,24 @@ do
     world.commodityResults = { { itemID = 2589, unitPrice = 120, quantity = 2, owners = {} } }
     Fire("COMMODITY_SEARCH_RESULTS_UPDATED", 2589)
     Check("a dropped item with saved prices shows its chart", chart.shown and BarHeights(chart)[7])
+    local frameWidth = MainFrame().width
+    Check("the Sell chart sits right of the value lines, as tall as they are", chart.points[1][1] == "TOPRIGHT"
+        and chart.points[1][5] == -130 and chart.barArea + 18 == 187 and chart.chartWidth == frameWidth - 180 - 16 - 16)
+    world.charWidth = 2
+    Drop({ itemID = 2589, commodity = true })
+    Fire("COMMODITY_SEARCH_RESULTS_UPDATED", 2589)
+    local widest = 0
+    for _, value in pairs(MainFrame().sellPanel.values) do
+        widest = math.max(widest, #value.text * 2)
+    end
+    Check("it starts right of the widest value", widest > 0 and chart.chartWidth == frameWidth - 180 - widest - 16 - 16)
+    world.charWidth = 60
+    Drop({ itemID = 2589, commodity = true })
+    Fire("COMMODITY_SEARCH_RESULTS_UPDATED", 2589)
+    Check("with no room beside the values it goes under the hint, inside the dark box", chart.shown
+        and chart.points[1][1] == "TOPLEFT" and chart.points[1][5] == -341 and chart.barArea + 18 == 45
+        and chart.chartWidth == frameWidth - 40)
+    world.charWidth = nil
     Click("Reset")
     Check("Reset hides it", not chart.shown)
 end
@@ -2666,7 +2727,7 @@ do
 end
 
 do
-    -- Days | Scans: one saved choice for every price chart; the scan view has a bar per scan.
+    -- The Days and Scans buttons: one saved choice for every price chart; the scan view has a bar per scan.
     Setup({ screenRight = 1400 })
     Load()
     SaveDailyHistory(3)
@@ -2681,16 +2742,17 @@ do
     row:GetScript("OnClick")(row)
     local chart = MainFrame().buyPanel.chart
     local queries = #world.browseQueries
-    Check("charts open on days, its word bright", chart.caption.text == "Daily low, 7 days"
-        and chart.viewWords.days.label.color[1] == 1 and chart.viewWords.scans.label.color[1] < 1)
+    Check("charts open on days, its button lit", chart.caption.text == "Daily low, 7 days"
+        and chart.viewButtons.days.highlightLocked and not chart.viewButtons.scans.highlightLocked
+        and chart.viewButtons.days.template == "UIPanelButtonTemplate")
     chart:GetScript("OnEnter")(chart)
     Check("hovering the chart says what it shows", _G.GameTooltip.text == "Daily low, 7 days")
-    chart.viewWords.scans:GetScript("OnClick")(chart.viewWords.scans)
+    chart.viewButtons.scans:GetScript("OnClick")(chart.viewButtons.scans)
     local heights = BarHeights(chart)
     Check("Scans redraws the chart at once, a bar per scan", chart.shown and chart.slotCount == 7
         and chart.caption.text == "Each scan, 4 scans" and heights[4] and heights[7] and not heights[3])
-    Check("the scan view is saved and its word bright", HouseLedgerDB.settings.chartView == "scans"
-        and chart.viewWords.scans.label.color[1] == 1 and chart.viewWords.days.label.color[1] < 1)
+    Check("the scan view is saved and its button lit", HouseLedgerDB.settings.chartView == "scans"
+        and chart.viewButtons.scans.highlightLocked and not chart.viewButtons.days.highlightLocked)
     Check("the cheaper scan has the shorter bar", heights[7] < heights[6])
     local x = {}
     for index = 5, 7 do
@@ -2714,7 +2776,7 @@ do
     Fire("COMMODITY_SEARCH_RESULTS_UPDATED", 4306)
     Check("an item saved before scans says when they start", sellChart.shown and sellChart.emptyText.shown
         and sellChart.caption.text == "Each scan: none saved yet" and not BarHeights(sellChart)[1])
-    sellChart.viewWords.days:GetScript("OnClick")(sellChart.viewWords.days)
+    sellChart.viewButtons.days:GetScript("OnClick")(sellChart.viewButtons.days)
     Check("Days brings its daily bars back", sellChart.shown and not sellChart.emptyText.shown
         and sellChart.caption.text == "Daily low, 7 days" and HouseLedgerDB.settings.chartView == "days")
 end
@@ -2766,7 +2828,7 @@ local function TipHas(lines, text)
 end
 
 do
-    -- Trend line, normal range and guess on a price chart, like the house overview's.
+    -- Trend line, normal range and projection on a price chart, like the house overview's.
     Setup({ screenRight = 1400 })
     Load()
     -- Rising 10 a day, with one odd cheap day that mustn't tilt the line.
@@ -2775,14 +2837,14 @@ do
     local queries = #world.browseQueries
     local slotWidth = (chart.chartWidth - 3) / 8
     local middle = 1 + math.max(2, math.floor(slotWidth) - 2) / 2
-    Check("a price chart gets a trend line from its first bar to the guess", chart.line and chart.line.shown
+    Check("a price chart gets a trend line from its first bar to the projection", chart.line and chart.line.shown
         and chart.line.startPoint[3] == middle and chart.line.endPoint[3] > chart.bars[8].points[1][4])
     Check("the odd cheap day doesn't tilt it: it runs 100 to 170",
         chart.line.startPoint[4] == 2 + 100 / 170 * chart.barArea and chart.line.endPoint[4] == 2 + chart.barArea)
-    Check("the guess is the line at the next day, in purple", chart.slotCount == 8 and chart.bars[8].shown
+    Check("the projection is the line at the next day, in purple", chart.slotCount == 8 and chart.bars[8].shown
         and chart.bars[8].height == chart.barArea and chart.bars[8].colorTexture[1] == 0.72)
     Check("the latest real day stays gold", chart.bars[7].colorTexture[1] == 1)
-    Check("the axis grows to fit the guess", chart.topText.text == "<money 170>")
+    Check("the axis grows to fit the projection", chart.topText.text == "<money 170>")
     local bands = 0
     for _, band in ipairs(chart.trendBands) do
         bands = bands + (band.shown and 1 or 0)
@@ -2790,20 +2852,20 @@ do
     Check("prices on the line get no normal-range band", bands == 0)
     local lines = ChartTipLines(chart)
     Check("the hover tip says what the line and the purple bar are", TipHas(lines, "White line")
-        and TipHas(lines, "Purple: a guess at the next day, <money 170>.") and not TipHas(lines, "Faint band"))
+        and TipHas(lines, "Purple: a projection for the next day, <money 170>.") and not TipHas(lines, "Shaded band"))
     Check("drawing it sends nothing", #world.browseQueries == queries)
 
-    chart.viewWords.scans:GetScript("OnClick")(chart.viewWords.scans)
+    chart.viewButtons.scans:GetScript("OnClick")(chart.viewButtons.scans)
     lines = ChartTipLines(chart)
-    Check("Scans draws them per scan, the guess for the next scan", chart.line.shown and chart.slotCount == 8
-        and TipHas(lines, "Purple: a guess at the next scan"))
+    Check("Scans draws them per scan, the projection for the next scan", chart.line.shown and chart.slotCount == 8
+        and TipHas(lines, "Purple: a projection for the next scan"))
 
     HouseLedgerDB.houses["Alliance|TestRealm"].items[4306].scans = nil
     local row = ResultRows()[1]
     row:GetScript("OnClick")(row)
-    Check("an item without scans hides the line and the guess", chart.emptyText.shown and not chart.line.shown
+    Check("an item without scans hides the line and the projection", chart.emptyText.shown and not chart.line.shown
         and not chart.bars[8].shown and not TipHas(ChartTipLines(chart), "White line"))
-    chart.viewWords.days:GetScript("OnClick")(chart.viewWords.days)
+    chart.viewButtons.days:GetScript("OnClick")(chart.viewButtons.days)
 end
 
 do
@@ -2816,10 +2878,29 @@ do
     for index, band in ipairs(chart.trendBands) do
         shown[index] = band.shown
     end
-    Check("prices that go up and down get the normal-range band, first bar to the guess",
+    Check("prices that go up and down get the normal-range band, first bar to the projection",
         shown[2] and shown[8] and not shown[1] and not shown[9] and chart.line.startPoint[4] == chart.line.endPoint[4])
-    Check("the tip names the band", TipHas(ChartTipLines(chart), "Faint band: its normal range."))
+    Check("the tip names the band", TipHas(ChartTipLines(chart), "Shaded band: its normal range."))
+    Check("the band is shaded at 20% white, so it shows", chart.trendBands[2].colorTexture[4] == 0.2)
     Check("the axis grows to the band's top, in whole copper", chart.topText.text == "<money 125>")
+end
+
+do
+    -- One far-off day (in game: 28s among ~2s days) mustn't flatten the rest: the axis stops at
+    -- 3 x the median low, and that bar is cut at the top with a white tip.
+    Setup({ screenRight = 1400 })
+    Load()
+    SaveDailyPrices({ 200, 210, 190, 2800, 205, 195, 200 })
+    local chart = ShowBuyChart()
+    Check("an outlier: the axis stops at 3 x the median low", chart.topText.text == "<money 600>")
+    Check("an outlier: its bar reaches the top with a white tip, the rest keep their height",
+        chart.bars[4].height == chart.barArea and chart.cutTips[4].shown and not chart.cutTips[3].shown
+        and chart.bars[1].height == math.floor(200 / 600 * chart.barArea + 0.5))
+    Check("an outlier: the tip gives its real price", TipHas(ChartTipLines(chart), "White tip: too high to fit, up to <money 2800>."))
+    SaveDailyPrices({ 200, 210, 190, 220, 205, 195, 200 })
+    local row = ResultRows()[1]
+    row:GetScript("OnClick")(row)
+    Check("no outlier: no cut, no tip line", not chart.cutTips[4].shown and not TipHas(ChartTipLines(chart), "White tip"))
 end
 
 do
@@ -2832,38 +2913,38 @@ do
         and chart.line.startPoint[3] > chart.bars[2].points[1][4]
         and chart.line.startPoint[3] < chart.bars[3].points[1][4])
 
-    -- A steep fall: the line stops where it reaches 0, and there's no guess under 0.
+    -- A steep fall: the line stops where it reaches 0, and there's no projection under 0.
     Setup({ screenRight = 1400 })
     Load()
     SaveDailyPrices({ 800, 600, 400, 200, 3, 2, 1 })
     chart = ShowBuyChart()
-    Check("a line that would end under 0 stops at 0, with no guess", chart.line.endPoint[4] == 2
+    Check("a line that would end under 0 stops at 0, with no projection", chart.line.endPoint[4] == 2
         and chart.line.endPoint[3] > chart.bars[5].points[1][4] and chart.line.endPoint[3] < chart.bars[7].points[1][4]
         and chart.slotCount == 7 and not chart.bars[8].shown)
 end
 
 do
-    -- Too few bars: no line, band or guess.
+    -- Too few bars: no line, band or projection.
     Setup({ screenRight = 1400 })
     Load()
     SaveDailyPrices({ 100, 110, 120, 130 })
     local chart = ShowBuyChart()
-    Check("4 days: no line or guess yet", chart.shown and not chart.line.shown and chart.slotCount == 7
+    Check("4 days: no line or projection yet", chart.shown and not chart.line.shown and chart.slotCount == 7
         and not chart.bars[8].shown and not TipHas(ChartTipLines(chart), "White line"))
 end
 
 do
-    -- 60 days kept: every price chart shows 2 days per bar, at most 30 bars and the guess.
+    -- 60 days kept: every price chart shows 2 days per bar, at most 30 bars and the projection.
     Setup({ screenRight = 1400 })
     Load()
     HouseLedgerPrice.SetHistoryDays(HouseLedgerDB, 60)
     SaveDailyHistory(60)
     local chart = ShowBuyChart()
     local heights = BarHeights(chart)
-    Check("60 days chart as 30 bars of 2 days, plus the guess", chart.slotCount == 31
+    Check("60 days chart as 30 bars of 2 days, plus the projection", chart.slotCount == 31
         and heights[1] and heights[30] and heights[31] and #chart.bars == 31)
     Check("its caption says 2 days per bar", chart.caption.text == "Daily low, 60 days (2 days per bar)")
-    Check("the guess is for the next 2 days", TipHas(ChartTipLines(chart), "Purple: a guess at the next 2 days"))
+    Check("the projection is for the next 2 days", TipHas(ChartTipLines(chart), "Purple: a projection for the next 2 days"))
     local overview = MainFrame().buyPanel.overviewChart
     Click("Clear")
     Check("the house overview shows the last 30 days", overview.shown and overview.slotCount <= 31)
@@ -2989,6 +3070,10 @@ do
     Check("it stops at the last match", rows[12].nameText.text == "Ore 30" and window.status.text == "19-30 of 30 items. Scroll for more.")
     window:GetScript("OnMouseWheel")(window, 1)
     Check("and scrolls back up", rows[1].nameText.text == "Ore 16")
+    Check("price check: its scroll bar shows and follows the wheel", window.scrollBar.shown
+        and window.scrollBar.percentage == 15 / 18)
+    window.scrollBar:SetScrollPercentage(0)
+    Check("price check: dragging the bar up moves the list", rows[1].nameText.text == "Ore 01")
 
     window.sortButtons.price:GetScript("OnClick")(window.sortButtons.price)
     Check("Price sorts cheapest first and goes back to the top", rows[1].nameText.text == "Ore 02"
@@ -3294,6 +3379,22 @@ local function LinenListings()
         { itemID = 2589, quantity = 5, unitPrice = 20, auctionID = 3, containsOwnerItem = true, numOwnerItems = 5 },
     }
     Fire("COMMODITY_SEARCH_RESULTS_UPDATED", 2589)
+end
+
+do
+    -- In game: "Linen Cloth: 80 listings, 44412 for sale." Big counts get commas.
+    Setup()
+    Load()
+    world.commodities = { [2589] = true }
+    local panel = PickFirstResult({ { itemKey = { itemID = 2589, itemLevel = 0, itemSuffix = 0 }, minPrice = 24,
+        totalQuantity = 20624 } })
+    Press(panel.listingsButton)
+    world.commodityResults = {
+        { itemID = 2589, quantity = 306, unitPrice = 24, auctionID = 1, containsOwnerItem = false, numOwnerItems = 0 },
+        { itemID = 2589, quantity = 20318, unitPrice = 25, auctionID = 2, containsOwnerItem = false, numOwnerItems = 0 },
+    }
+    Fire("COMMODITY_SEARCH_RESULTS_UPDATED", 2589)
+    Check("listings: the status groups how many are for sale", StatusLine():find("2 listings, 20,624 for sale.", 1, true) ~= nil)
 end
 
 do
@@ -3936,9 +4037,11 @@ do
     Click("Sell")
     local sell = MainFrame().sellPanel
     local panel = sell.postPanel
-    Check("post: nothing to post until an item is dropped", not panel.postButton.enabled)
+    Check("post: nothing to post until an item is dropped, and no How many without its box",
+        not panel.postButton.enabled and not panel.qtyLabel.shown and not panel.qtyBox.shown)
     Drop({ itemID = 2589, commodity = true, count = 60 })
-    Check("post: how many starts at all in the bags", panel.qtyBox.text == "60" and panel.qtyBox.shown)
+    Check("post: how many starts at all in the bags", panel.qtyBox.text == "60" and panel.qtyBox.shown
+        and panel.qtyLabel.shown)
     world.commodityResults = {
         { itemID = 2589, unitPrice = 98, quantity = 50, containsOwnerItem = false },
         { itemID = 2589, unitPrice = 101, quantity = 400, containsOwnerItem = false },
@@ -3947,7 +4050,7 @@ do
     local boxes = panel.priceBoxes
     Check("post: the price is filled in from the listings, matching the cheapest stackable",
         boxes.gold.text == "" and boxes.silver.text == "" and boxes.copper.text == "98"
-        and panel.reasonText.text == "Matching 50 listed at 98c.")
+        and panel.reasonText.text == "Matching 50 listed at <money 98>.")
     Check("post: the deposit and what the sale brings after the 5% cut", panel.moneyText.text
         == "Deposit <money 120>, you get <money 5586> after the cut")
     Check("post: Post can be clicked", panel.postButton.enabled and panel.postButton.text == "Post")
@@ -3967,6 +4070,9 @@ do
     Fire("AUCTION_HOUSE_AUCTION_CREATED", 77)
     Check("post: the house made it: says so and remembers the price", SellStatus():find("Posted 60 Item 2589", 1, true)
         and HouseLedgerDB.lastPosts["Alliance|TestRealm"][2589][1] == 97 and panel.postButton.text == "Post")
+    -- In game the house's answer came before the bags updated, so How many still said all of them.
+    Check("post: How many drops to what's left, before the bags catch up", panel.qtyBox.text == "0")
+    Type(panel.qtyBox, "60")
 
     Fire("COMMODITY_SEARCH_RESULTS_UPDATED", 2589)
     Check("post: new listings never change a price already there", boxes.copper.text == "97")
@@ -4057,6 +4163,179 @@ do
 
     Click("Reset")
     Check("post: Reset empties it", not panel.postButton.enabled and boxes.copper.text == "")
+end
+
+do
+    -- The Buy list's scroll bar never shows a stale thumb: Clear, an item's listings, Back and Market.
+    Setup()
+    Load()
+    OpenHouse()
+    world.commodities = { [1] = true }
+    world.browseResults = BrowseResults(1, 30)
+    Fire("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
+    local panel = MainFrame().buyPanel
+    local bar = panel.scrollBar
+    Check("buy bar: wheel over the bar moves as far as the wheel over the list", bar.wheelPanScalar == 3)
+    Click("Clear")
+    Check("buy bar: Clear hides it with the rows", not bar.shown)
+    Fire("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
+    local row = ResultRows()[1]
+    row:GetScript("OnClick")(row)
+    Press(panel.listingsButton)
+    world.commodityResults = {}
+    for index = 1, 20 do
+        world.commodityResults[index] = { itemID = 1, quantity = 1, unitPrice = 10 + index, auctionID = index,
+            containsOwnerItem = false, numOwnerItems = 0 }
+    end
+    Fire("COMMODITY_SEARCH_RESULTS_UPDATED", 1)
+    Check("buy bar: an item's listings get their own thumb", bar.shown and bar.visible == 15 / 20
+        and bar.percentage == 0)
+    local queries, searches, buys = #world.browseQueries, #world.itemQueries, #world.buys
+    bar:SetScrollPercentage(1)
+    Check("buy bar: dragging through the listings moves them and sends nothing", bar.offset == 5
+        and #world.browseQueries == queries and #world.itemQueries == searches and #world.buys == buys)
+    Press(panel.backButton)
+    Check("buy bar: Back puts the search results' thumb back", bar.shown and bar.visible == 15 / 30
+        and bar.percentage == 0)
+    Click("Market")
+    Check("buy bar: an empty Market hides it", not bar.shown)
+end
+
+do
+    -- History: the list fills the dark box down to the totals, and a scroll bar shows when it is longer.
+    Setup()
+    Load()
+    local frame = MainFrame()
+    for index = 1, 30 do
+        HouseLedgerDB.ledger.entries[index] = { time = world.now - 100 + index, who = "Tester Vale", realm = "TestRealm",
+            kind = "bought", name = string.format("Thing %02d", index), count = 1, bid = 100, source = "mail" }
+    end
+    local tab = TabNamed("History")
+    tab:GetScript("OnClick")(tab)
+    local panel = frame.historyPanel
+    local inset = frame.Inset.points[#frame.Inset.points]
+    Check("history: the dark box reaches down to the totals on this tab", inset[1] == "BOTTOMRIGHT"
+        and inset[5] == 88)
+    local lastRow = panel.rows[#panel.rows]
+    Check("history: 18 rows, the last still inside the box", #panel.rows == 18
+        and 538 + lastRow.points[1][5] - 18 >= 88)
+    Check("history: the totals sit under the box", panel.totals.points[1][5] + 26 <= 88)
+    local bar = panel.scrollBar
+    Check("history: a scroll bar shows, at the top", bar.shown and bar.percentage == 0
+        and panel.rows[1].cells.name.text == "Thing 30")
+    panel:GetScript("OnMouseWheel")(panel, -1)
+    Check("history: the wheel moves the bar too", bar.percentage == 3 / 12)
+    bar:SetScrollPercentage(1)
+    Check("history: dragging the bar down shows the oldest", panel.rows[18].cells.name.text == "Thing 01")
+    TabNamed("Buy"):GetScript("PostClick")(TabNamed("Buy"))
+    inset = frame.Inset.points[#frame.Inset.points]
+    Check("history: other tabs get the box back above their details", inset[5] == 148)
+end
+
+do
+    -- An item's chart fills the details block's height, and its width from x 380 to the right
+    -- margin; it starts further right only when a price line needs the room.
+    Setup({ screenRight = 1400 })
+    Load()
+    SaveDailyHistory(5)
+    local chart = ShowBuyChart()
+    local panel = MainFrame().buyPanel
+    local frameWidth = MainFrame().width
+    local anchor = chart.points[#chart.points]
+    Check("item chart: as tall as the details block less 6 px above and below", chart.barArea + 18 == 88
+        and anchor[1] == "BOTTOMRIGHT" and anchor[5] == 54)
+    Check("item chart: from x 380 to the right margin", chart.chartWidth == frameWidth - 380 - 16)
+    local lineRight = panel.detailLines[1].right.points[#panel.detailLines[1].right.points]
+    local titleRight = panel.detailTitle.points[#panel.detailTitle.points]
+    Check("item chart: the title and lines end 10 px before it", lineRight[4] == -(16 + chart.chartWidth + 10)
+        and titleRight[4] == lineRight[4])
+    world.charWidth = 8
+    local row = ResultRows()[1]
+    row:GetScript("OnClick")(row)
+    local widest = 0
+    for _, line in ipairs(panel.detailLines) do
+        widest = math.max(widest, #line.right.text * 8)
+    end
+    Check("item chart: a wide price line pushes it right", widest + 180 + 10 > 380
+        and chart.chartWidth == frameWidth - (180 + widest + 10) - 16)
+    world.charWidth = 40
+    row:GetScript("OnClick")(row)
+    Check("item chart: never under 150 px wide; the lines round instead", chart.chartWidth == 150)
+    world.charWidth = nil
+end
+
+-- Money that can't fit its cell is rounded (amounts of 1 gold or more lose copper, then silver)
+-- instead of cut with "...", which can split a coin icon's markup and leave a stray "|". Plain
+-- "1g 2s 3c" text here, so rounding makes it shorter, as the coin icons do in game.
+do
+    Setup({ noMoneyString = true })
+    Load()
+    local P = HouseLedgerPrice
+    for back = 5, 1, -1 do
+        local best = {}
+        P.Consider(best, 4306, 1, 1234567 + back * 1111)
+        P.Commit(HouseLedgerDB, "Alliance|TestRealm", best, world.now - back * 24 * 60 * 60)
+    end
+    HouseLedgerDB.houses["Alliance|TestRealm"].items[4306].name = "Wool Cloth"
+    OpenHouse()
+    world.browseResults = BrowseResults(4306, 4306, 1234567)
+    world.charWidth = 1
+    Fire("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
+    local panel = MainFrame().buyPanel
+    local row = ResultRows()[1]
+    row:GetScript("OnClick")(row)
+    local chart = panel.chart
+    local function Coarse(text) return text:find("%d+s") == nil and text:find("%d+c") == nil end
+    Check("fit money: what fits stays whole, two coins from 1 gold up", chart.topText.text:find("^%d+g %d+s$") ~= nil
+        and panel.detailLines[1].right.text:find("^%d+g %d+s$") ~= nil and row.typicalText.text:find("%d+c$") ~= nil)
+    local tip = ChartTipLines(chart)
+    local projection
+    for _, line in ipairs(tip) do
+        projection = line:find("Purple", 1, true) and line or projection
+    end
+    Check("fit money: the tip's projection shows two coins too", projection ~= nil
+        and projection:find("%d+g %d+s%.$") ~= nil)
+    -- The top price has the chart's width less the view buttons.
+    world.charWidth = 12
+    row:GetScript("OnClick")(row)
+    Check("fit money: too wide for silver, the axis price drops it", chart.topText.text:find("^%d+g$") ~= nil
+        and #chart.topText.text * 12 <= chart.chartWidth - 91)
+    world.charWidth = 50
+    Fire("AUCTION_HOUSE_BROWSE_RESULTS_UPDATED")
+    row = ResultRows()[1]
+    row:GetScript("OnClick")(row)
+    local coarse = true
+    for index = 1, 4 do
+        coarse = coarse and Coarse(panel.detailLines[index].right.text)
+    end
+    Check("fit money: details lines and Avg 7d round when nothing fits", coarse
+        and panel.detailLines[2].right.text:find("^avg %d+g") ~= nil and row.typicalText.text:find("^%d+g$") ~= nil)
+    Check("fit money: the live price you would pay is never rounded", row.priceText.text == "123g 45s 67c")
+    world.charWidth = nil
+    _G.SlashCmdList.HOUSELEDGERPC("")
+    local window = _G.HouseLedgerPriceCheck
+    world.charWidth = 9
+    Type(window.searchBox, "Wool")
+    window.rows[1]:GetScript("OnClick")(window.rows[1])
+    -- Price Check is 400 wide: a details price has 400 - 180 - 16 = 204 px.
+    local fits = true
+    for index = 1, 3 do
+        fits = fits and #window.detailLines[index].right.text * 9 <= 204
+    end
+    Check("fit money: Price Check's narrow details round too, each line only as far as it must", fits
+        and window.detailLines[1].right.text == "123g 57s" and window.detailLines[2].right.text:find("^avg %d+g %(") ~= nil)
+    world.charWidth = nil
+end
+
+do
+    Setup()
+    Load()
+    OpenHouse()
+    local frame = MainFrame()
+    local tab = TabNamed("Settings")
+    tab:GetScript("OnClick")(tab)
+    local inset = frame.Inset.points[#frame.Inset.points]
+    Check("settings: the dark box reaches down like History's, with no empty band under it", inset[5] == 88)
 end
 
 if failed > 0 then

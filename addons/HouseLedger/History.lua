@@ -14,8 +14,13 @@ LedgerTotals, LedgerProfits); this file reads the game and draws the tab.
 local _, ns = ...
 local C, ui, Price, U, History = ns.C, ns.ui, ns.Price, ns.U, ns.History
 
--- The tab's rows: the details block's space is the list's here.
-local ROWS = C.VISIBLE_ROWS + 5
+-- The dark box's bottom on this tab: it takes the details block's space, down to just above the
+-- totals (two lines) and the scan line. Window.lua moves the box when the tab shows.
+History.INSET_BOTTOM = C.STATUS_HEIGHT + 40
+-- Where the headings sit, under the dropdowns.
+local LIST_TOP = C.LIST_TOP + C.FILTER_HEIGHT + 4
+-- The rows that fit between the headings and the box's bottom: 18.
+local ROWS = math.floor((C.HOUSE_HEIGHT - History.INSET_BOTTOM - 2 - LIST_TOP - C.ROW_HEIGHT) / C.ROW_HEIGHT)
 -- Below this window width the Who column hides (the hover still says who).
 local WHO_MIN_WIDTH = 540
 local KIND_CHOICES = {
@@ -249,6 +254,7 @@ function History.Render()
         view = Price.SortList(view, function(entry) return SortValue(entry, sort.key) end, sort.ascending)
     end
     offset = math.max(0, math.min(offset, #view - ROWS))
+    U.SetScrollBar(panel.scrollBar, offset, ROWS, #view)
     local showWho = (ui.frame:GetWidth() or 0) >= WHO_MIN_WIDTH
     panel.headings.who:SetShown(showWho)
     LayOut(panel.header, showWho)
@@ -322,6 +328,16 @@ local function ShowEntryTooltip(row)
     GameTooltip:Show()
 end
 
+--- Moves the list by whole rows, through what is already shown. Sends nothing.
+-- @param rowsDown rows to move; negative moves up. Clamped to the list.
+local function Scroll(rowsDown)
+    local moved = math.max(0, math.min(offset + rowsDown, #view - ROWS))
+    if moved ~= offset then
+        offset = moved
+        History.Render()
+    end
+end
+
 --- Makes a row: when, item, qty, amount, profit and who, with the item's tooltip on hover.
 -- @param parent the panel
 -- @param y the row's top
@@ -331,7 +347,7 @@ local function BuildRow(parent, y, header)
     local row = CreateFrame(header and "Frame" or "Button", nil, parent)
     row:SetHeight(C.ROW_HEIGHT)
     row:SetPoint("TOPLEFT", parent, "TOPLEFT", 16, y)
-    row:SetPoint("RIGHT", parent, "RIGHT", -16, 0)
+    row:SetPoint("RIGHT", parent, "RIGHT", -16 - C.SCROLL_GUTTER, 0)
     row.cells = {}
     for _, column in ipairs(COLUMNS) do
         local right = column.key == "count" or column.key == "amount" or column.key == "profit"
@@ -387,7 +403,7 @@ function History.BuildPanel()
     end)
     panel.kindDropdown, panel.whoDropdown = kindDropdown, whoDropdown
 
-    local top = -C.LIST_TOP - C.FILTER_HEIGHT - 4
+    local top = -LIST_TOP
     panel.header = BuildRow(panel, top, true)
     panel.headings = {}
     for _, column in ipairs(COLUMNS) do
@@ -415,9 +431,11 @@ function History.BuildPanel()
     end
     panel:EnableMouseWheel(true)
     panel:SetScript("OnMouseWheel", function(_, delta)
-        offset = math.max(0, math.min(offset - delta * C.WHEEL_STEP, #view - ROWS))
-        History.Render()
+        Scroll(-delta * C.WHEEL_STEP)
     end)
+    panel.scrollBar = U.ScrollBar(panel, Scroll)
+    panel.scrollBar:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -14, top - C.ROW_HEIGHT)
+    panel.scrollBar:SetHeight(ROWS * C.ROW_HEIGHT)
     panel.empty = U.Cell(panel, "GameFontHighlight", "LEFT")
     panel.empty:SetPoint("TOPLEFT", panel, "TOPLEFT", 22, top - C.ROW_HEIGHT - 8)
     panel.empty:SetPoint("RIGHT", panel, "RIGHT", -22, 0)

@@ -39,6 +39,27 @@ local function NewFrame(kind, name, parent, template)
     local f = setmetatable({ kind = kind, name = name, parent = parent, template = template or "",
         scripts = {}, attributes = {}, shown = true, enabled = true, events = {}, children = {} }, FrameMethods)
     f.secure = f.template:find("SecureActionButtonTemplate", 1, true) ~= nil
+    -- Like Blizzard's MinimalScrollBar: a set position fires OnScroll, as the game's does, and
+    -- with hideIfUnscrollable it shows only while part of the list is out of view.
+    if template == "MinimalScrollBar" then
+        f.callbacks = {}
+        f.RegisterCallback = function(self, event, fn, owner) self.callbacks[event] = { fn, owner } end
+        f.SetHideIfUnscrollable = function(self, hide) self.hideIfUnscrollable = hide end
+        f.SetPanExtentPercentage = function(self, pan) self.pan = pan end
+        f.SetVisibleExtentPercentage = function(self, visible)
+            self.visible = visible
+            if self.hideIfUnscrollable then
+                self.shown = visible > 0 and visible < 1
+            end
+        end
+        f.SetScrollPercentage = function(self, percentage)
+            self.percentage = percentage
+            local callback = self.callbacks.OnScroll
+            if callback then
+                callback[1](callback[2], percentage)
+            end
+        end
+    end
     if parent then
         parent.children[#parent.children + 1] = f
     end
@@ -908,6 +929,18 @@ do
     Check("the mouse wheel scrolls the list", ShownRows()[1].row.name ~= first)
     panel:GetScript("OnMouseWheel")(panel, 1)
     Check("and back", ShownRows()[1].row.name == first)
+    local bar
+    for _, child in ipairs(panel.children) do
+        if child.template == "MinimalScrollBar" then
+            bar = child
+        end
+    end
+    Check("a scroll bar shows beside the longer list, at the top", bar and bar.shown and bar.percentage == 0)
+    bar:SetScrollPercentage(1)
+    Check("dragging it down shows the last rows", bar.last > 0 and bar.first == bar.last
+        and ShownRows()[1].row.name ~= first)
+    bar:SetScrollPercentage(0)
+    Check("and back up", ShownRows()[1].row.name == first)
     _G.UnmakerFrame:GetScript("OnDragStart")(_G.UnmakerFrame)
     Check("the window can be dragged", _G.UnmakerFrame.moving)
     _G.UnmakerFrame:GetScript("OnDragStop")(_G.UnmakerFrame)
@@ -1271,6 +1304,13 @@ do
         end
     end
     Check("History shows who unmade each item", Shown() == "Blue Ring/Tester,Old Cloak/Alt")
+    local historyBar
+    for _, child in ipairs(panel.children) do
+        if child.template == "MinimalScrollBar" then
+            historyBar = child
+        end
+    end
+    Check("History's scroll bar hides while every row fits", historyBar and not historyBar.shown)
     local whenOK = false
     for _, f in ipairs(world.frames) do
         if f.historyRow and f.shown and f.entry.name == "Old Cloak" then

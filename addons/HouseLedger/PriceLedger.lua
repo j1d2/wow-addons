@@ -65,7 +65,7 @@ PriceLedger.SCANS_KEPT = 30
 PriceLedger.CHART_VIEWS = { "days", "scans" }
 -- The house overview estimates the next day only from this many days of scans.
 PriceLedger.OVERVIEW_MIN_DAYS = 5
--- A price chart draws its line, normal range and guess at the next day or scan from this many
+-- A price chart draws its line, normal range and projection for the next day or scan from this many
 -- bars. Fewer can't hold one odd listing back: of 4 bars' 6 slope pairs, 3 include it.
 PriceLedger.CHART_FIT_MIN_POINTS = 5
 -- Turns the median distance from the line into a standard deviation, for prices that scatter
@@ -665,6 +665,19 @@ function PriceLedger.CoinText(copper)
         parts[#parts + 1] = rest .. "c"
     end
     return table.concat(parts, " ")
+end
+
+--- Rounds an amount of 1 gold or more to whole coins of one size, for a cell too narrow for every
+-- coin (Blizzard's money text leaves out empty coins, so the text gets shorter). Under 1 gold an
+-- amount stays exact: it is short already.
+-- @param copper whole copper, or nil
+-- @param unit the smallest coin to keep, in copper: 1 (all), 100 (silver) or 10000 (gold)
+-- @return the rounded copper (nil stays nil)
+function PriceLedger.RoundCoins(copper, unit)
+    if type(copper) ~= "number" or copper < COPPER_PER_GOLD then
+        return copper
+    end
+    return math.floor(copper / unit + 0.5) * unit
 end
 
 --- Removes the first `drop` values of a list, moving the rest down.
@@ -1474,7 +1487,7 @@ local function Median(list)
     return (list[count / 2] + list[count / 2 + 1]) / 2
 end
 
---- A straight line through a price chart's bars, its normal range and a guess at the next slot,
+--- A straight line through a price chart's bars, its normal range and a projection for the next slot,
 -- like the house overview's, but fit so one odd listing can't tilt it: cheapest prices jump
 -- whenever one seller lists low, which pulls a least-squares line a long way. The slope is the
 -- median of the slopes between every two bars (the Theil-Sen line), the line goes through the
@@ -1532,6 +1545,30 @@ function PriceLedger.ChartFit(slots)
         result.estimate = estimate
     end
     return result
+end
+
+-- A price chart's axis stops at this many times the median low (or the top of the line's normal
+-- range, if higher), so one far-off day or scan doesn't flatten every other bar.
+PriceLedger.CHART_CAP_MEDIAN = 3
+
+--- Where a price chart's axis may stop: the higher of CHART_CAP_MEDIAN x the median low and the
+-- top of the line's normal range, in whole copper. Bars above it are drawn cut at the top.
+-- @param slots chart slots from ChartDays or ChartScans
+-- @param fit from ChartFit for these slots, or nil
+-- @param last the last slot drawn (the projection's, when there is one)
+-- @return the cap, or nil without a fit (too few bars to tell what is far off)
+function PriceLedger.ChartCap(slots, fit, last)
+    if type(slots) ~= "table" or fit == nil then
+        return nil
+    end
+    local lows = {}
+    for _, slot in ipairs(slots) do
+        if type(slot.low) == "number" then
+            lows[#lows + 1] = slot.low
+        end
+    end
+    return math.ceil(math.max(PriceLedger.CHART_CAP_MEDIAN * Median(lows),
+        fit.fit(fit.first) + fit.spread, fit.fit(last) + fit.spread))
 end
 
 --- A whole number with commas between thousands, like 1,234,567.
@@ -1914,6 +1951,10 @@ function PriceLedger.TrendText(stats, view)
     local good = (view == "seller") == rising
     local color = good and GREEN or RED
     local percent = math.floor(math.abs(stats.trendPct) * 100 + 0.5)
+    if not rising then
+        -- A price can't fall 100% without being free: 99.9% rounds to -100%, so show -99%.
+        percent = math.min(percent, 99)
+    end
     return string.format("|A:%s:14:14:0:0:%d:%d:%d|a|cff%s%s%d%%|r",
         rising and ARROW_UP or ARROW_DOWN, color[1], color[2], color[3],
         color[4], rising and "+" or "-", percent)
@@ -2059,7 +2100,7 @@ local function Plural(count, word)
     if count == 1 then
         return count .. " " .. word
     end
-    return count .. " " .. word .. "s"
+    return PriceLedger.Thousands(count) .. " " .. word .. "s"
 end
 
 --- A price range like "95s - 1g 40s", or one price when the low and high match.
@@ -2085,7 +2126,7 @@ end
 -- @param summary from PriceLedger.LowestListing
 -- @return the text
 function PriceLedger.ListingText(summary)
-    return summary.total .. " in " .. Plural(summary.listings, "listing")
+    return PriceLedger.Thousands(summary.total) .. " in " .. Plural(summary.listings, "listing")
 end
 
 local RangeText = PriceLedger.RangeText
@@ -2096,7 +2137,24 @@ local RangeText = PriceLedger.RangeText
 -- @param window one entry of the Stats windows list
 -- @param coinText function(copper) -> money text
 -- @return { left, right }
+-- From this many copper (1 gold) up, the day lines leave out the copper: it is a rounding error
+-- at that size, so a line never shows more than two coins and reads easier.
+PriceLedger.LINE_COPPER_BELOW = COPPER_PER_GOLD
+
+--- A coin writer for the day lines: amounts of LINE_COPPER_BELOW and up rounded to the silver.
+-- @param coinText function(copper) -> money text
+-- @return function(copper) -> money text
+local function LineCoins(coinText)
+    return function(copper)
+        if type(copper) == "number" and copper >= PriceLedger.LINE_COPPER_BELOW then
+            copper = math.floor(copper / COPPER_PER_SILVER + 0.5) * COPPER_PER_SILVER
+        end
+        return coinText(copper)
+    end
+end
+
 local function WindowLine(window, coinText)
+    coinText = LineCoins(coinText)
     local right = coinText(window.avg)
     if window.low ~= window.high then
         right = "avg " .. right .. " (" .. RangeText(window, coinText) .. ")"
@@ -2130,7 +2188,7 @@ function PriceLedger.WindowLines(stats, coinText)
         -- The earlier scans all had the same price.
         spread = "none"
     elseif stats.spread ~= nil then
-        spread = coinText(Round(stats.spread))
+        spread = LineCoins(coinText)(Round(stats.spread))
     else
         spread = "after " .. Plural(PriceLedger.TREND_MIN_SCANS - (stats.earlierScans or 0), "more scan")
     end
@@ -2225,10 +2283,10 @@ function PriceLedger.OverviewLines(overview, coinText)
         lines[2] = { left = "Trend", right = string.format("%+.1f%% a day", overview.trendPct * 100) }
     end
     if overview.projection then
-        lines[3] = { left = "Next day, about",
+        lines[3] = { left = "Next day, projected",
             right = PriceLedger.Thousands(overview.projection) .. (overview.projection == 1 and " item" or " items") }
     else
-        lines[3] = { left = "Next day, about", right = "after " .. PriceLedger.OVERVIEW_MIN_DAYS .. " days of scans" }
+        lines[3] = { left = "Next day, projected", right = "after " .. PriceLedger.OVERVIEW_MIN_DAYS .. " days of scans" }
     end
     if latest.listings then
         lines[4] = { left = "Listings / units",
@@ -2605,8 +2663,9 @@ function PriceLedger.RememberPost(db, houseKey, itemID, price, time)
 end
 
 --- True when the cheapest listing looks like bait rather than the price: a deal by the saved
--- prices, a thin listing far under a much bigger one, or (with no saved prices) under half the
--- next one.
+-- prices, a thin listing far under a much bigger one (and, with saved prices, under 90% of the
+-- 7-day typical: a thin listing at the usual price is the price, and the wall above it is the
+-- odd one), or (with no saved prices) under half the next one.
 -- @param tier the listing { price, quantity }
 -- @param nextTier the next one up
 -- @param stats the item's saved stats, or nil
@@ -2615,7 +2674,9 @@ local function LooksLikeBait(tier, nextTier, stats)
     if stats and PriceLedger.Judge(stats, tier.price).deal then
         return true
     end
-    if tier.quantity * 5 < nextTier.quantity and tier.price < nextTier.price * 0.9 then
+    local usual = stats and stats.typical
+    if tier.quantity * 5 < nextTier.quantity and tier.price < nextTier.price * 0.9
+        and (not usual or tier.price < usual * 0.9) then
         return true
     end
     return not (stats and stats.typical) and tier.price < nextTier.price * 0.5
@@ -2628,13 +2689,16 @@ end
 -- @param stats the item's saved stats, or nil
 -- @param last { price, time } from My last price, or nil
 -- @param stackable true for a stackable item
+-- @param coins optional writer for the prices in the reason, like the window's coin icons;
+--   plain "1g 2s 3c" text (PriceLedger.CoinText) when nil
 -- @return copper each or nil (the player types one), and the reason
-function PriceLedger.PostPrice(pricing, tiers, stats, last, stackable)
+function PriceLedger.PostPrice(pricing, tiers, stats, last, stackable, coins)
+    coins = coins or PriceLedger.CoinText
     if pricing == "last" then
         if last then
             return last[1], "Your last price, from " .. (PriceLedger.WhenText(last[2]) or "before") .. "."
         end
-        local price, reason = PriceLedger.PostPrice("best", tiers, stats, nil, stackable)
+        local price, reason = PriceLedger.PostPrice("best", tiers, stats, nil, stackable, coins)
         return price, "No last price yet. " .. reason
     end
     local others = {}
@@ -2658,10 +2722,9 @@ function PriceLedger.PostPrice(pricing, tiers, stats, last, stackable)
         end
     end
     local chosen = others[index]
-    local coins = PriceLedger.CoinText
     local reason
     if stackable then
-        reason = string.format("Matching %d listed at %s.", chosen.quantity, coins(chosen.price))
+        reason = string.format("Matching %s listed at %s.", PriceLedger.Thousands(chosen.quantity), coins(chosen.price))
     else
         reason = string.format("1c under the cheapest at %s (any item level).", coins(chosen.price))
     end
