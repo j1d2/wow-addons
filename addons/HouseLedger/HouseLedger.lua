@@ -188,6 +188,8 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1, arg2)
         if ui.frame == nil or not ui.frame:IsShown() or refilterPending then
             return
         end
+        -- The Auctions tab's names and icons fill in too (it only redraws when shown).
+        Auctions.Render()
         local market = state.currentTab == C.MARKET_TAB and ui.buyPanel.marketMode
         if market and event == "GET_ITEM_INFO_RECEIVED" then
             state.itemLevels[arg1] = nil -- ask again now that the game has it

@@ -1753,11 +1753,19 @@ do
         { auctionID = 2, itemKey = { itemID = 2575 }, itemLink = "|cff1eff00|Hitem:2575|h[Red Linen Shirt]|h|r",
             status = 0, quantity = 1, timeLeftSeconds = 40000, buyoutAmount = 5000 },
         { auctionID = 3, itemKey = { itemID = 2589 }, itemLink = "|cffffffff|Hitem:2589|h[Linen Cloth]|h|r",
-            status = SOLD, quantity = 5, buyoutAmount = 30 },
+            status = SOLD, quantity = 5, buyoutAmount = 150 },
         { auctionID = 4, itemKey = { itemID = 9 }, status = 0, quantity = 1, timeLeftSeconds = 100 },
+        -- Stackables come without a link: the name comes from the game's item key data.
+        { auctionID = 5, itemKey = { itemID = 2318 }, status = 0, quantity = 20, timeLeftSeconds = 200, buyoutAmount = 37 },
     }
-    local function Commodity(info) return info.itemKey.itemID == 2589 end
-    local entries = P.OwnedEntries(owned, 1000, Commodity, SOLD)
+    local function Describe(info)
+        local id = info.itemKey.itemID
+        return id == 2589 or id == 2318, id == 2318 and "Light Leather" or nil, id == 2318 and 1 or nil
+    end
+    local entries = P.OwnedEntries(owned, 1000, Describe, SOLD)
+    local leather = table.remove(entries, 5)
+    Check("owned: a stackable without a link gets its name and quality from the game's data",
+        leather.name == "Light Leather" and leather.quality == 1 and leather.commodity == true)
     Check("owned: one entry per auction, bid-only ones too", #entries == 4 and entries[4].buyout == nil)
     local cloth, shirt, sold = entries[1], entries[2], entries[3]
     Check("owned: the buyout is kept as the game gave it, with the stackable flag", cloth.itemID == 2589
@@ -1772,8 +1780,9 @@ do
     Check("owned: if the game gives the whole auction's price, one flag fixes saved lists too",
         select(1, P.OwnedPrice(cloth)) == 1 and select(2, P.OwnedPrice(cloth)) == 25)
     P.OWNED_BUYOUT_EACH = true
-    Check("owned: a sold one is marked, with no end time", sold.sold == true and sold.endsAt == nil
-        and select(2, P.OwnedPrice(sold)) == 150)
+    -- In game: 20 Linen Cloth sold at 21c each read 420. A sold one gives what it sold for in all.
+    Check("owned: a sold stackable's buyout is the whole sale", sold.sold == true and sold.endsAt == nil
+        and select(1, P.OwnedPrice(sold)) == 30 and select(2, P.OwnedPrice(sold)) == 150)
     table.remove(entries, 4)
     local leaked = false
     for _, entry in ipairs(entries) do

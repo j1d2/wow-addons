@@ -2786,10 +2786,11 @@ PriceLedger.OWNED_SOON = 2 * 60 * 60
 -- lists.
 -- @param owned the list from C_AuctionHouse.GetOwnedAuctions
 -- @param now the current time
--- @param isCommodity function(info) true for a stackable
+-- @param describe function(info) returning whether it's a stackable, and its name and quality
+--   from the game's item data (a stackable's auction has no item link)
 -- @param soldStatus the game's status number for a sold auction (Enum.AuctionStatus.Sold)
 -- @return the entries
-function PriceLedger.OwnedEntries(owned, now, isCommodity, soldStatus)
+function PriceLedger.OwnedEntries(owned, now, describe, soldStatus)
     local entries = {}
     for _, info in ipairs(type(owned) == "table" and owned or {}) do
         local itemID = type(info.itemKey) == "table" and info.itemKey.itemID
@@ -2797,13 +2798,15 @@ function PriceLedger.OwnedEntries(owned, now, isCommodity, soldStatus)
         if type(itemID) == "number" and quantity > 0 then
             local buyout = info.buyoutAmount
             local sold = info.status == soldStatus
+            local commodity, name, quality = describe(info)
             entries[#entries + 1] = {
                 itemID = itemID,
                 link = info.itemLink,
-                name = type(info.itemLink) == "string" and info.itemLink:match("%[(.-)%]") or nil,
+                name = type(info.itemLink) == "string" and info.itemLink:match("%[(.-)%]") or name,
+                quality = quality,
                 quantity = quantity,
                 buyout = type(buyout) == "number" and buyout > 0 and buyout or nil,
-                commodity = isCommodity(info) or nil,
+                commodity = commodity or nil,
                 sold = sold or nil,
                 endsAt = not sold and type(info.timeLeftSeconds) == "number" and now + info.timeLeftSeconds or nil,
             }
@@ -2812,14 +2815,16 @@ function PriceLedger.OwnedEntries(owned, now, isCommodity, soldStatus)
     return entries
 end
 
---- A saved auction's price each and in all, from the buyout the game gave.
+--- A saved auction's price each and in all, from the buyout the game gave. An open stackable's is
+-- the price of one; a sold one's is what it sold for in all (in game: 20 Linen Cloth sold at 21c
+-- each read 420, while open ones read their price each).
 -- @param entry a saved entry
 -- @return unit and total copper, or nil for a bid-only auction
 function PriceLedger.OwnedPrice(entry)
     if type(entry.buyout) ~= "number" then
         return nil
     end
-    if entry.commodity and PriceLedger.OWNED_BUYOUT_EACH then
+    if entry.commodity and PriceLedger.OWNED_BUYOUT_EACH and not entry.sold then
         return entry.buyout, entry.buyout * entry.quantity
     end
     return Round(entry.buyout / entry.quantity), entry.buyout

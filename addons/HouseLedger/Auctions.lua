@@ -22,7 +22,7 @@ local C, ui, state, Price, U, Scan, History, Auctions = ns.C, ns.ui, ns.state, n
 -- The list's top (under the dropdown) and how many rows fit above the totals, like History.
 local LIST_TOP = C.LIST_TOP + C.FILTER_HEIGHT + 4
 local ROWS = math.floor((C.HOUSE_HEIGHT - History.INSET_BOTTOM - 2 - LIST_TOP - C.ROW_HEIGHT) / C.ROW_HEIGHT)
--- Below this window width the Who column hides (the hover still says who).
+-- Below this window width the Character column hides (the hover still says whose).
 local WHO_MIN_WIDTH = 540
 local COLUMNS = {
     { key = "name", label = "Item" },
@@ -30,8 +30,10 @@ local COLUMNS = {
     { key = "each", label = "Each" },
     { key = "market", label = "Last scan" },
     { key = "left", label = "Left" },
-    { key = "who", label = "Who" },
+    { key = "who", label = "Character" },
 }
+-- Space between two columns.
+local COLUMN_GAP = 12
 local GREEN, RED, GREY, ORANGE = { 0.4, 1, 0.4 }, { 1, 0.45, 0.45 }, { 0.62, 0.62, 0.62 }, { 1, 0.6, 0.15 }
 local EMPTY_TEXT = "No auctions read yet. Open this tab at the auction house (or Blizzard's Auctions tab) "
     .. "to read this character's auctions."
@@ -41,16 +43,43 @@ local view = {}
 local offset = 0
 local filter = { who = nil }
 
---- True for a stackable, from the game's item key data; a key it hasn't loaded yet counts as a
--- stackable when the auction holds more than one.
+--- What the game's item key data says about an auction's item: whether it's a stackable (a key
+-- it hasn't loaded yet counts as one when the auction holds more than one), and its name and
+-- quality (a stackable's auction has no link), else the last scan's.
 -- @param auction one of the game's owned auctions
--- @return true for a stackable
-local function IsCommodity(auction)
+-- @return whether it's a stackable, its name (or nil) and its quality (or nil)
+local function Describe(auction)
     local info = C_AuctionHouse.GetItemKeyInfo and C_AuctionHouse.GetItemKeyInfo(auction.itemKey)
-    if type(info) == "table" and info.isCommodity ~= nil then
-        return info.isCommodity == true
+    local commodity = (auction.quantity or 1) > 1
+    local name, quality
+    if type(info) == "table" then
+        if info.isCommodity ~= nil then
+            commodity = info.isCommodity == true
+        end
+        name, quality = info.itemName, info.quality
     end
-    return (auction.quantity or 1) > 1
+    local house = (HouseLedgerDB.houses or {})[U.ViewHouseKey()]
+    local saved = house and house.items and house.items[auction.itemKey.itemID]
+    if (name == nil or name == "") and saved then
+        name, quality = saved.name, quality or saved.quality
+    end
+    return commodity, name ~= "" and name or nil, quality
+end
+
+--- An auction's name, icon and color: the saved name and quality first (U.ItemLook, as the Buy
+-- list does), else the game's item data, else the last scan's.
+-- @param entry a row from PriceLedger.OwnedView
+-- @return the name, the icon, and r, g, b
+local function Look(entry)
+    local house = (HouseLedgerDB.houses or {})[U.ViewHouseKey()]
+    local saved = house and house.items and house.items[entry.itemID]
+    local name, icon, quality = U.ItemLook(C_AuctionHouse.MakeItemKey(entry.itemID), {
+        savedName = entry.name or (saved and saved.name), savedQuality = entry.quality or (saved and saved.quality) })
+    local r, g, b = 1, 1, 1
+    if Price.IsQuality(quality) and C_Item and type(C_Item.GetItemQualityColor) == "function" then
+        r, g, b = C_Item.GetItemQualityColor(quality)
+    end
+    return name, icon, r, g, b
 end
 
 --- Time left as "2h 10m", "35m" or "under 1m".
@@ -103,9 +132,9 @@ local function Saved(itemID)
     return saved, U.SavedStats(itemID)
 end
 
---- Places the columns for the window's width: Who hides on a narrow window.
+--- Places the columns for the window's width: Character hides on a narrow window.
 -- @param row a row
--- @param showWho true to show the Who column
+-- @param showWho true to show the Character column
 local function LayOut(row, showWho)
     local cells = row.cells
     for _, cell in pairs(cells) do
@@ -113,18 +142,19 @@ local function LayOut(row, showWho)
     end
     cells.who:SetShown(showWho)
     local right, point = row, "RIGHT"
-    local columns = { { "left", 60 }, { "market", 90 }, { "each", 80 }, { "count", 34 } }
+    local columns = { { "left", 62 }, { "market", 84 }, { "each", 78 }, { "count", 30 } }
     if showWho then
-        table.insert(columns, 1, { "who", 84 })
+        table.insert(columns, 1, { "who", 80 })
     end
     for _, column in ipairs(columns) do
         local cell = cells[column[1]]
-        cell:SetPoint("RIGHT", right, point, right == row and -4 or -6, 0)
+        cell:SetPoint("RIGHT", right, point, right == row and -4 or -COLUMN_GAP, 0)
         cell:SetWidth(column[2])
         right, point = cell, "LEFT"
     end
-    cells.name:SetPoint("LEFT", row, "LEFT", 4, 0)
-    cells.name:SetPoint("RIGHT", cells.count, "LEFT", -6, 0)
+    -- The name starts after the icon's room on every row and the headings, so they line up.
+    cells.name:SetPoint("LEFT", row, "LEFT", 4 + C.ICON_SIZE + 4, 0)
+    cells.name:SetPoint("RIGHT", cells.count, "LEFT", -COLUMN_GAP, 0)
 end
 
 --- The totals line: what's up and its worth, and sold gold waiting in the mail.
@@ -160,7 +190,10 @@ function Auctions.Render()
         if entry then
             LayOut(row, showWho)
             local cells = row.cells
-            cells.name:SetText(entry.link or entry.name or ("item " .. entry.itemID))
+            local name, icon, r, g, b = Look(entry)
+            row.icon:SetTexture(icon)
+            cells.name:SetText(name)
+            cells.name:SetTextColor(r, g, b)
             cells.count:SetText(tostring(entry.quantity))
             cells.each:SetText(entry.unit and U.CopperToText(entry.unit) or "bid only")
             local saved, stats = Saved(entry.itemID)
@@ -193,7 +226,7 @@ function Auctions.OnOwnedUpdated()
         return
     end
     local soldStatus = Enum and Enum.AuctionStatus and Enum.AuctionStatus.Sold or 1
-    local entries = Price.OwnedEntries(C_AuctionHouse.GetOwnedAuctions(), time(), IsCommodity, soldStatus)
+    local entries = Price.OwnedEntries(C_AuctionHouse.GetOwnedAuctions(), time(), Describe, soldStatus)
     Price.SaveOwned(HouseLedgerDB, U.ViewHouseKey(), U.CharacterName(), entries, time())
     Auctions.Render()
 end
@@ -272,11 +305,15 @@ local function BuildRow(parent, y, header)
     row:SetPoint("RIGHT", parent, "RIGHT", -16 - C.SCROLL_GUTTER, 0)
     row.cells = {}
     for _, column in ipairs(COLUMNS) do
-        local right = column.key == "count" or column.key == "each"
+        -- Numbers and the columns about them line up on the right; the item and who on the left.
+        local right = column.key ~= "name" and column.key ~= "who"
         row.cells[column.key] = U.Cell(row, header and "GameFontNormalSmall" or "GameFontHighlightSmall",
             right and "RIGHT" or "LEFT")
     end
     if not header then
+        row.icon = row:CreateTexture(nil, "ARTWORK")
+        row.icon:SetSize(C.ICON_SIZE, C.ICON_SIZE)
+        row.icon:SetPoint("LEFT", row, "LEFT", 4, 0)
         row:SetHighlightTexture("Interface\\QuestFrame\\UI-QuestTitleHighlight", "ADD")
         row:SetScript("OnEnter", ShowEntryTooltip)
         row:SetScript("OnLeave", U.HideRowTooltip)

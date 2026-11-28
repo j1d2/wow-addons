@@ -80,6 +80,7 @@ function FrameMethods:GetAttribute(key) return self.attributes[key] end
 function FrameMethods:IsEnabled() return self.enabled end
 function FrameMethods:SetText(text) self.text = text end
 function FrameMethods:SetID(id) self.id = id end
+function FrameMethods:SetJustifyH(justify) self.justifyH = justify end
 function FrameMethods:GetText() return self.text end
 function FrameMethods:SetPoint(...) NoteIfBlocked(self) self.points[#self.points + 1] = { ... } end
 function FrameMethods:ClearAllPoints() NoteIfBlocked(self) self.points = {} end
@@ -4317,8 +4318,7 @@ do
             quantity = 20, timeLeftSeconds = 3600, buyoutAmount = 25, bidder = "Someone Else" },
         { auctionID = 2, itemKey = { itemID = 2575 }, itemLink = "|cff1eff00|Hitem:2575|h[Red Linen Shirt]|h|r",
             status = 0, quantity = 1, timeLeftSeconds = 40000, buyoutAmount = 5000 },
-        { auctionID = 3, itemKey = { itemID = 2589 }, itemLink = "|cffffffff|Hitem:2589|h[Linen Cloth]|h|r", status = 1,
-            quantity = 5, buyoutAmount = 30 },
+        { auctionID = 3, itemKey = { itemID = 2589 }, status = 1, quantity = 5, buyoutAmount = 150 },
     }
     OpenHouse()
     local frame = MainFrame()
@@ -4348,6 +4348,13 @@ do
     Check("auctions: each, time left and the last scan", rows[1].cells.each.text == "<money 25>"
         and rows[1].cells.count.text == "20" and rows[1].cells.left.text == "1h 0m"
         and rows[1].cells.market.text == "<money 3> under" and rows[2].cells.market.text == "cheapest")
+    Check("auctions: a stackable without a link still gets its name, icon and color, no brackets",
+        rows[3].cells.name.text == "Item 2589" and rows[3].icon.texture == 134400 and rows[3].cells.name.color ~= nil
+        and rows[2].cells.name.text == "Red Linen Shirt")
+    Check("auctions: numbers line up on the right under their headings, item and who on the left",
+        rows[1].cells.each.justifyH == "RIGHT" and panel.header.cells.each.justifyH == "RIGHT"
+        and rows[1].cells.market.justifyH == "RIGHT" and panel.header.cells.left.justifyH == "RIGHT"
+        and rows[1].cells.name.justifyH == "LEFT" and rows[1].cells.who.justifyH == "LEFT")
     Check("auctions: under 2 hours left is orange", rows[1].cells.left.color[1] == 1 and rows[1].cells.left.color[3] < 0.5)
     Check("auctions: totals with the house's cut and sold gold waiting", panel.totals.text
         == "2 up for <money 5500> (<money 5225> after the house's cut).\n1 sold: <money 143> waiting in the mail.")

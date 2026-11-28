@@ -21,7 +21,7 @@ History.INSET_BOTTOM = C.STATUS_HEIGHT + 40
 local LIST_TOP = C.LIST_TOP + C.FILTER_HEIGHT + 4
 -- The rows that fit between the headings and the box's bottom: 18.
 local ROWS = math.floor((C.HOUSE_HEIGHT - History.INSET_BOTTOM - 2 - LIST_TOP - C.ROW_HEIGHT) / C.ROW_HEIGHT)
--- Below this window width the Who column hides (the hover still says who).
+-- Below this window width the Character column hides (the hover still says whose).
 local WHO_MIN_WIDTH = 540
 local KIND_CHOICES = {
     { key = nil, label = "Everything" },
@@ -36,7 +36,7 @@ local COLUMNS = {
     { key = "count", label = "Qty" },
     { key = "amount", label = "Amount" },
     { key = "profit", label = "Profit" },
-    { key = "who", label = "Who" },
+    { key = "who", label = "Character" },
 }
 local EMPTY_TEXT = "Nothing recorded yet. Buys made in HouseLedger show at once. Open your mailbox to add"
     .. " sales, other buys, and auctions that came back."
@@ -170,9 +170,9 @@ local function SortValue(entry, key)
     return entry.time
 end
 
---- Places the columns for the window's width: Who hides on a narrow window.
+--- Places the columns for the window's width: Character hides on a narrow window.
 -- @param row a row
--- @param showWho true to show the Who column
+-- @param showWho true to show the Character column
 local function LayOut(row, showWho)
     local cells = row.cells
     for _, cell in pairs(cells) do
