@@ -79,6 +79,7 @@ function FrameMethods:SetAttribute(key, value) NoteIfBlocked(self) self.attribut
 function FrameMethods:GetAttribute(key) return self.attributes[key] end
 function FrameMethods:IsEnabled() return self.enabled end
 function FrameMethods:SetText(text) self.text = text end
+function FrameMethods:SetID(id) self.id = id end
 function FrameMethods:GetText() return self.text end
 function FrameMethods:SetPoint(...) NoteIfBlocked(self) self.points[#self.points + 1] = { ... } end
 function FrameMethods:ClearAllPoints() NoteIfBlocked(self) self.points = {} end
@@ -2133,7 +2134,7 @@ do
     Click("Market")
     local panel = frame.buyPanel
     local rows = ResultRows()
-    Check("Market shows the list without the search box", frame.selectedTab == 3 and panel.shown
+    Check("Market shows the list without the search box", frame.selectedTab == 4 and panel.shown
         and not SearchBox().shown and panel.marketLabel.shown and panel.marketDropdown.shown)
     Check("it opens on deals at the last scan", Picked(panel.marketDropdown) == "Deals"
         and panel.marketLabel.text == "at last scan (2 h ago)" and panel.marketDropdown.shown)
@@ -2178,7 +2179,7 @@ do
     Check("in combat: nothing protected is changed by the Market tab", (world.blocked or 0) == 0)
     world.inCombat = false
     Fire("PLAYER_REGEN_ENABLED")
-    Check("after combat: Market is the open tab", frame.selectedTab == 3 and panel.marketLabel.shown)
+    Check("after combat: Market is the open tab", frame.selectedTab == 4 and panel.marketLabel.shown)
 
     -- A new scan refreshes the list. The game hasn't loaded this item's name: the old one stays.
     Advance(15 * 60)
@@ -2355,7 +2356,7 @@ do
         and not tab.template:find("SecureActionButtonTemplate", 1, true))
     Click("Settings")
     local panel = frame.settingsPanel
-    Check("Settings shows its own panel", frame.selectedTab == 5 and panel.shown and not frame.buyPanel.shown
+    Check("Settings shows its own panel", frame.selectedTab == 6 and panel.shown and not frame.buyPanel.shown
         and not frame.sellPanel.shown)
     local boxes = panel.boxes
     Check("each box shows its saved setting", boxes.tooltipPrices.checked == true and boxes.tooltipDetails.checked == false)
@@ -3934,7 +3935,7 @@ do
     tab:GetScript("OnClick")(tab)
     local panel = frame.historyPanel
     Check("history: a plain tab with its own panel", panel.shown and not frame.buyPanel.shown
-        and frame.selectedTab == 4)
+        and frame.selectedTab == 5)
     Check("history: newest first by default, with the game's down arrow on When",
         panel.headings.when.label.text:find("When |A:NPE_ArrowDown", 1, true) == 1)
     Check("history: empty, it says where entries come from", panel.empty.shown
@@ -4322,7 +4323,13 @@ do
     OpenHouse()
     local frame = MainFrame()
     local tab = TabNamed("Auctions")
-    Check("auctions: a plain tab, last", tab ~= nil and frame.numTabs == 6
+    local order = {}
+    for index, each in ipairs(frame.Tabs) do
+        order[index] = each.text
+        order.ids = (order.ids or "") .. each.id
+    end
+    Check("auctions: a plain tab right after Sell", tab ~= nil and frame.numTabs == 6
+        and table.concat(order, ",") == "Buy,Sell,Auctions,Market,History,Settings" and order.ids == "123456"
         and not tab.template:find("SecureActionButtonTemplate", 1, true))
     tab:GetScript("OnClick")(tab)
     local panel = frame.auctionsPanel
