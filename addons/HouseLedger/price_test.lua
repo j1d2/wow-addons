@@ -780,6 +780,14 @@ do
     local early = { { time = 0, kind = "sold", name = "Cloth", count = 5, bid = 100, cut = 0 },
         { time = 1, kind = "bought", name = "Cloth", count = 2, bid = 50 },
         { time = 2, kind = "sold", name = "Cloth", count = 2, bid = 60, cut = 0 } }
+    -- Per character: what one character bought isn't another's cost (in game, one character's 40
+    -- bought cloth were charged against an alt's 20 looted ones).
+    local two = { { time = 1, who = "Mira", kind = "bought", name = "Cloth", count = 40, bid = 940 },
+        { time = 2, who = "Tam", kind = "sold", name = "Cloth", count = 20, bid = 500, cut = 25 },
+        { time = 3, who = "Mira", kind = "sold", name = "Cloth", count = 1, bid = 30, cut = 0 } }
+    local twoProfits, twoFlips = P.LedgerProfits(two)
+    Check("profit: another character's buys aren't this one's cost", twoProfits[two[2]] == 475 and not twoFlips[two[2]]
+        and twoProfits[two[3]] == 7 and twoFlips[two[3]])
     Check("profit: a sale before any buy doesn't use up a later buy", P.LedgerProfits(early)[early[3]] == 10
         and P.LedgerProfits(early)[early[1]] == 100)
     local stockProfits, stockFlips = P.LedgerProfits(stock)
@@ -852,6 +860,11 @@ do
     P.RecordBuy(few, { time = At(-5), who = "Mira", name = "Cloth", count = 1, bid = 20 })
     P.RecordMail(few, { { kind = "sold", name = "Cloth", count = 3, bid = 90, cut = 0, expires = At(-1) + P.MAIL_LIFE } },
         NOW, "Mira", "R")
+    local alts = P.CleanLedger(nil)
+    P.RecordBuy(alts, { time = At(-5), who = "Mira", name = "Cloth", count = 40, bid = 940 })
+    P.RecordMail(alts, { { kind = "sold", name = "Cloth", count = 20, bid = 500, cut = 25,
+        expires = At(-1) + P.MAIL_LIFE } }, NOW, "Tam", "R")
+    Check("lifetime: another character's buys aren't this one's cost", P.LedgerLifetime(alts, "Tam").profit == 475)
     Check("lifetime: only as many as were bought carry a cost, the same as the row",
         P.LedgerLifetime(few, "Mira").profit == 70 and P.LedgerProfits(few.entries)[few.entries[2]] == 70)
 

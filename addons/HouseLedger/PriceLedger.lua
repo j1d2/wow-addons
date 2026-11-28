@@ -2424,15 +2424,15 @@ local function StockStep(stock, entry)
     return cost, covered
 end
 
---- A sale's cost from the history (StockStep over the item's entries before it), for the lifetime
--- totals.
+--- A sale's cost from the history (StockStep over the same character's entries of the item before
+-- it), for the lifetime totals.
 -- @param entries the history's entries, oldest first
 -- @param sale the sold entry, not yet in the list
 -- @return the cost in copper
 local function CostFromHistory(entries, sale)
     local stock = { count = 0, copper = 0 }
     for _, entry in ipairs(entries) do
-        if entry.name == sale.name and entry.time <= sale.time and (entry.kind == "bought" and entry.bid
+        if entry.name == sale.name and entry.who == sale.who and entry.time <= sale.time and (entry.kind == "bought" and entry.bid
             or entry.kind == "sold" and stock.count > 0) then
             StockStep(stock, entry)
         end
@@ -2599,8 +2599,8 @@ function PriceLedger.SaleProceeds(entry)
 end
 
 --- The profit of each sale: its proceeds (after the house's cut) less its cost (StockStep: the
--- average paid on the auction house, for as many as the bought stock still holds). A sale with
--- nothing bought left to cover it (looted, farmed or made) counts in full.
+-- average the same character paid on the auction house, for as many as its bought stock still
+-- holds). A sale with nothing bought left to cover it (looted, farmed or made) counts in full.
 -- @param entries the history's entries, oldest first
 -- @return table entry -> copper (rounded) for every sold entry, and table entry -> true for the
 --   sales that had a recorded buy (flips)
@@ -2608,11 +2608,14 @@ function PriceLedger.LedgerProfits(entries)
     -- By name: a sale's mail names the item but gives no item ID.
     local paid, profits, flips = {}, {}, {}
     for _, entry in ipairs(entries) do
-        -- Only items bought on the auction house have a stock to track.
-        local stock = paid[entry.name]
+        -- Only items bought on the auction house have a stock to track, one per character: what one
+        -- bought isn't another's cost.
+        local who = entry.who or "?"
+        local stock = paid[who] and paid[who][entry.name]
         if entry.kind == "bought" and entry.bid then
+            paid[who] = paid[who] or {}
             stock = stock or { count = 0, copper = 0 }
-            paid[entry.name] = stock
+            paid[who][entry.name] = stock
             StockStep(stock, entry)
         elseif entry.kind == "sold" then
             local cost, covered = 0, 0
