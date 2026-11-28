@@ -1653,7 +1653,7 @@ do
         and TabNamed("History") ~= nil and TabNamed("Auctions") ~= nil and frame.numTabs == 6)
     Check("Buy tab is open first", frame.selectedTab == 1 and frame.buyPanel.shown and not frame.sellPanel.shown)
     Click("Sell")
-    Check("Sell tab click opens the Sell panel", frame.selectedTab == 2 and frame.sellPanel.shown and not frame.buyPanel.shown)
+    Check("Sell tab click opens the Sell panel", frame.selectedTab == 3 and frame.sellPanel.shown and not frame.buyPanel.shown)
     Check("Sell panel says what to do", SellStatus():find("Drop an item", 1, true) ~= nil)
     Click("Buy")
     Check("Buy tab click goes back", frame.selectedTab == 1 and frame.buyPanel.shown and not frame.sellPanel.shown)
@@ -1891,7 +1891,7 @@ do
     Click("Sell")
     Check("our Sell tab switches Blizzard's window",
         AuctionHouseFrame.displayMode == AuctionHouseFrameDisplayMode.ItemSell)
-    Check("and opens our Sell tab", frame.selectedTab == 2 and frame.sellPanel.shown)
+    Check("and opens our Sell tab", frame.selectedTab == 3 and frame.sellPanel.shown)
     Click("Buy")
     Check("our Buy tab switches Blizzard's window back",
         AuctionHouseFrame.displayMode == AuctionHouseFrameDisplayMode.Buy and frame.selectedTab == 1)
@@ -1904,7 +1904,7 @@ do
     Setup()
     Load()
     Click("Sell")
-    Check("an unlinked tab still opens our Sell tab", MainFrame().selectedTab == 2)
+    Check("an unlinked tab still opens our Sell tab", MainFrame().selectedTab == 3)
 end
 
 do
@@ -1927,7 +1927,7 @@ do
         frame.shown == true and frame.points[1] and frame.points[1][2] == AuctionHouseFrame)
     Check("after combat: tabs are linked",
         TabNamed("Sell").attributes.clickbutton == AuctionHouseFrame.SellTab)
-    Check("after combat: the Sell tab is marked", frame.selectedTab == 2)
+    Check("after combat: the Sell tab is marked", frame.selectedTab == 3)
 
     world.inCombat = true
     frame:GetScript("OnDragStart")(frame)
@@ -1955,7 +1955,7 @@ do
     Check("in combat: protected panels are left alone", (world.blocked or 0) == 0 and frame.buyPanel.shown)
     world.inCombat = false
     Fire("PLAYER_REGEN_ENABLED")
-    Check("after combat: the Sell panel shows", frame.sellPanel.shown and not frame.buyPanel.shown and frame.selectedTab == 2)
+    Check("after combat: the Sell panel shows", frame.sellPanel.shown and not frame.buyPanel.shown and frame.selectedTab == 3)
 end
 
 do
@@ -1998,9 +1998,9 @@ do
     Check("reopening the house adds no second hook", HouseHooks() == 2)
 
     BlizzardTab(AuctionHouseFrameDisplayMode.ItemSell)
-    Check("Blizzard's Sell tab opens the Sell tab here", frame.selectedTab == 2 and frame.sellPanel.shown)
+    Check("Blizzard's Sell tab opens the Sell tab here", frame.selectedTab == 3 and frame.sellPanel.shown)
     BlizzardTab(AuctionHouseFrameDisplayMode.Auctions)
-    Check("Blizzard's Auctions tab leaves this window as it was", frame.selectedTab == 2)
+    Check("Blizzard's Auctions tab leaves this window as it was", frame.selectedTab == 3)
     BlizzardTab(AuctionHouseFrameDisplayMode.CommoditiesBuy)
     Check("Blizzard's Buy tab opens the Buy tab here", frame.selectedTab == 1 and frame.buyPanel.shown)
 
@@ -2019,7 +2019,7 @@ do
     OpenHouse()
     local frame = MainFrame()
     BlizzardPostItem({ itemID = 2589, commodity = true })
-    Check("an item put in Blizzard's Sell window opens the Sell tab here", frame.selectedTab == 2)
+    Check("an item put in Blizzard's Sell window opens the Sell tab here", frame.selectedTab == 3)
     Check("its name shows here", frame.sellPanel.itemName.text == "Item 2589")
     Check("following Blizzard sends no search of its own",
         #world.itemQueries == 0 and #world.blizzardQueries == 1)
@@ -2135,7 +2135,7 @@ do
     Click("Market")
     local panel = frame.buyPanel
     local rows = ResultRows()
-    Check("Market shows the list without the search box", frame.selectedTab == 4 and panel.shown
+    Check("Market shows the list without the search box", frame.selectedTab == 2 and panel.shown
         and not SearchBox().shown and panel.marketLabel.shown and panel.marketDropdown.shown)
     Check("it opens on deals at the last scan", Picked(panel.marketDropdown) == "Deals"
         and panel.marketLabel.text == "at last scan (2 h ago)" and panel.marketDropdown.shown)
@@ -2171,7 +2171,7 @@ do
         and ResultRows()[1].nameText.text == "Item 10" and frame.buyPanel.priceHeading.text == "Price")
     Click("Market")
     BlizzardTab(AuctionHouseFrameDisplayMode.ItemSell)
-    Check("a Blizzard tab change moves off Market", frame.selectedTab == 2 and frame.sellPanel.shown)
+    Check("a Blizzard tab change moves off Market", frame.selectedTab == 3 and frame.sellPanel.shown)
 
     -- In combat the tab marking waits, and combat's end lands on Market.
     Click("Buy")
@@ -2180,7 +2180,7 @@ do
     Check("in combat: nothing protected is changed by the Market tab", (world.blocked or 0) == 0)
     world.inCombat = false
     Fire("PLAYER_REGEN_ENABLED")
-    Check("after combat: Market is the open tab", frame.selectedTab == 4 and panel.marketLabel.shown)
+    Check("after combat: Market is the open tab", frame.selectedTab == 2 and panel.marketLabel.shown)
 
     -- A new scan refreshes the list. The game hasn't loaded this item's name: the old one stays.
     Advance(15 * 60)
@@ -4000,9 +4000,13 @@ do
     -- Sold 40 for 1000 less 50 cut = 950; paid 620 for 50 = 12.4 each, 496 for 40: profit 454.
     Check("history: newest first; a sale shows what came in and its profit", #rows == 3
         and rows[1] == "Item 2589|40|<money 950>|<money 454>|Tester Vale" and rows[3] == "Silver Rod|1|Expired||Tester Vale")
-    Check("history: the totals line", panel.totals.text:find("Bought 50 for <money 620>", 1, true)
-        and panel.totals.text:find("sold 40 for <money 950> after the house's cut", 1, true)
-        and panel.totals.text:find("1 came back", 1, true) and panel.totals.text:find("Profit on 1 sale", 1, true))
+    local function Stat(index)
+        local line = panel.statLines[index]
+        return line.label.text .. "|" .. line.sold.text .. "|" .. line.bought.text .. "|" .. line.profit.text
+    end
+    Check("history: the stats block: today's gold, and lifetime the same so far", panel.statHeader.sold.text == "Sold"
+        and Stat(1) == "Today|<money 950>|<money 620>|<money 454>" and Stat(5) == "Lifetime|<money 950>|<money 620>|<money 454>"
+        and Stat(2):find("^3 days|") ~= nil and Stat(4):find("^14 days|") ~= nil)
 
     Pick(panel.kindDropdown, "Sold")
     rows = Rows()
@@ -4225,19 +4229,19 @@ do
     tab:GetScript("OnClick")(tab)
     local panel = frame.historyPanel
     local inset = frame.Inset.points[#frame.Inset.points]
-    Check("history: the dark box reaches down to the totals on this tab", inset[1] == "BOTTOMRIGHT"
-        and inset[5] == 88)
+    Check("history: the dark box ends above the stats block, like Buy's details", inset[1] == "BOTTOMRIGHT"
+        and inset[5] == 148)
     local lastRow = panel.rows[#panel.rows]
-    Check("history: 18 rows, the last still inside the box", #panel.rows == 18
-        and 538 + lastRow.points[1][5] - 18 >= 88)
-    Check("history: the totals sit under the box", panel.totals.points[1][5] + 26 <= 88)
+    Check("history: 15 rows, the last still inside the box", #panel.rows == 15
+        and 538 + lastRow.points[1][5] - 18 >= 148)
+    Check("history: the stats sit under the box", panel.statHeader.label.points[1][5] <= 148)
     local bar = panel.scrollBar
     Check("history: a scroll bar shows, at the top", bar.shown and bar.percentage == 0
         and panel.rows[1].cells.name.text == "Thing 30")
     panel:GetScript("OnMouseWheel")(panel, -1)
-    Check("history: the wheel moves the bar too", bar.percentage == 3 / 12)
+    Check("history: the wheel moves the bar too", bar.percentage == 3 / 15)
     bar:SetScrollPercentage(1)
-    Check("history: dragging the bar down shows the oldest", panel.rows[18].cells.name.text == "Thing 01")
+    Check("history: dragging the bar down shows the oldest", panel.rows[15].cells.name.text == "Thing 01")
     TabNamed("Buy"):GetScript("PostClick")(TabNamed("Buy"))
     inset = frame.Inset.points[#frame.Inset.points]
     Check("history: other tabs get the box back above their details", inset[5] == 148)
@@ -4328,8 +4332,8 @@ do
         order[index] = each.text
         order.ids = (order.ids or "") .. each.id
     end
-    Check("auctions: a plain tab right after Sell", tab ~= nil and frame.numTabs == 6
-        and table.concat(order, ",") == "Buy,Sell,Auctions,Market,History,Settings" and order.ids == "123456"
+    Check("auctions: a plain tab right after Sell, Market right after Buy", tab ~= nil and frame.numTabs == 6
+        and table.concat(order, ",") == "Buy,Market,Sell,Auctions,History,Settings" and order.ids == "123456"
         and not tab.template:find("SecureActionButtonTemplate", 1, true))
     tab:GetScript("OnClick")(tab)
     local panel = frame.auctionsPanel
@@ -4381,7 +4385,7 @@ do
 
     -- Another character's auctions, saved before, show in All characters and through the dropdown.
     P.SaveOwned(HouseLedgerDB, "Alliance|TestRealm", "Alt", { { itemID = 2575, name = "Red Linen Shirt",
-        quantity = 1, unit = 900, total = 900, endsAt = world.now + 99999 } }, world.now - 100)
+        quantity = 1, buyout = 900, endsAt = world.now + 99999 } }, world.now - 100)
     Pick(panel.whoDropdown, "Alt")
     local shown = 0
     for _, row in ipairs(panel.rows) do
@@ -4394,6 +4398,23 @@ do
     world.throttleReady = false
     tab:GetScript("OnClick")(tab)
     Check("auctions: a busy house isn't asked; the saved list shows", world.ownedQueries == 1 and panel.shown)
+    -- Only sold ones left: the totals say nothing is up, not "0 up for -".
+    world.owned = { world.owned[3] }
+    tab:GetScript("OnClick")(tab)
+    Fire("OWNED_AUCTIONS_UPDATED")
+    Pick(panel.whoDropdown, "Tester Vale")
+    Check("auctions: with only sold ones, the totals say nothing is up", panel.totals.text
+        == "Nothing up right now.\n1 sold: <money 143> waiting in the mail.")
+    Pick(panel.whoDropdown, "All characters")
+    world.owned = {
+        { auctionID = 1, itemKey = { itemID = 2589 }, itemLink = "|cffffffff|Hitem:2589|h[Linen Cloth]|h|r", status = 0,
+            quantity = 20, timeLeftSeconds = 3600, buyoutAmount = 25 },
+        { auctionID = 2, itemKey = { itemID = 2575 }, itemLink = "|cff1eff00|Hitem:2575|h[Red Linen Shirt]|h|r",
+            status = 0, quantity = 1, timeLeftSeconds = 40000, buyoutAmount = 5000 },
+        { auctionID = 3, itemKey = { itemID = 2589 }, status = 1, quantity = 5, buyoutAmount = 150 },
+    }
+    tab:GetScript("OnClick")(tab)
+    Fire("OWNED_AUCTIONS_UPDATED")
     -- A list still arriving doesn't replace the saved one.
     world.ownedPartial, world.owned = true, {}
     Fire("OWNED_AUCTIONS_UPDATED")
@@ -4483,6 +4504,12 @@ do
     Load()
     HouseLedgerDB.ledger.entries[1] = { time = world.now - 100, who = "Tester Vale", realm = "TestRealm",
         kind = "bought", name = "Thing", count = 1, bid = 100, source = "mail" }
+    -- Looted, never bought: it counts in full.
+    HouseLedgerDB.ledger.entries[2] = { time = world.now - 50, who = "Tester Vale", realm = "TestRealm",
+        kind = "sold", name = "Gem", count = 1, bid = 200, cut = 10, source = "mail" }
+    -- Yesterday: the Thing bought for 100 sold for 50 less a 2 cut, a loss of 52.
+    table.insert(HouseLedgerDB.ledger.entries, 2, { time = world.now - 24 * 60 * 60, who = "Tester Vale",
+        realm = "TestRealm", kind = "sold", name = "Thing", count = 1, bid = 50, cut = 2, source = "mail" })
     OpenHouse()
     local tab = TabNamed("History")
     tab:GetScript("OnClick")(tab)
@@ -4490,6 +4517,51 @@ do
     local whoPoint = header.cells.who.points[1]
     Check("history: Who is the second column, right after When", header.cells.who.shown
         and whoPoint[2] == header.cells.when and header.cells.who.text == "Who")
+    local chart = MainFrame().historyPanel.chart
+    Check("history: a wide window shows the 14-day profit chart, today's gain in gold", chart.shown
+        and #chart.bars == 15 and chart.bars[14].shown and not chart.bars[15].shown and chart.bars[14].colorTexture[1] == 1
+        and chart.topText.text == "<money 190>")
+    local loss, gain = chart.bars[13], chart.bars[14]
+    Check("history: a day's loss is a red bar hanging below the zero line", loss.shown and loss.colorTexture[1] > 0.8
+        and loss.colorTexture[2] < 0.5 and loss.points[1][5] + loss.height == gain.points[1][5] and not chart.bars[12].shown)
+    local rows = MainFrame().historyPanel.rows
+    local lines = {}
+    _G.GameTooltip.AddLine = function(_, text) lines[#lines + 1] = text end
+    rows[1]:GetScript("OnEnter")(rows[1])
+    Check("history: a sale with no buy counts in full, and the hover says why",
+        rows[1].cells.profit.text == "<money 190>" and table.concat(lines, "|"):find("counts in full", 1, true) ~= nil)
+end
+
+-- The History profit chart gets the price charts' trend line, normal range and projection.
+do
+    Setup({ screenRight = 1400 })
+    Load()
+    -- 14 days of sales, each day's profit 10c more than the day before, with a little wobble.
+    for back = 13, 0, -1 do
+        local bid = 1000 + (13 - back) * 10 + (back % 2) * 4
+        table.insert(HouseLedgerDB.ledger.entries, { time = world.now - back * 24 * 60 * 60, who = "Tester Vale",
+            realm = "TestRealm", kind = "sold", name = "Gem", count = 1, bid = bid, cut = 0, source = "mail" })
+    end
+    OpenHouse()
+    local tab = TabNamed("History")
+    tab:GetScript("OnClick")(tab)
+    local chart = MainFrame().historyPanel.chart
+    Check("history chart: a trend line from the first day to the projection", chart.line ~= nil and chart.line.shown
+        and chart.line.endPoint[3] > chart.line.startPoint[3] and chart.line.endPoint[4] > chart.line.startPoint[4])
+    local projection = chart.bars[15]
+    Check("history chart: a purple projection for tomorrow, a gap after today", projection.shown
+        and projection.colorTexture[1] == 0.72 and projection.points[1][4] > chart.bars[14].points[1][4])
+    local bands = 0
+    for _, band in ipairs(chart.bands) do
+        bands = bands + (band.shown and 1 or 0)
+    end
+    Check("history chart: a shaded normal-range band", bands > 0)
+    local lines = {}
+    _G.GameTooltip.AddLine = function(_, text) lines[#lines + 1] = text end
+    chart:GetScript("OnEnter")(chart)
+    local tip = table.concat(lines, "|")
+    Check("history chart: the hover names the line, the band and the projection", tip:find("White line", 1, true)
+        and tip:find("Shaded band", 1, true) and tip:find("Purple: a projection for tomorrow", 1, true))
 end
 
 -- Saved auctions survive a load; damaged ones are dropped.

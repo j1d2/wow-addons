@@ -17,11 +17,14 @@ local CHART_RANGE_COLOR = { 0.35, 0.6, 1, 0.3 }
 -- the trend line in white, and the next day's (or scan's) projection in purple, so it doesn't
 -- read as one more bar.
 local TREND_BAND_COLOR = { 1, 1, 1, 0.2 }
+local TREND_LINE_COLOR = { 1, 1, 1, 0.8 }
+local ESTIMATE_COLOR = { 0.72, 0.45, 1, 0.85 }
+-- Shared with History's profit chart, so every chart draws its trend the same way.
+Chart.TREND_BAND_COLOR, Chart.TREND_LINE_COLOR, Chart.ESTIMATE_COLOR = TREND_BAND_COLOR, TREND_LINE_COLOR,
+    ESTIMATE_COLOR
 -- A bar cut at the top of the axis (PriceLedger.ChartCap) gets a white tip this tall.
 local CUT_TIP_COLOR = { 1, 1, 1, 0.95 }
 local CUT_TIP_HEIGHT = 3
-local TREND_LINE_COLOR = { 1, 1, 1, 0.8 }
-local ESTIMATE_COLOR = { 0.72, 0.45, 1, 0.85 }
 
 -- Extra space between two days' scans on the scan view, in pixels.
 local CHART_DAY_GAP = 3

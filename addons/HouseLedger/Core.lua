@@ -40,6 +40,10 @@ C.DETAIL_HEIGHT = (C.DETAIL_LINES + 1) * C.DETAIL_LINE_HEIGHT + 10
 -- this far from the dark box above and the status lines below.
 C.DETAIL_CHART_MARGIN = 6
 C.DETAIL_CHART_HEIGHT = C.DETAIL_HEIGHT - 2 * C.DETAIL_CHART_MARGIN
+-- Where those charts (and History's profit chart) start from the window's left, and the window
+-- width they need: below it they hide (and Buy's Avg 7d column with them).
+C.DETAIL_CHART_LEFT = 380
+C.DETAIL_CHART_MIN_WIDTH = 560
 
 -- The results list sits in the template's inset, between the search
 -- bar (60 from the top) and the details block. The filter row (quality, item level, and
@@ -69,7 +73,7 @@ C.PORTRAIT_ICON = "Interface\\Icons\\INV_Misc_Coin_02"
 
 C.BUY_TAB = 1
 -- Market is ours alone: a plain tab that presses nothing on Blizzard's window.
-C.MARKET_TAB = 4
+C.MARKET_TAB = 2
 -- The Market tab's views, in switcher order. All read saved data only.
 C.MARKET_VIEWS = {
     { key = "deals", title = "Deals", noun = "deals",

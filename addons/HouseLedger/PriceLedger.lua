@@ -2349,6 +2349,17 @@ function PriceLedger.CleanLedger(ledger)
             seen[#seen + 1] = mail
         end
     end
+    -- Totals of the entries the list has dropped (past LEDGER_KEPT), for lifetime; kept when well
+    -- formed. The "lifetime" field of the first version stored profits under the rule of its day, which
+    -- went stale when the rule changed; it is dropped (the list's own entries count instead).
+    local dropped = {}
+    for who, sums in pairs(type(ledger.dropped) == "table" and ledger.dropped or {}) do
+        if type(who) == "string" and type(sums) == "table" and type(sums.soldCount) == "number"
+            and type(sums.soldCopper) == "number" and type(sums.boughtCount) == "number"
+            and type(sums.boughtCopper) == "number" and type(sums.profit) == "number" then
+            dropped[who] = sums
+        end
+    end
     -- Mail entries saved before times were estimated (first version of the tab) get theirs from
     -- the mail they came from, while it is still remembered. Once only: they are marked.
     for _, entry in ipairs(entries) do
@@ -2373,11 +2384,57 @@ function PriceLedger.CleanLedger(ledger)
         end
         return place[a] < place[b]
     end)
-    ledger.entries, ledger.seen = entries, seen
+    local droppedStock = {}
+    for who, items in pairs(type(ledger.droppedStock) == "table" and ledger.droppedStock or {}) do
+        for name, stock in pairs(type(items) == "table" and items or {}) do
+            if type(who) == "string" and type(name) == "string" and type(stock) == "table"
+                and type(stock.count) == "number" and stock.count > 0 and type(stock.copper) == "number" then
+                droppedStock[who] = droppedStock[who] or {}
+                droppedStock[who][name] = stock
+            end
+        end
+    end
+    ledger.entries, ledger.seen, ledger.dropped, ledger.lifetime = entries, seen, dropped, nil
+    ledger.droppedStock = droppedStock
     return ledger
 end
 
---- Adds one entry, dropping the oldest past LEDGER_KEPT.
+--- Sums for a list of entries: sold (count, proceeds after the cut), bought (count, copper), profit.
+-- @param sums the sums so far; changed in place
+-- @param entry an entry
+-- @param profits from LedgerProfits
+local function AddToSums(sums, entry, profits)
+    if entry.kind == "bought" then
+        sums.boughtCount, sums.boughtCopper = sums.boughtCount + entry.count, sums.boughtCopper + (entry.bid or 0)
+    elseif entry.kind == "sold" then
+        sums.soldCount = sums.soldCount + entry.count
+        sums.soldCopper = sums.soldCopper + PriceLedger.SaleProceeds(entry)
+        sums.profit = sums.profit + (profits[entry] or 0)
+    end
+end
+
+--- One entry's effect on an item's auction house stock, by one rule for the rows and lifetime: a
+-- buy adds to the stock and its cost; a sale takes from the stock first, at its average cost, and
+-- whatever the stock can't cover came from elsewhere (looted, farmed, made) and cost nothing.
+-- @param stock { count, copper } for one item; changed in place
+-- @param entry a bought or sold entry of that item
+-- @return for a sale: its cost in copper and how many of it the stock covered
+local function StockStep(stock, entry)
+    if entry.kind == "bought" then
+        stock.count, stock.copper = stock.count + entry.count, stock.copper + (entry.bid or 0)
+        return 0, 0
+    end
+    local covered = math.min(entry.count, stock.count)
+    if covered == 0 then
+        return 0, 0
+    end
+    local cost = stock.copper / stock.count * covered
+    stock.count, stock.copper = stock.count - covered, stock.copper - cost
+    return cost, covered
+end
+
+--- Adds one entry, dropping the oldest past LEDGER_KEPT; what a dropped entry adds up to (its profit
+-- by the rule of the moment, from what the list still holds) goes to ledger.dropped, for lifetime.
 -- @param ledger the history; changed in place
 -- @param entry the entry
 local function AddEntry(ledger, entry)
@@ -2389,6 +2446,29 @@ local function AddEntry(ledger, entry)
     end
     table.insert(entries, at, entry)
     while #entries > PriceLedger.LEDGER_KEPT do
+        local oldest = entries[1]
+        if oldest.kind == "bought" or oldest.kind == "sold" then
+            ledger.dropped = ledger.dropped or {}
+            local who = oldest.who or "?"
+            local sums = ledger.dropped[who] or { soldCount = 0, soldCopper = 0, boughtCount = 0, boughtCopper = 0,
+                profit = 0 }
+            ledger.dropped[who] = sums
+            -- Its effect on the bought stock is kept too (droppedStock), so a later sale still has its
+            -- cost after the buy left the list, and its profit is what it was in the list.
+            ledger.droppedStock = ledger.droppedStock or {}
+            local mine = ledger.droppedStock[who] or {}
+            ledger.droppedStock[who] = mine
+            local stock = mine[oldest.name] or { count = 0, copper = 0 }
+            local cost = 0
+            if oldest.kind == "sold" then
+                cost = StockStep(stock, oldest)
+            elseif oldest.bid then
+                StockStep(stock, oldest)
+            end
+            mine[oldest.name] = stock.count > 0 and stock or nil
+            local profit = oldest.kind == "sold" and math.floor(PriceLedger.SaleProceeds(oldest) - cost + 0.5) or 0
+            AddToSums(sums, oldest, { [oldest] = profit })
+        end
         table.remove(entries, 1)
     end
 end
@@ -2516,28 +2596,119 @@ function PriceLedger.SaleProceeds(entry)
     return (entry.bid or 0) - (entry.cut or 0)
 end
 
---- The profit of each sale: its proceeds less what the account paid for that many, at the average
--- price of the recorded buys of that item up to then. A sale with no recorded buy before it has no
--- profit (crafted or looted items aren't counted as all profit).
+--- The profit of each sale: its proceeds (after the house's cut) less its cost (StockStep: the
+-- average the same character paid on the auction house, for as many as its bought stock still
+-- holds). A sale with nothing bought left to cover it (looted, farmed or made) counts in full.
 -- @param entries the history's entries, oldest first
--- @return table entry -> copper (rounded), for sold entries with recorded buys
-function PriceLedger.LedgerProfits(entries)
+-- @param start optional bought stock left by entries the list dropped (ledger.droppedStock):
+--   { [who] = { [name] = { count, copper } } }; read, never changed
+-- @return table entry -> copper (rounded) for every sold entry, and table entry -> true for the
+--   sales that had a recorded buy (flips)
+function PriceLedger.LedgerProfits(entries, start)
     -- By name: a sale's mail names the item but gives no item ID.
-    local paid, profits = {}, {}
+    local paid, profits, flips = {}, {}, {}
     for _, entry in ipairs(entries) do
+        -- Only items bought on the auction house have a stock to track, one per character: what one
+        -- bought isn't another's cost.
+        local who = entry.who or "?"
+        local stock = paid[who] and paid[who][entry.name]
+        local left = stock == nil and start and start[who] and start[who][entry.name]
+        if left then
+            -- A copy of what the dropped entries left, so the saved stock stays as it is.
+            stock = { count = left.count, copper = left.copper }
+            paid[who] = paid[who] or {}
+            paid[who][entry.name] = stock
+        end
         if entry.kind == "bought" and entry.bid then
-            local sum = paid[entry.name] or { copper = 0, count = 0 }
-            sum.copper, sum.count = sum.copper + entry.bid, sum.count + entry.count
-            paid[entry.name] = sum
+            paid[who] = paid[who] or {}
+            stock = stock or { count = 0, copper = 0 }
+            paid[who][entry.name] = stock
+            StockStep(stock, entry)
         elseif entry.kind == "sold" then
-            local sum = paid[entry.name]
-            if sum and sum.count > 0 then
-                local cost = sum.copper / sum.count * entry.count
-                profits[entry] = math.floor(PriceLedger.SaleProceeds(entry) - cost + 0.5)
+            local cost, covered = 0, 0
+            if stock then
+                cost, covered = StockStep(stock, entry)
+            end
+            flips[entry] = covered > 0 or nil
+            profits[entry] = math.floor(PriceLedger.SaleProceeds(entry) - cost + 0.5)
+        end
+    end
+    return profits, flips
+end
+
+-- The History stats' periods: the same windows as the Buy tab's day lines.
+PriceLedger.LEDGER_PERIODS = { { label = "Today", days = 1 }, { label = "3 days", days = 3 },
+    { label = "7 days", days = 7 }, { label = "14 days", days = 14 } }
+
+--- The History stats for today, 3, 7 and 14 days: calendar days ending today, from the entries.
+-- @param entries the history's entries
+-- @param profits from LedgerProfits
+-- @param now the current time
+-- @param who a character's name, or nil for all
+-- @return list of { label, days, soldCount, soldCopper, boughtCount, boughtCopper, profit }
+function PriceLedger.LedgerPeriods(entries, profits, now, who)
+    local periods = {}
+    for index, period in ipairs(PriceLedger.LEDGER_PERIODS) do
+        periods[index] = { label = period.label, days = period.days, soldCount = 0, soldCopper = 0, boughtCount = 0,
+            boughtCopper = 0, profit = 0, from = PriceLedger.DayKey(now - (period.days - 1) * SECONDS_PER_DAY) }
+    end
+    for _, entry in ipairs(entries) do
+        if who == nil or entry.who == who then
+            local day = PriceLedger.DayKey(entry.time)
+            for _, period in ipairs(periods) do
+                if day >= period.from then
+                    AddToSums(period, entry, profits)
+                end
             end
         end
     end
-    return profits
+    return periods
+end
+
+--- Lifetime totals: the list's entries by today's profit rule, plus what the entries it has dropped
+-- added up to. One character's, or every character's. Never under the periods, which count the
+-- same entries.
+-- @param ledger the history
+-- @param profits from LedgerProfits for its entries
+-- @param who a character's name, or nil for all
+-- @return { soldCount, soldCopper, boughtCount, boughtCopper, profit }
+function PriceLedger.LedgerLifetime(ledger, profits, who)
+    local total = { soldCount = 0, soldCopper = 0, boughtCount = 0, boughtCopper = 0, profit = 0 }
+    for name, sums in pairs(ledger.dropped or {}) do
+        if who == nil or name == who then
+            for key in pairs(total) do
+                total[key] = total[key] + sums[key]
+            end
+        end
+    end
+    for _, entry in ipairs(ledger.entries) do
+        if who == nil or entry.who == who then
+            AddToSums(total, entry, profits)
+        end
+    end
+    return total
+end
+
+--- Profit per calendar day for the last 14 days, for the History chart.
+-- @param entries the history's entries
+-- @param profits from LedgerProfits
+-- @param now the current time
+-- @param who a character's name, or nil for all
+-- @return { days = { 14 numbers, today last }, keys = { their day keys } }
+function PriceLedger.LedgerChartDays(entries, profits, now, who)
+    local chart, slot = { days = {}, keys = {} }, {}
+    for back = 13, 0, -1 do
+        local key = PriceLedger.DayKey(now - back * SECONDS_PER_DAY)
+        chart.days[#chart.days + 1], chart.keys[#chart.keys + 1] = 0, key
+        slot[key] = #chart.days
+    end
+    for _, entry in ipairs(entries) do
+        local index = entry.kind == "sold" and (who == nil or entry.who == who) and slot[PriceLedger.DayKey(entry.time)]
+        if index then
+            chart.days[index] = chart.days[index] + (profits[entry] or 0)
+        end
+    end
+    return chart
 end
 
 --- The entries the History tab shows: one character's (or all), one kind (or all), newest first.
@@ -2556,32 +2727,6 @@ function PriceLedger.LedgerView(entries, who, kind)
         end
     end
     return view
-end
-
---- Totals for a list of entries: bought (count, copper), sold (count, proceeds), returned count,
--- and the profit of the sales that have one.
--- @param view the entries
--- @param profits from LedgerProfits
--- @return { boughtCount, boughtCopper, soldCount, soldCopper, returnedCount, profit, profitSales }
-function PriceLedger.LedgerTotals(view, profits)
-    local totals = { boughtCount = 0, boughtCopper = 0, soldCount = 0, soldCopper = 0, returnedCount = 0,
-        profit = 0, profitSales = 0 }
-    for _, entry in ipairs(view) do
-        if entry.kind == "bought" then
-            totals.boughtCount = totals.boughtCount + entry.count
-            totals.boughtCopper = totals.boughtCopper + (entry.bid or 0)
-        elseif entry.kind == "sold" then
-            totals.soldCount = totals.soldCount + entry.count
-            totals.soldCopper = totals.soldCopper + PriceLedger.SaleProceeds(entry)
-            if profits[entry] then
-                totals.profit = totals.profit + profits[entry]
-                totals.profitSales = totals.profitSales + 1
-            end
-        else
-            totals.returnedCount = totals.returnedCount + entry.count
-        end
-    end
-    return totals
 end
 
 --- When an entry happened, as the History tab shows it: month-day and time.
@@ -2774,8 +2919,9 @@ end
 -- the last scan. The other player's name in a bid is never kept.
 -- ---------------------------------------------------------------------
 
--- A stackable's owned-auction buyout is read as the price of one (as its listings show it).
--- UNVERIFIED on Forever: if the game gives the whole auction's price, set this to false.
+-- A stackable's owned-auction buyout is read as the price of one while it's up (as its listings
+-- show it). Checked in game 2026-11-27: 20 Light Leather posted at 37c read 37 while up and 740
+-- once sold; 20 Linen Cloth at 21c read 420 sold (OwnedPrice takes a sold one as the whole sale).
 PriceLedger.OWNED_BUYOUT_EACH = true
 -- Under this many seconds left, the tab marks an auction as ending soon.
 PriceLedger.OWNED_SOON = 2 * 60 * 60

@@ -763,19 +763,144 @@ do
         { time = 4, kind = "sold", name = "Gem", count = 1, bid = 500, cut = 25 },
         { time = 5, kind = "expired", name = "Rod", count = 1 },
     }
-    local profits = P.LedgerProfits(entries)
-    Check("profit: proceeds less the average paid (600 each), the deposit not counted", profits[entries[3]] == 350)
-    Check("profit: none without a recorded buy", profits[entries[4]] == nil)
+    local profits, flips = P.LedgerProfits(entries)
+    Check("profit: proceeds less the average paid (600 each), the deposit not counted", profits[entries[3]] == 350
+        and flips[entries[3]] == true)
+    Check("profit: a sale with no recorded buy (looted, farmed, made) counts in full, after the cut",
+        profits[entries[4]] == 475 and not flips[entries[4]])
+    -- Only as many as were bought have a cost: in game, 3 of 40 bought Linen Cloth sold, then 20
+    -- looted ones; the looted ones count in full.
+    local stock = {
+        { time = 1, kind = "bought", name = "Cloth", count = 2, bid = 50 },
+        { time = 2, kind = "sold", name = "Cloth", count = 1, bid = 30, cut = 0 },
+        { time = 3, kind = "sold", name = "Cloth", count = 3, bid = 90, cut = 0 },
+        { time = 4, kind = "sold", name = "Cloth", count = 1, bid = 30, cut = 0 },
+    }
+    -- Sold before any buy: looted, so it doesn't use up a later buy.
+    local early = { { time = 0, kind = "sold", name = "Cloth", count = 5, bid = 100, cut = 0 },
+        { time = 1, kind = "bought", name = "Cloth", count = 2, bid = 50 },
+        { time = 2, kind = "sold", name = "Cloth", count = 2, bid = 60, cut = 0 } }
+    -- Per character: what one character bought isn't another's cost (in game, one character's 40
+    -- bought cloth were charged against an alt's 20 looted ones).
+    local two = { { time = 1, who = "Mira", kind = "bought", name = "Cloth", count = 40, bid = 940 },
+        { time = 2, who = "Tam", kind = "sold", name = "Cloth", count = 20, bid = 500, cut = 25 },
+        { time = 3, who = "Mira", kind = "sold", name = "Cloth", count = 1, bid = 30, cut = 0 } }
+    local twoProfits, twoFlips = P.LedgerProfits(two)
+    Check("profit: another character's buys aren't this one's cost", twoProfits[two[2]] == 475 and not twoFlips[two[2]]
+        and twoProfits[two[3]] == 7 and twoFlips[two[3]])
+    Check("profit: a sale before any buy doesn't use up a later buy", P.LedgerProfits(early)[early[3]] == 10
+        and P.LedgerProfits(early)[early[1]] == 100)
+    local stockProfits, stockFlips = P.LedgerProfits(stock)
+    Check("profit: only as many as were bought carry a cost; the rest count in full", stockProfits[stock[2]] == 5
+        and stockProfits[stock[3]] == 90 - 25 and stockProfits[stock[4]] == 30 and stockFlips[stock[3]]
+        and not stockFlips[stock[4]])
     local view = P.LedgerView(entries)
     Check("view: newest first", view[1].time == 5 and #view == 5)
     Check("view: by kind, returned is expired and cancelled", #P.LedgerView(entries, nil, "sold") == 2
         and #P.LedgerView(entries, nil, "returned") == 1)
-    local totals = P.LedgerTotals(view, profits)
-    Check("totals: bought, sold after the cut, returned, profit", totals.boughtCount == 4 and totals.boughtCopper == 2400
-        and totals.soldCount == 2 and totals.soldCopper == 1425 and totals.returnedCount == 1 and totals.profit == 350
-        and totals.profitSales == 1)
     Check("characters: A to Z, once each", table.concat(P.LedgerCharacters({ { who = "b" }, { who = "a" }, { who = "b" } }),
         ",") == "a,b")
+end
+
+-- History stats: today, 3, 7 and 14 days and lifetime from the entries (plus dropped ones), and a
+-- 14-day profit chart.
+do
+    local NOW = At(0)
+    local ledger = P.CleanLedger(nil)
+    P.RecordBuy(ledger, { time = At(-20), who = "Mira", name = "Rod", count = 2, bid = 1000 })
+    local function Sale(day, who, name, bid)
+        return { kind = "sold", name = name, count = 1, bid = bid, cut = bid / 20, expires = At(day) + P.MAIL_LIFE }
+    end
+    P.RecordMail(ledger, { Sale(-10, "Mira", "Rod", 1000) }, NOW, "Mira", "R")
+    P.RecordMail(ledger, { Sale(-2, "Mira", "Gem", 400), Sale(0, "Mira", "Gem", 200) }, NOW, "Mira", "R")
+    P.RecordMail(ledger, { Sale(0, "Tam", "Ore", 100) }, NOW, "Tam", "R")
+    local profits = P.LedgerProfits(ledger.entries)
+    local periods = P.LedgerPeriods(ledger.entries, profits, NOW, nil)
+    local function Period(label)
+        for _, period in ipairs(periods) do
+            if period.label == label then
+                return period
+            end
+        end
+    end
+    Check("periods: today, 3, 7 and 14 days, like Buy's", #periods == 4 and periods[1].label == "Today"
+        and periods[4].label == "14 days")
+    Check("periods: today's sales after the cut and their profit", Period("Today").soldCopper == 190 + 95
+        and Period("Today").profit == 190 + 95 and Period("Today").soldCount == 2)
+    Check("periods: 3 days takes in the day before yesterday", Period("3 days").soldCopper == 190 + 95 + 380)
+    Check("periods: 14 days takes in the flip, its profit less what was paid", Period("14 days").profit
+        == 190 + 95 + 380 + (950 - 500))
+    Check("periods: one character", P.LedgerPeriods(ledger.entries, profits, NOW, "Tam")[1].soldCopper == 95)
+
+    local chart = P.LedgerChartDays(ledger.entries, profits, NOW, nil)
+    Check("chart: 14 days of profit, today last", #chart.days == 14 and chart.days[14] == 190 + 95
+        and chart.days[12] == 380 and chart.days[4] == 450 and chart.days[1] == 0)
+    -- Lifetime: the entries in the list by today's rule, plus totals of the entries the list dropped.
+    local function Life(ledger, who)
+        return P.LedgerLifetime(ledger, P.LedgerProfits(ledger.entries, ledger.droppedStock), who)
+    end
+    local life = Life(ledger, nil)
+    Check("lifetime: every entry in the list, by today's profit rule", life.soldCount == 4 and life.boughtCopper == 1000
+        and life.soldCopper == 950 + 380 + 190 + 95 and life.profit == 450 + 380 + 190 + 95)
+    Check("lifetime: one character", Life(ledger, "Tam").soldCopper == 95)
+    local kept = P.LEDGER_KEPT
+    P.LEDGER_KEPT = 2
+    P.RecordMail(ledger, { Sale(0, "Tam", "Ore", 120) }, NOW + 60, "Tam", "R")
+    P.LEDGER_KEPT = kept
+    Check("lifetime: dropping old entries from the list doesn't lower it", #ledger.entries == 2
+        and Life(ledger, nil).soldCount == 5 and Life(ledger, nil).boughtCopper == 1000
+        and Life(ledger, "Mira").profit == 450 + 380 + 190)
+    P.RecordMail(ledger, { Sale(0, "Tam", "Ore", 120) }, NOW + 60, "Tam", "R")
+    Check("lifetime: the same mail read again isn't counted twice", Life(ledger, nil).soldCount == 5)
+    local fourteen = P.LedgerPeriods(ledger.entries, P.LedgerProfits(ledger.entries), NOW + 60, nil)[4]
+    Check("lifetime: never under the 14 days", Life(ledger, nil).profit >= fourteen.profit
+        and Life(ledger, nil).soldCopper >= fourteen.soldCopper)
+
+    -- Looted cloth sold, then the same cloth bought later, then the sale's mail read: a buy after the
+    -- sale isn't its cost, in the rows or in lifetime.
+    local later = P.CleanLedger(nil)
+    P.RecordBuy(later, { time = At(0), who = "Mira", name = "Cloth", count = 1, bid = 500 })
+    P.RecordMail(later, { Sale(-3, "Mira", "Cloth", 100) }, NOW, "Mira", "R")
+    local sale = later.entries[1]
+    Check("lifetime: a buy after a sale isn't its cost, the same as the row", sale.kind == "sold"
+        and P.LedgerProfits(later.entries)[sale] == 95 and Life(later, "Mira").profit == 95)
+    local few = P.CleanLedger(nil)
+    P.RecordBuy(few, { time = At(-5), who = "Mira", name = "Cloth", count = 1, bid = 20 })
+    P.RecordMail(few, { { kind = "sold", name = "Cloth", count = 3, bid = 90, cut = 0, expires = At(-1) + P.MAIL_LIFE } },
+        NOW, "Mira", "R")
+    Check("lifetime: only as many as were bought carry a cost, the same as the row",
+        Life(few, "Mira").profit == 70 and P.LedgerProfits(few.entries)[few.entries[2]] == 70)
+    local alts = P.CleanLedger(nil)
+    P.RecordBuy(alts, { time = At(-5), who = "Mira", name = "Cloth", count = 40, bid = 940 })
+    P.RecordMail(alts, { { kind = "sold", name = "Cloth", count = 20, bid = 500, cut = 25,
+        expires = At(-1) + P.MAIL_LIFE } }, NOW, "Tam", "R")
+    Check("lifetime: another character's buys aren't this one's cost", Life(alts, "Tam").profit == 475)
+
+    -- A buy the list drops still gives its sale, still in the list, a cost; and lifetime doesn't move.
+    local short = P.CleanLedger(nil)
+    P.RecordBuy(short, { time = At(-9), who = "Mira", name = "Rod", count = 2, bid = 200 })
+    P.RecordMail(short, { Sale(-5, "Mira", "Rod", 300) }, NOW, "Mira", "R")
+    local before = Life(short, "Mira").profit
+    local keptNow = P.LEDGER_KEPT
+    P.LEDGER_KEPT = 1
+    P.RecordMail(short, { Sale(-1, "Mira", "Gem", 40) }, NOW, "Mira", "R")
+    P.LEDGER_KEPT = 2
+    P.RecordMail(short, { Sale(-1, "Mira", "Rod", 300) }, NOW + 60, "Mira", "R")
+    P.LEDGER_KEPT = keptNow
+    local last = short.entries[#short.entries]
+    Check("profit: a sale whose buy left the list still has its cost", last.name == "Rod"
+        and P.LedgerProfits(short.entries, short.droppedStock)[last] == 285 - 100 and before == 185)
+    Check("lifetime: the same as if nothing had been dropped", Life(short, "Mira").profit == 185 + 38 + 185)
+
+    -- In game, totals saved under an earlier profit rule left lifetime under 14 days: the old field
+    -- is dropped on load, and only well-formed dropped totals are kept.
+    local stale = P.CleanLedger({ entries = { { time = 1, who = "A", kind = "sold", name = "X", count = 1, bid = 100,
+        cut = 5 } }, lifetime = { A = { soldCount = 9, soldCopper = 9, boughtCount = 0, boughtCopper = 0, profit = -500 } } })
+    Check("lifetime: totals saved under an old rule are dropped; the list's entries count", stale.lifetime == nil
+        and Life(stale, "A").profit == 95 and Life(stale, "A").soldCopper == 95)
+    Check("lifetime: damaged dropped totals are dropped", next(P.CleanLedger({ entries = {}, dropped = { A = "x" } }).dropped)
+        == nil)
+
 end
 
 -- Posting: the price Post starts from, its warnings and the house's cut
