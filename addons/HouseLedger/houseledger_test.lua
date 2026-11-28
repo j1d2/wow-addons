@@ -1653,7 +1653,7 @@ do
         and TabNamed("History") ~= nil and TabNamed("Auctions") ~= nil and frame.numTabs == 6)
     Check("Buy tab is open first", frame.selectedTab == 1 and frame.buyPanel.shown and not frame.sellPanel.shown)
     Click("Sell")
-    Check("Sell tab click opens the Sell panel", frame.selectedTab == 2 and frame.sellPanel.shown and not frame.buyPanel.shown)
+    Check("Sell tab click opens the Sell panel", frame.selectedTab == 3 and frame.sellPanel.shown and not frame.buyPanel.shown)
     Check("Sell panel says what to do", SellStatus():find("Drop an item", 1, true) ~= nil)
     Click("Buy")
     Check("Buy tab click goes back", frame.selectedTab == 1 and frame.buyPanel.shown and not frame.sellPanel.shown)
@@ -1891,7 +1891,7 @@ do
     Click("Sell")
     Check("our Sell tab switches Blizzard's window",
         AuctionHouseFrame.displayMode == AuctionHouseFrameDisplayMode.ItemSell)
-    Check("and opens our Sell tab", frame.selectedTab == 2 and frame.sellPanel.shown)
+    Check("and opens our Sell tab", frame.selectedTab == 3 and frame.sellPanel.shown)
     Click("Buy")
     Check("our Buy tab switches Blizzard's window back",
         AuctionHouseFrame.displayMode == AuctionHouseFrameDisplayMode.Buy and frame.selectedTab == 1)
@@ -1904,7 +1904,7 @@ do
     Setup()
     Load()
     Click("Sell")
-    Check("an unlinked tab still opens our Sell tab", MainFrame().selectedTab == 2)
+    Check("an unlinked tab still opens our Sell tab", MainFrame().selectedTab == 3)
 end
 
 do
@@ -1927,7 +1927,7 @@ do
         frame.shown == true and frame.points[1] and frame.points[1][2] == AuctionHouseFrame)
     Check("after combat: tabs are linked",
         TabNamed("Sell").attributes.clickbutton == AuctionHouseFrame.SellTab)
-    Check("after combat: the Sell tab is marked", frame.selectedTab == 2)
+    Check("after combat: the Sell tab is marked", frame.selectedTab == 3)
 
     world.inCombat = true
     frame:GetScript("OnDragStart")(frame)
@@ -1955,7 +1955,7 @@ do
     Check("in combat: protected panels are left alone", (world.blocked or 0) == 0 and frame.buyPanel.shown)
     world.inCombat = false
     Fire("PLAYER_REGEN_ENABLED")
-    Check("after combat: the Sell panel shows", frame.sellPanel.shown and not frame.buyPanel.shown and frame.selectedTab == 2)
+    Check("after combat: the Sell panel shows", frame.sellPanel.shown and not frame.buyPanel.shown and frame.selectedTab == 3)
 end
 
 do
@@ -1998,9 +1998,9 @@ do
     Check("reopening the house adds no second hook", HouseHooks() == 2)
 
     BlizzardTab(AuctionHouseFrameDisplayMode.ItemSell)
-    Check("Blizzard's Sell tab opens the Sell tab here", frame.selectedTab == 2 and frame.sellPanel.shown)
+    Check("Blizzard's Sell tab opens the Sell tab here", frame.selectedTab == 3 and frame.sellPanel.shown)
     BlizzardTab(AuctionHouseFrameDisplayMode.Auctions)
-    Check("Blizzard's Auctions tab leaves this window as it was", frame.selectedTab == 2)
+    Check("Blizzard's Auctions tab leaves this window as it was", frame.selectedTab == 3)
     BlizzardTab(AuctionHouseFrameDisplayMode.CommoditiesBuy)
     Check("Blizzard's Buy tab opens the Buy tab here", frame.selectedTab == 1 and frame.buyPanel.shown)
 
@@ -2019,7 +2019,7 @@ do
     OpenHouse()
     local frame = MainFrame()
     BlizzardPostItem({ itemID = 2589, commodity = true })
-    Check("an item put in Blizzard's Sell window opens the Sell tab here", frame.selectedTab == 2)
+    Check("an item put in Blizzard's Sell window opens the Sell tab here", frame.selectedTab == 3)
     Check("its name shows here", frame.sellPanel.itemName.text == "Item 2589")
     Check("following Blizzard sends no search of its own",
         #world.itemQueries == 0 and #world.blizzardQueries == 1)
@@ -2135,7 +2135,7 @@ do
     Click("Market")
     local panel = frame.buyPanel
     local rows = ResultRows()
-    Check("Market shows the list without the search box", frame.selectedTab == 4 and panel.shown
+    Check("Market shows the list without the search box", frame.selectedTab == 2 and panel.shown
         and not SearchBox().shown and panel.marketLabel.shown and panel.marketDropdown.shown)
     Check("it opens on deals at the last scan", Picked(panel.marketDropdown) == "Deals"
         and panel.marketLabel.text == "at last scan (2 h ago)" and panel.marketDropdown.shown)
@@ -2171,7 +2171,7 @@ do
         and ResultRows()[1].nameText.text == "Item 10" and frame.buyPanel.priceHeading.text == "Price")
     Click("Market")
     BlizzardTab(AuctionHouseFrameDisplayMode.ItemSell)
-    Check("a Blizzard tab change moves off Market", frame.selectedTab == 2 and frame.sellPanel.shown)
+    Check("a Blizzard tab change moves off Market", frame.selectedTab == 3 and frame.sellPanel.shown)
 
     -- In combat the tab marking waits, and combat's end lands on Market.
     Click("Buy")
@@ -2180,7 +2180,7 @@ do
     Check("in combat: nothing protected is changed by the Market tab", (world.blocked or 0) == 0)
     world.inCombat = false
     Fire("PLAYER_REGEN_ENABLED")
-    Check("after combat: Market is the open tab", frame.selectedTab == 4 and panel.marketLabel.shown)
+    Check("after combat: Market is the open tab", frame.selectedTab == 2 and panel.marketLabel.shown)
 
     -- A new scan refreshes the list. The game hasn't loaded this item's name: the old one stays.
     Advance(15 * 60)
@@ -4332,8 +4332,8 @@ do
         order[index] = each.text
         order.ids = (order.ids or "") .. each.id
     end
-    Check("auctions: a plain tab right after Sell", tab ~= nil and frame.numTabs == 6
-        and table.concat(order, ",") == "Buy,Sell,Auctions,Market,History,Settings" and order.ids == "123456"
+    Check("auctions: a plain tab right after Sell, Market right after Buy", tab ~= nil and frame.numTabs == 6
+        and table.concat(order, ",") == "Buy,Market,Sell,Auctions,History,Settings" and order.ids == "123456"
         and not tab.template:find("SecureActionButtonTemplate", 1, true))
     tab:GetScript("OnClick")(tab)
     local panel = frame.auctionsPanel

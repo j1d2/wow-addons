@@ -8,12 +8,13 @@ local C, ui, state, U, Chart, Scan, Tooltip, Buy, Sell, Purchase, Post, PC, Hist
     ns.C, ns.ui, ns.state, ns.U, ns.Chart, ns.Scan, ns.Tooltip, ns.Buy, ns.Sell, ns.Purchase, ns.Post, ns.PC,
     ns.History, ns.Auctions, ns.Settings, ns.Window
 
-local SELL_TAB = 2
+local SELL_TAB = 3
 -- History and Settings are ours alone, like Market.
 local HISTORY_TAB = 5
 local SETTINGS_TAB = 6
--- The player's own auctions, right after Sell (like Blizzard's own tab order).
-local AUCTIONS_TAB = 3
+-- The player's own auctions, right after Sell (like Blizzard's own tab order). The order pairs
+-- related tabs: Buy and Market, Sell and Auctions, then History and Settings.
+local AUCTIONS_TAB = 4
 
 -- Blizzard's auction window is followed through hooksecurefunc, set once.
 local houseHooked = false
@@ -122,7 +123,7 @@ local function BuildTabs()
         Auctions.Ask()
     end)
     -- In id order: PanelTemplates marks the tab whose place in this list is the selected id.
-    ui.frame.Tabs = { buyTab, sellTab, auctionsTab, marketTab, historyTab, settingsTab }
+    ui.frame.Tabs = { buyTab, marketTab, sellTab, auctionsTab, historyTab, settingsTab }
     if type(PanelTemplates_TabResize) == "function" then
         for _, tab in ipairs(ui.frame.Tabs) do
             PanelTemplates_TabResize(tab, 0)

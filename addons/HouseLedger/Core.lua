@@ -73,7 +73,7 @@ C.PORTRAIT_ICON = "Interface\\Icons\\INV_Misc_Coin_02"
 
 C.BUY_TAB = 1
 -- Market is ours alone: a plain tab that presses nothing on Blizzard's window.
-C.MARKET_TAB = 4
+C.MARKET_TAB = 2
 -- The Market tab's views, in switcher order. All read saved data only.
 C.MARKET_VIEWS = {
     { key = "deals", title = "Deals", noun = "deals",
