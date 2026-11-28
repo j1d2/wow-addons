@@ -20,6 +20,7 @@ Purchase.lua
 Post.lua
 PriceCheck.lua
 History.lua
+Auctions.lua
 Settings.lua
 Window.lua
 HouseLedger.lua

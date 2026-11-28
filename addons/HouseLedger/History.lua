@@ -48,31 +48,13 @@ local filter = { who = nil, kind = nil }
 local sort = { key = nil, ascending = false }
 local profits, profitsStamp = {}, nil
 
---- This character's name, with its Forever surname when the game gives one.
--- @return the name
-local function CharacterName()
-    local name, surname = UnitName("player")
-    if type(surname) == "string" and surname ~= "" then
-        local consts = type(Constants) == "table" and Constants.CharacterNameSeparatorConsts
-        local separator = type(consts) == "table" and consts.CHARACTERNAME_SURNAME_SEPARATOR or " "
-        return name .. separator .. surname
-    end
-    return name
-end
-
---- This character's realm, as prices are filed.
--- @return the realm
-local function RealmName()
-    return Price.RealmFor(HouseLedgerDB, GetRealmName())
-end
-
 --- Records a buy HouseLedger made, the moment the house says it went through.
 -- @param itemID the item
 -- @param name its plain name
 -- @param count how many
 -- @param copper what was paid in all
 function History.RecordBuy(itemID, name, count, copper)
-    Price.RecordBuy(HouseLedgerDB.ledger, { time = time(), who = CharacterName(), realm = RealmName(),
+    Price.RecordBuy(HouseLedgerDB.ledger, { time = time(), who = U.CharacterName(), realm = U.RealmName(),
         itemID = itemID, name = name, count = count, bid = copper })
     History.Render()
 end
@@ -128,7 +110,7 @@ function History.ReadInbox()
             mails[#mails + 1] = mail
         end
     end
-    if #mails > 0 and Price.RecordMail(HouseLedgerDB.ledger, mails, now, CharacterName(), RealmName()) > 0 then
+    if #mails > 0 and Price.RecordMail(HouseLedgerDB.ledger, mails, now, U.CharacterName(), U.RealmName()) > 0 then
         History.Render()
     end
 end

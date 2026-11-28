@@ -7,7 +7,8 @@ item looks, font-string cells).
 local _, ns = ...
 ns.C, ns.ui, ns.state = {}, {}, {}
 -- One table per file, made here so any file can name another's before it loads.
-for _, name in ipairs({ "U", "Chart", "Scan", "Tooltip", "Buy", "Sell", "Purchase", "Post", "PC", "History", "Settings", "Window" }) do
+for _, name in ipairs({ "U", "Chart", "Scan", "Tooltip", "Buy", "Sell", "Purchase", "Post", "PC", "History", "Auctions",
+    "Settings", "Window" }) do
     ns[name] = {}
 end
 local C, ui, state, Price, U = ns.C, ns.ui, ns.state, ns.Price, ns.U
@@ -233,6 +234,24 @@ function U.ShowWindowLines(lines, stats, width)
             line.right:SetText("")
         end
     end
+end
+
+--- This character's name, with its Forever surname when the game gives one.
+-- @return the name
+function U.CharacterName()
+    local name, surname = UnitName("player")
+    if type(surname) == "string" and surname ~= "" then
+        local consts = type(Constants) == "table" and Constants.CharacterNameSeparatorConsts
+        local separator = type(consts) == "table" and consts.CHARACTERNAME_SURNAME_SEPARATOR or " "
+        return name .. separator .. surname
+    end
+    return name
+end
+
+--- This character's realm, as prices are filed.
+-- @return the realm
+function U.RealmName()
+    return Price.RealmFor(HouseLedgerDB, GetRealmName())
 end
 
 --- A wait as whole minutes (rounded up) from 60 seconds on, otherwise seconds.

@@ -15,8 +15,9 @@ does not scan when the auction house opens.
 ]]
 
 local ADDON_NAME, ns = ...
-local C, ui, state, Price, U, Scan, Tooltip, Buy, Sell, Purchase, Post, PC, History, Window = ns.C, ns.ui,
-    ns.state, ns.Price, ns.U, ns.Scan, ns.Tooltip, ns.Buy, ns.Sell, ns.Purchase, ns.Post, ns.PC, ns.History, ns.Window
+local C, ui, state, Price, U, Scan, Tooltip, Buy, Sell, Purchase, Post, PC, History, Auctions, Window = ns.C, ns.ui,
+    ns.state, ns.Price, ns.U, ns.Scan, ns.Tooltip, ns.Buy, ns.Sell, ns.Purchase, ns.Post, ns.PC, ns.History,
+    ns.Auctions, ns.Window
 
 -- True while one refilter waits for the next frame, so a burst of item-info events filters once.
 local refilterPending = false
@@ -44,6 +45,8 @@ eventFrame:RegisterEvent("AUCTION_HOUSE_AUCTION_CREATED")
 eventFrame:RegisterEvent("AUCTION_HOUSE_POST_ERROR")
 -- The mailbox: the History tab reads auction house mail while it is open (reads only).
 eventFrame:RegisterEvent("MAIL_INBOX_UPDATE")
+-- This character's auctions, asked by the Auctions tab or by Blizzard's own (read only).
+eventFrame:RegisterEvent("OWNED_AUCTIONS_UPDATED")
 
 -- The buy answers and the handler each one goes to; COMMODITY_PRICE_UPDATED also passes arg2.
 local PURCHASE_EVENTS = {
@@ -124,6 +127,11 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1, arg2)
         return
     elseif event == "AUCTION_HOUSE_POST_ERROR" then
         Post.OnPostError()
+        return
+    end
+
+    if event == "OWNED_AUCTIONS_UPDATED" then
+        Auctions.OnOwnedUpdated()
         return
     end
 

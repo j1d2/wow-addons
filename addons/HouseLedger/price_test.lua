@@ -1744,6 +1744,76 @@ do
         and P.TimeLeftText(9) == "")
 end
 
+-- The Auctions tab: the player's own auctions, saved per character, compared with the last scan.
+do
+    local SOLD = 1
+    local owned = {
+        { auctionID = 1, itemKey = { itemID = 2589 }, itemLink = "|cffffffff|Hitem:2589|h[Linen Cloth]|h|r",
+            status = 0, quantity = 20, timeLeftSeconds = 3600, buyoutAmount = 25, bidder = "Someone Else" },
+        { auctionID = 2, itemKey = { itemID = 2575 }, itemLink = "|cff1eff00|Hitem:2575|h[Red Linen Shirt]|h|r",
+            status = 0, quantity = 1, timeLeftSeconds = 40000, buyoutAmount = 5000 },
+        { auctionID = 3, itemKey = { itemID = 2589 }, itemLink = "|cffffffff|Hitem:2589|h[Linen Cloth]|h|r",
+            status = SOLD, quantity = 5, buyoutAmount = 30 },
+        { auctionID = 4, itemKey = { itemID = 9 }, status = 0, quantity = 1, timeLeftSeconds = 100 },
+    }
+    local function Commodity(itemKey) return itemKey.itemID == 2589 end
+    local entries = P.OwnedEntries(owned, 1000, Commodity, SOLD)
+    Check("owned: one entry per auction with a buyout", #entries == 3)
+    local cloth, shirt, sold = entries[1], entries[2], entries[3]
+    Check("owned: a stackable's buyout is per item: the total is that times how many", cloth.itemID == 2589
+        and cloth.unit == 25 and cloth.total == 500 and cloth.quantity == 20 and cloth.name == "Linen Cloth"
+        and cloth.endsAt == 4600 and not cloth.sold)
+    Check("owned: gear's buyout is the whole auction", shirt.unit == 5000 and shirt.total == 5000)
+    Check("owned: a sold one is marked, with no end time", sold.sold == true and sold.endsAt == nil and sold.total == 150)
+    local leaked = false
+    for _, entry in ipairs(entries) do
+        for _, value in pairs(entry) do
+            leaked = leaked or value == "Someone Else"
+        end
+    end
+    Check("owned: the bidder's name is never kept", not leaked)
+
+    local db = P.EmptyDB()
+    P.SaveOwned(db, "Horde|R", "Mira Stone", entries, 1000)
+    P.SaveOwned(db, "Horde|R", "Tam Reed", { { itemID = 2575, name = "Red Linen Shirt", quantity = 1, unit = 900,
+        total = 900, endsAt = 9000 } }, 1500)
+    Check("owned: saved per house and character, with when", db.auctions["Horde|R"]["Mira Stone"].time == 1000
+        and #db.auctions["Horde|R"]["Tam Reed"].list == 1)
+    Check("owned: the characters with auctions, A to Z", table.concat(P.OwnedCharacters(db, "Horde|R"), ",")
+        == "Mira Stone,Tam Reed")
+
+    local rows = P.OwnedView(db, "Horde|R", nil, 2000)
+    Check("owned: all characters, soonest to end first, sold at the end", #rows == 4 and rows[1].itemID == 2589
+        and rows[1].left == 2600 and rows[2].who == "Tam Reed" and rows[4].sold)
+    Check("owned: one character only", #P.OwnedView(db, "Horde|R", "Tam Reed", 2000) == 1)
+    rows = P.OwnedView(db, "Horde|R", "Mira Stone", 5000)
+    Check("owned: past its end it has ended (sold or back in the mail), after the open ones", rows[1].itemID == 2575
+        and rows[2].itemID == 2589 and rows[2].ended == true and rows[2].left == 0)
+
+    -- Compared with the last scan's cheapest and the 7-day typical price.
+    local house = { items = { [2589] = { unit = 22 }, [2575] = { unit = 6000 } } }
+    local verdict = P.OwnedVerdict({ itemID = 2589, unit = 25 }, house.items[2589], { typical = 20 })
+    Check("verdict: someone was cheaper at the last scan", verdict.undercut == 3 and verdict.vsTypical == 0.25)
+    verdict = P.OwnedVerdict({ itemID = 2575, unit = 5000 }, house.items[2575], nil)
+    Check("verdict: cheapest at the last scan, no typical yet", verdict.undercut == nil and verdict.cheapest == true
+        and verdict.vsTypical == nil)
+    Check("verdict: not in the last scan", P.OwnedVerdict({ itemID = 7, unit = 5 }, nil, nil).unknown == true)
+    Check("verdict: nothing for a sold one", P.OwnedVerdict({ itemID = 2589, unit = 25, sold = true }, house.items[2589]) == nil)
+
+    rows = P.OwnedView(db, "Horde|R", nil, 2000)
+    local totals = P.OwnedTotals(rows, 0.05)
+    Check("totals: active count, value, after the cut, and sold gold waiting", totals.active == 3
+        and totals.value == 500 + 5000 + 900 and totals.afterCut == math.floor((500 + 5000 + 900) * 0.95 + 0.5)
+        and totals.sold == 1 and totals.soldGold == math.floor(150 * 0.95 + 0.5))
+    Check("totals: no cut known (goblin house): value as is", P.OwnedTotals(rows, nil).afterCut == nil)
+
+    Check("clean: damaged saved auctions are dropped", next(P.CleanAuctions({ ["Horde|R"] = { x = { time = "?" },
+        y = { time = 5, list = { { itemID = "bad" }, { itemID = 1, quantity = 1, unit = 2, total = 2 } } } } })["Horde|R"]) == "y"
+        and #P.CleanAuctions({ ["Horde|R"] = { y = { time = 5, list = { { itemID = "bad" },
+            { itemID = 1, quantity = 1, unit = 2, total = 2 } } } } })["Horde|R"].y.list == 1
+        and next(P.CleanAuctions("junk")) == nil)
+end
+
 if failed > 0 then
     io.write(string.format("%d failed\n", failed))
     os.exit(1)
