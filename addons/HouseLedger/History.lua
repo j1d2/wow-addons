@@ -133,7 +133,7 @@ local function Profits()
     local last = entries[#entries]
     local stamp = #entries .. ":" .. tostring(last and last.time)
     if stamp ~= profitsStamp then
-        profits, flips = Price.LedgerProfits(entries)
+        profits, flips = Price.LedgerProfits(entries, HouseLedgerDB.ledger.droppedStock)
         profitsStamp = stamp
     end
     return profits
@@ -349,7 +349,7 @@ function History.RenderStats()
     for index, period in ipairs(periods) do
         SetStatLine(panel.statLines[index], period.label, period)
     end
-    SetStatLine(panel.statLines[#periods + 1], "Lifetime", Price.LedgerLifetime(HouseLedgerDB.ledger, filter.who))
+    SetStatLine(panel.statLines[#periods + 1], "Lifetime", Price.LedgerLifetime(HouseLedgerDB.ledger, profits, filter.who))
     local wide = (ui.frame:GetWidth() or 0) >= STATS_CHART_MIN_WIDTH
     panel.chart:SetShown(wide)
     if wide then

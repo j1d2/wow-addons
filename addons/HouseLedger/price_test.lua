@@ -802,7 +802,7 @@ do
         ",") == "a,b")
 end
 
--- History stats: today, 3, 7 and 14 days from the entries, lifetime from running totals, and a
+-- History stats: today, 3, 7 and 14 days and lifetime from the entries (plus dropped ones), and a
 -- 14-day profit chart.
 do
     local NOW = At(0)
@@ -835,18 +835,26 @@ do
     local chart = P.LedgerChartDays(ledger.entries, profits, NOW, nil)
     Check("chart: 14 days of profit, today last", #chart.days == 14 and chart.days[14] == 190 + 95
         and chart.days[12] == 380 and chart.days[4] == 450 and chart.days[1] == 0)
-    local life = P.LedgerLifetime(ledger, nil)
-    Check("lifetime: running totals of every entry recorded", life.soldCount == 4 and life.boughtCopper == 1000
+    -- Lifetime: the entries in the list by today's rule, plus totals of the entries the list dropped.
+    local function Life(ledger, who)
+        return P.LedgerLifetime(ledger, P.LedgerProfits(ledger.entries, ledger.droppedStock), who)
+    end
+    local life = Life(ledger, nil)
+    Check("lifetime: every entry in the list, by today's profit rule", life.soldCount == 4 and life.boughtCopper == 1000
         and life.soldCopper == 950 + 380 + 190 + 95 and life.profit == 450 + 380 + 190 + 95)
-    Check("lifetime: one character", P.LedgerLifetime(ledger, "Tam").soldCopper == 95)
+    Check("lifetime: one character", Life(ledger, "Tam").soldCopper == 95)
     local kept = P.LEDGER_KEPT
     P.LEDGER_KEPT = 2
     P.RecordMail(ledger, { Sale(0, "Tam", "Ore", 120) }, NOW + 60, "Tam", "R")
     P.LEDGER_KEPT = kept
     Check("lifetime: dropping old entries from the list doesn't lower it", #ledger.entries == 2
-        and P.LedgerLifetime(ledger, nil).soldCount == 5)
+        and Life(ledger, nil).soldCount == 5 and Life(ledger, nil).boughtCopper == 1000
+        and Life(ledger, "Mira").profit == 450 + 380 + 190)
     P.RecordMail(ledger, { Sale(0, "Tam", "Ore", 120) }, NOW + 60, "Tam", "R")
-    Check("lifetime: the same mail read again isn't counted twice", P.LedgerLifetime(ledger, nil).soldCount == 5)
+    Check("lifetime: the same mail read again isn't counted twice", Life(ledger, nil).soldCount == 5)
+    local fourteen = P.LedgerPeriods(ledger.entries, P.LedgerProfits(ledger.entries), NOW + 60, nil)[4]
+    Check("lifetime: never under the 14 days", Life(ledger, nil).profit >= fourteen.profit
+        and Life(ledger, nil).soldCopper >= fourteen.soldCopper)
 
     -- Looted cloth sold, then the same cloth bought later, then the sale's mail read: a buy after the
     -- sale isn't its cost, in the rows or in lifetime.
@@ -855,24 +863,43 @@ do
     P.RecordMail(later, { Sale(-3, "Mira", "Cloth", 100) }, NOW, "Mira", "R")
     local sale = later.entries[1]
     Check("lifetime: a buy after a sale isn't its cost, the same as the row", sale.kind == "sold"
-        and P.LedgerProfits(later.entries)[sale] == 95 and P.LedgerLifetime(later, "Mira").profit == 95)
+        and P.LedgerProfits(later.entries)[sale] == 95 and Life(later, "Mira").profit == 95)
     local few = P.CleanLedger(nil)
     P.RecordBuy(few, { time = At(-5), who = "Mira", name = "Cloth", count = 1, bid = 20 })
     P.RecordMail(few, { { kind = "sold", name = "Cloth", count = 3, bid = 90, cut = 0, expires = At(-1) + P.MAIL_LIFE } },
         NOW, "Mira", "R")
+    Check("lifetime: only as many as were bought carry a cost, the same as the row",
+        Life(few, "Mira").profit == 70 and P.LedgerProfits(few.entries)[few.entries[2]] == 70)
     local alts = P.CleanLedger(nil)
     P.RecordBuy(alts, { time = At(-5), who = "Mira", name = "Cloth", count = 40, bid = 940 })
     P.RecordMail(alts, { { kind = "sold", name = "Cloth", count = 20, bid = 500, cut = 25,
         expires = At(-1) + P.MAIL_LIFE } }, NOW, "Tam", "R")
-    Check("lifetime: another character's buys aren't this one's cost", P.LedgerLifetime(alts, "Tam").profit == 475)
-    Check("lifetime: only as many as were bought carry a cost, the same as the row",
-        P.LedgerLifetime(few, "Mira").profit == 70 and P.LedgerProfits(few.entries)[few.entries[2]] == 70)
+    Check("lifetime: another character's buys aren't this one's cost", Life(alts, "Tam").profit == 475)
 
-    local old = P.CleanLedger({ entries = { { time = 1, who = "A", kind = "sold", name = "X", count = 1, bid = 100,
-        cut = 5 } } })
-    Check("lifetime: a history saved before it existed starts from its entries", P.LedgerLifetime(old, "A").soldCopper == 95
-        and P.LedgerLifetime(old, "A").profit == 95)
-    Check("lifetime: damaged totals are dropped", next(P.CleanLedger({ entries = {}, lifetime = { A = "x" } }).lifetime) == nil)
+    -- A buy the list drops still gives its sale, still in the list, a cost; and lifetime doesn't move.
+    local short = P.CleanLedger(nil)
+    P.RecordBuy(short, { time = At(-9), who = "Mira", name = "Rod", count = 2, bid = 200 })
+    P.RecordMail(short, { Sale(-5, "Mira", "Rod", 300) }, NOW, "Mira", "R")
+    local before = Life(short, "Mira").profit
+    local keptNow = P.LEDGER_KEPT
+    P.LEDGER_KEPT = 1
+    P.RecordMail(short, { Sale(-1, "Mira", "Gem", 40) }, NOW, "Mira", "R")
+    P.LEDGER_KEPT = 2
+    P.RecordMail(short, { Sale(-1, "Mira", "Rod", 300) }, NOW + 60, "Mira", "R")
+    P.LEDGER_KEPT = keptNow
+    local last = short.entries[#short.entries]
+    Check("profit: a sale whose buy left the list still has its cost", last.name == "Rod"
+        and P.LedgerProfits(short.entries, short.droppedStock)[last] == 285 - 100 and before == 185)
+    Check("lifetime: the same as if nothing had been dropped", Life(short, "Mira").profit == 185 + 38 + 185)
+
+    -- In game, totals saved under an earlier profit rule left lifetime under 14 days: the old field
+    -- is dropped on load, and only well-formed dropped totals are kept.
+    local stale = P.CleanLedger({ entries = { { time = 1, who = "A", kind = "sold", name = "X", count = 1, bid = 100,
+        cut = 5 } }, lifetime = { A = { soldCount = 9, soldCopper = 9, boughtCount = 0, boughtCopper = 0, profit = -500 } } })
+    Check("lifetime: totals saved under an old rule are dropped; the list's entries count", stale.lifetime == nil
+        and Life(stale, "A").profit == 95 and Life(stale, "A").soldCopper == 95)
+    Check("lifetime: damaged dropped totals are dropped", next(P.CleanLedger({ entries = {}, dropped = { A = "x" } }).dropped)
+        == nil)
 
 end
 
