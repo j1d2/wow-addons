@@ -2404,14 +2404,16 @@ function PriceLedger.CleanLedger(ledger)
     return ledger
 end
 
---- What the account paid on average for one of an item, from the recorded buys in the list.
+--- What the account paid on average for one of an item, from the recorded buys up to a time (as
+-- LedgerProfits counts a sale's cost: a buy after the sale isn't its cost).
 -- @param entries the history's entries
 -- @param name the item's name (a sale's mail gives no item ID)
+-- @param before the sale's time
 -- @return copper each, or nil without a recorded buy
-local function AveragePaid(entries, name)
+local function AveragePaid(entries, name, before)
     local copper, count = 0, 0
     for _, entry in ipairs(entries) do
-        if entry.kind == "bought" and entry.bid and entry.name == name then
+        if entry.kind == "bought" and entry.bid and entry.name == name and entry.time <= before then
             copper, count = copper + entry.bid, count + entry.count
         end
     end
@@ -2431,7 +2433,7 @@ local function AddToLifetime(ledger, entry)
         life.boughtCount, life.boughtCopper = life.boughtCount + entry.count, life.boughtCopper + (entry.bid or 0)
     elseif entry.kind == "sold" then
         local proceeds = PriceLedger.SaleProceeds(entry)
-        local paid = AveragePaid(ledger.entries, entry.name)
+        local paid = AveragePaid(ledger.entries, entry.name, entry.time)
         life.soldCount, life.soldCopper = life.soldCount + entry.count, life.soldCopper + proceeds
         life.profit = life.profit + math.floor(proceeds - (paid and paid * entry.count or 0) + 0.5)
     end
@@ -2703,32 +2705,6 @@ function PriceLedger.LedgerView(entries, who, kind)
     return view
 end
 
---- Totals for a list of entries: bought (count, copper), sold (count, proceeds), returned count,
--- and the profit of the sales that have one.
--- @param view the entries
--- @param profits from LedgerProfits
--- @return { boughtCount, boughtCopper, soldCount, soldCopper, returnedCount, profit, profitSales }
-function PriceLedger.LedgerTotals(view, profits)
-    local totals = { boughtCount = 0, boughtCopper = 0, soldCount = 0, soldCopper = 0, returnedCount = 0,
-        profit = 0, profitSales = 0 }
-    for _, entry in ipairs(view) do
-        if entry.kind == "bought" then
-            totals.boughtCount = totals.boughtCount + entry.count
-            totals.boughtCopper = totals.boughtCopper + (entry.bid or 0)
-        elseif entry.kind == "sold" then
-            totals.soldCount = totals.soldCount + entry.count
-            totals.soldCopper = totals.soldCopper + PriceLedger.SaleProceeds(entry)
-            if profits[entry] then
-                totals.profit = totals.profit + profits[entry]
-                totals.profitSales = totals.profitSales + 1
-            end
-        else
-            totals.returnedCount = totals.returnedCount + entry.count
-        end
-    end
-    return totals
-end
-
 --- When an entry happened, as the History tab shows it: month-day and time.
 -- @param seconds a time() value
 -- @return text like "11-23 07:25"
@@ -2919,8 +2895,9 @@ end
 -- the last scan. The other player's name in a bid is never kept.
 -- ---------------------------------------------------------------------
 
--- A stackable's owned-auction buyout is read as the price of one (as its listings show it).
--- UNVERIFIED on Forever: if the game gives the whole auction's price, set this to false.
+-- A stackable's owned-auction buyout is read as the price of one while it's up (as its listings
+-- show it). Checked in game 2026-11-27: 20 Light Leather posted at 37c read 37 while up and 740
+-- once sold; 20 Linen Cloth at 21c read 420 sold (OwnedPrice takes a sold one as the whole sale).
 PriceLedger.OWNED_BUYOUT_EACH = true
 -- Under this many seconds left, the tab marks an auction as ending soon.
 PriceLedger.OWNED_SOON = 2 * 60 * 60

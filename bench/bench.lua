@@ -63,7 +63,7 @@ local BUDGETS = {
     -- HouseLedger's History tab at LEDGER_KEPT entries, worked out when the history changes (2026-11-23).
     -- 300 since every sale has a profit (2026-11-27; measured 201, was 181 with flips only).
     ["LedgerProfits, full"] = { kb = 300, ms = 2000 },
-    ["LedgerView + totals"] = { kb = 120, ms = 2000 },
+    ["LedgerView"] = { kb = 120, ms = 2000 },
     -- The History stats block and its 14-day chart, on every redraw of the tab (2026-11-27).
     ["Ledger stats + chart"] = { kb = 10, ms = 2000 },
 }
@@ -209,7 +209,7 @@ local function BenchHouseLedger(items, days, maxScans)
     local profits
     Step("LedgerProfits, full", function() profits = P.LedgerProfits(db.ledger.entries) end,
         #db.ledger.entries .. " entries")
-    Step("LedgerView + totals", function() P.LedgerTotals(P.LedgerView(db.ledger.entries), profits) end)
+    Step("LedgerView", function() P.LedgerView(db.ledger.entries) end)
     Step("Ledger stats + chart", function()
         P.LedgerPeriods(db.ledger.entries, profits, Synth.NOW, nil)
         P.LedgerLifetime(db.ledger, nil)

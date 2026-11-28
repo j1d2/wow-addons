@@ -772,10 +772,6 @@ do
     Check("view: newest first", view[1].time == 5 and #view == 5)
     Check("view: by kind, returned is expired and cancelled", #P.LedgerView(entries, nil, "sold") == 2
         and #P.LedgerView(entries, nil, "returned") == 1)
-    local totals = P.LedgerTotals(view, profits)
-    Check("totals: bought, sold after the cut, returned, profit", totals.boughtCount == 4 and totals.boughtCopper == 2400
-        and totals.soldCount == 2 and totals.soldCopper == 1425 and totals.returnedCount == 1 and totals.profit == 825
-        and totals.profitSales == 2)
     Check("characters: A to Z, once each", table.concat(P.LedgerCharacters({ { who = "b" }, { who = "a" }, { who = "b" } }),
         ",") == "a,b")
 end
@@ -825,6 +821,15 @@ do
         and P.LedgerLifetime(ledger, nil).soldCount == 5)
     P.RecordMail(ledger, { Sale(0, "Tam", "Ore", 120) }, NOW + 60, "Tam", "R")
     Check("lifetime: the same mail read again isn't counted twice", P.LedgerLifetime(ledger, nil).soldCount == 5)
+
+    -- Looted cloth sold, then the same cloth bought later, then the sale's mail read: a buy after the
+    -- sale isn't its cost, in the rows or in lifetime.
+    local later = P.CleanLedger(nil)
+    P.RecordBuy(later, { time = At(0), who = "Mira", name = "Cloth", count = 1, bid = 500 })
+    P.RecordMail(later, { Sale(-3, "Mira", "Cloth", 100) }, NOW, "Mira", "R")
+    local sale = later.entries[1]
+    Check("lifetime: a buy after a sale isn't its cost, the same as the row", sale.kind == "sold"
+        and P.LedgerProfits(later.entries)[sale] == 95 and P.LedgerLifetime(later, "Mira").profit == 95)
 
     local old = P.CleanLedger({ entries = { { time = 1, who = "A", kind = "sold", name = "X", count = 1, bid = 100,
         cut = 5 } } })

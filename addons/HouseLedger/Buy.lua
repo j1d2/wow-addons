@@ -9,7 +9,7 @@ local C, ui, state, Price, U, Chart, Buy, Purchase = ns.C, ns.ui, ns.state, ns.P
 
 -- Below this width the Avg 7d column is hidden; a row click still
 -- shows the averages in the details block.
-local TYPICAL_MIN_WIDTH = 560
+local TYPICAL_MIN_WIDTH = C.DETAIL_CHART_MIN_WIDTH
 
 -- The filter row's center, below the window's top edge.
 local FILTER_ROW_Y = -C.LIST_TOP - 2 - C.FILTER_HEIGHT / 2
@@ -63,7 +63,7 @@ local marketCache
 -- average like "(avg 5,799)" ends near 365 in game). An item chart starts further right only when
 -- its price lines need the room, and is never narrower than CHART_MIN_WIDTH (past that, the lines
 -- are rounded to fit). CHART_GAP is the space between the details text and a chart.
-local CHART_LEFT = 380
+local CHART_LEFT = C.DETAIL_CHART_LEFT
 local CHART_MIN_WIDTH = 150
 local CHART_GAP = 10
 -- True while the details block shows the house overview, and the overview kept until the house

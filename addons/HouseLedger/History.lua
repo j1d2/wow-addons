@@ -8,7 +8,7 @@ Two sources, both read-only:
   deletes, returns and opens nothing, and the other player's name is never read or saved.
 
 The records and their sums are pure (PriceLedger: RecordBuy, RecordMail, LedgerView,
-LedgerTotals, LedgerProfits); this file reads the game and draws the tab.
+LedgerProfits, LedgerPeriods, LedgerLifetime, LedgerChartDays); this file reads the game and draws the tab.
 ]]
 
 local _, ns = ...
@@ -29,7 +29,7 @@ local STATS_COLUMNS = { { key = "label", x = 24, width = 70, justify = "LEFT" },
     { key = "sold", x = 98, width = 88, justify = "RIGHT", label = "Sold" },
     { key = "bought", x = 190, width = 88, justify = "RIGHT", label = "Bought" },
     { key = "profit", x = 282, width = 88, justify = "RIGHT", label = "Profit" } }
-local STATS_CHART_LEFT, STATS_CHART_MIN_WIDTH = 380, 560
+local STATS_CHART_LEFT, STATS_CHART_MIN_WIDTH = C.DETAIL_CHART_LEFT, C.DETAIL_CHART_MIN_WIDTH
 local CHART_DAYS = 14
 local GAIN, LOSS, TODAY = { 0.35, 0.8, 0.35, 0.9 }, { 0.9, 0.3, 0.3, 0.9 }, { 1, 0.82, 0, 1 }
 -- Below this window width the Who column hides (the hover still says whose).
@@ -219,14 +219,18 @@ end
 local function SetStatLine(line, label, sums)
     line.label:SetText(label)
     local width = STATS_COLUMNS[2].width
-    U.FitMoney(line.sold, width, function(coins) return sums.soldCopper > 0 and coins(sums.soldCopper) or "-" end)
-    U.FitMoney(line.bought, width, function(coins) return sums.boughtCopper > 0 and coins(sums.boughtCopper) or "-" end)
+    -- Two coins at most from 1 gold up, like the Buy tab's day lines.
+    local function Two(copper) return Price.RoundCoins(copper, 100) end
+    U.FitMoney(line.sold, width, function(coins) return sums.soldCopper > 0 and coins(Two(sums.soldCopper)) or "-" end)
+    U.FitMoney(line.bought, width, function(coins)
+        return sums.boughtCopper > 0 and coins(Two(sums.boughtCopper)) or "-"
+    end)
     local profit = sums.profit
     U.FitMoney(line.profit, width, function(coins)
         if profit == 0 then
             return "-"
         end
-        return (profit < 0 and "-" or "") .. coins(math.abs(profit))
+        return (profit < 0 and "-" or "") .. coins(Two(math.abs(profit)))
     end)
     if profit < 0 then
         line.profit:SetTextColor(1, 0.5, 0.5)
