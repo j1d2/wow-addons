@@ -91,6 +91,7 @@ HouseLedger loads in this order:
 | `Post.lua` | Posting from the Sell tab (`ns.Post`): price, how many, how long, warnings, Confirm, Post. The only file the `policy` check lets post. |
 | `PriceCheck.lua` | The `/pc` window and its bag button (`ns.PC`). |
 | `History.lua` | The History tab: buys and sales from HouseLedger's own buys and the auction house mail (`ns.History`; the pure records are in `PriceLedger`). Reads the mailbox only. |
+| `Auctions.lua` | The Auctions tab: the player's own auctions, asked once per tab click (`QueryOwnedAuctions`) or read when Blizzard's tab asks, saved per house and character, and compared with the last scan (`ns.Auctions`; the pure parts are in `PriceLedger`). Never cancels; never reads the bidder. |
 | `Settings.lua` | The Settings tab (`ns.Settings`). |
 | `Window.lua` | The window, its tabs, its place beside the auction house, and following Blizzard's window (`ns.Window`). |
 | `HouseLedger.lua` | Events. It loads last. |

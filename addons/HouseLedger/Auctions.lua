@@ -2,12 +2,13 @@
 The Auctions tab: the player's own auctions, with how each compares to the last scan.
 
 Read-only:
-- Opening the tab at the auction house asks the house for this character's auctions once
+- A click on the tab at the auction house asks the house for this character's auctions once
   (C_AuctionHouse.QueryOwnedAuctions), only when its throttle is ready: the tab click is the one
-  action. Blizzard's own Auctions tab asks the same when it opens, and either answer
+  action. Showing the tab any other way (after combat, the house reopening) only redraws. Blizzard's own Auctions tab asks the same when it opens, and either answer
   (OWNED_AUCTIONS_UPDATED) is read here, so opening Blizzard's tab fills this one too.
-- Each character's list is saved when read, so every character's auctions show, away from the
-  house too. The other player's name in a bid is never read.
+- Each character's list is saved when read (only once the house's answer is complete), so the
+  tab shows every character's auctions at this house. The other player's name in a bid is never
+  read.
 - Nothing here cancels, bids or searches.
 
 The entries, their order, the comparison and the totals are pure (PriceLedger: OwnedEntries,
@@ -42,15 +43,14 @@ local filter = { who = nil }
 
 --- True for a stackable, from the game's item key data; a key it hasn't loaded yet counts as a
 -- stackable when the auction holds more than one.
--- @param itemKey the auction's item key
--- @param quantity how many the auction holds
+-- @param auction one of the game's owned auctions
 -- @return true for a stackable
-local function IsCommodity(itemKey, quantity)
-    local info = C_AuctionHouse.GetItemKeyInfo and C_AuctionHouse.GetItemKeyInfo(itemKey)
+local function IsCommodity(auction)
+    local info = C_AuctionHouse.GetItemKeyInfo and C_AuctionHouse.GetItemKeyInfo(auction.itemKey)
     if type(info) == "table" and info.isCommodity ~= nil then
         return info.isCommodity == true
     end
-    return (quantity or 1) > 1
+    return (auction.quantity or 1) > 1
 end
 
 --- Time left as "2h 10m", "35m" or "under 1m".
@@ -162,7 +162,7 @@ function Auctions.Render()
             local cells = row.cells
             cells.name:SetText(entry.link or entry.name or ("item " .. entry.itemID))
             cells.count:SetText(tostring(entry.quantity))
-            cells.each:SetText(U.CopperToText(entry.unit))
+            cells.each:SetText(entry.unit and U.CopperToText(entry.unit) or "bid only")
             local saved, stats = Saved(entry.itemID)
             local market, mc = MarketCell(Price.OwnedVerdict(entry, saved, stats))
             cells.market:SetText(market)
@@ -188,24 +188,19 @@ function Auctions.OnOwnedUpdated()
     if state.openHouseKey == nil or type(C_AuctionHouse.GetOwnedAuctions) ~= "function" then
         return
     end
+    -- A list still arriving would replace the saved one with part of it: wait for the full one.
+    if not U.IsComplete(C_AuctionHouse.HasFullOwnedAuctionResults) then
+        return
+    end
     local soldStatus = Enum and Enum.AuctionStatus and Enum.AuctionStatus.Sold or 1
-    local owned = C_AuctionHouse.GetOwnedAuctions()
-    local entries = Price.OwnedEntries(owned, time(), function(itemKey)
-        for _, info in ipairs(owned) do
-            if info.itemKey == itemKey then
-                return IsCommodity(itemKey, info.quantity)
-            end
-        end
-        return IsCommodity(itemKey)
-    end, soldStatus)
+    local entries = Price.OwnedEntries(C_AuctionHouse.GetOwnedAuctions(), time(), IsCommodity, soldStatus)
     Price.SaveOwned(HouseLedgerDB, U.ViewHouseKey(), U.CharacterName(), entries, time())
     Auctions.Render()
 end
 
---- The tab was opened: shows what's saved, and at the house asks once for this character's
--- auctions when the house's throttle is ready (the tab click is the one action).
-function Auctions.OnShow()
-    Auctions.Render()
+--- A click on the tab: at the house, asks once for this character's auctions when the house's
+-- throttle is ready (the click is the one action). Only the tab's own click calls this.
+function Auctions.Ask()
     if state.openHouseKey == nil or type(C_AuctionHouse.QueryOwnedAuctions) ~= "function" then
         return
     end
@@ -230,14 +225,20 @@ local function ShowEntryTooltip(row)
     else
         GameTooltip:AddLine(entry.name or ("item " .. entry.itemID), 1, 1, 1)
     end
-    GameTooltip:AddLine(string.format("%s's, %d for %s (%s each). Read %s.", entry.who, entry.quantity,
-        U.CopperToText(entry.total), U.CopperToText(entry.unit), Price.WhenText(entry.seenAt) or "before"),
-        0.8, 0.8, 0.8, true)
+    if entry.unit then
+        GameTooltip:AddLine(string.format("%s's, %d for %s (%s each). Read %s.", entry.who, entry.quantity,
+            U.CopperToText(entry.total), U.CopperToText(entry.unit), Price.WhenText(entry.seenAt) or "before"),
+            0.8, 0.8, 0.8, true)
+    else
+        GameTooltip:AddLine(string.format("%s's, %d, bids only. Read %s.", entry.who, entry.quantity,
+            Price.WhenText(entry.seenAt) or "before"), 0.8, 0.8, 0.8, true)
+    end
     local saved, stats = Saved(entry.itemID)
     local verdict = Price.OwnedVerdict(entry, saved, stats)
     if verdict and verdict.undercut then
-        GameTooltip:AddLine(string.format("At the last scan the cheapest was %s, %s under yours.",
-            U.CopperToText(saved.unit), U.CopperToText(verdict.undercut)), RED[1], RED[2], RED[3], true)
+        GameTooltip:AddLine(string.format("At the last scan the cheapest was %s, %s under yours%s.",
+            U.CopperToText(saved.unit), U.CopperToText(verdict.undercut),
+            entry.commodity and "" or " (any version of this item)"), RED[1], RED[2], RED[3], true)
     elseif verdict and verdict.cheapest then
         GameTooltip:AddLine("Yours was the cheapest (or as cheap) at the last scan.", GREEN[1], GREEN[2], GREEN[3])
     end

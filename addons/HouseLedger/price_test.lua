@@ -1756,15 +1756,25 @@ do
             status = SOLD, quantity = 5, buyoutAmount = 30 },
         { auctionID = 4, itemKey = { itemID = 9 }, status = 0, quantity = 1, timeLeftSeconds = 100 },
     }
-    local function Commodity(itemKey) return itemKey.itemID == 2589 end
+    local function Commodity(info) return info.itemKey.itemID == 2589 end
     local entries = P.OwnedEntries(owned, 1000, Commodity, SOLD)
-    Check("owned: one entry per auction with a buyout", #entries == 3)
+    Check("owned: one entry per auction, bid-only ones too", #entries == 4 and entries[4].buyout == nil)
     local cloth, shirt, sold = entries[1], entries[2], entries[3]
-    Check("owned: a stackable's buyout is per item: the total is that times how many", cloth.itemID == 2589
-        and cloth.unit == 25 and cloth.total == 500 and cloth.quantity == 20 and cloth.name == "Linen Cloth"
-        and cloth.endsAt == 4600 and not cloth.sold)
-    Check("owned: gear's buyout is the whole auction", shirt.unit == 5000 and shirt.total == 5000)
-    Check("owned: a sold one is marked, with no end time", sold.sold == true and sold.endsAt == nil and sold.total == 150)
+    Check("owned: the buyout is kept as the game gave it, with the stackable flag", cloth.itemID == 2589
+        and cloth.buyout == 25 and cloth.commodity == true and cloth.quantity == 20 and cloth.name == "Linen Cloth"
+        and cloth.endsAt == 4600 and not cloth.sold and shirt.commodity == nil)
+    Check("owned: a stackable's buyout is per item: the total is that times how many",
+        select(1, P.OwnedPrice(cloth)) == 25 and select(2, P.OwnedPrice(cloth)) == 500)
+    Check("owned: gear's buyout is the whole auction", select(1, P.OwnedPrice(shirt)) == 5000
+        and select(2, P.OwnedPrice(shirt)) == 5000)
+    Check("owned: no buyout, no price (bid only)", P.OwnedPrice(entries[4]) == nil)
+    P.OWNED_BUYOUT_EACH = false
+    Check("owned: if the game gives the whole auction's price, one flag fixes saved lists too",
+        select(1, P.OwnedPrice(cloth)) == 1 and select(2, P.OwnedPrice(cloth)) == 25)
+    P.OWNED_BUYOUT_EACH = true
+    Check("owned: a sold one is marked, with no end time", sold.sold == true and sold.endsAt == nil
+        and select(2, P.OwnedPrice(sold)) == 150)
+    table.remove(entries, 4)
     local leaked = false
     for _, entry in ipairs(entries) do
         for _, value in pairs(entry) do
@@ -1775,8 +1785,8 @@ do
 
     local db = P.EmptyDB()
     P.SaveOwned(db, "Horde|R", "Mira Stone", entries, 1000)
-    P.SaveOwned(db, "Horde|R", "Tam Reed", { { itemID = 2575, name = "Red Linen Shirt", quantity = 1, unit = 900,
-        total = 900, endsAt = 9000 } }, 1500)
+    P.SaveOwned(db, "Horde|R", "Tam Reed", { { itemID = 2575, name = "Red Linen Shirt", quantity = 1, buyout = 900,
+        endsAt = 9000 } }, 1500)
     Check("owned: saved per house and character, with when", db.auctions["Horde|R"]["Mira Stone"].time == 1000
         and #db.auctions["Horde|R"]["Tam Reed"].list == 1)
     Check("owned: the characters with auctions, A to Z", table.concat(P.OwnedCharacters(db, "Horde|R"), ",")
@@ -1808,10 +1818,11 @@ do
     Check("totals: no cut known (goblin house): value as is", P.OwnedTotals(rows, nil).afterCut == nil)
 
     Check("clean: damaged saved auctions are dropped", next(P.CleanAuctions({ ["Horde|R"] = { x = { time = "?" },
-        y = { time = 5, list = { { itemID = "bad" }, { itemID = 1, quantity = 1, unit = 2, total = 2 } } } } })["Horde|R"]) == "y"
+        y = { time = 5, list = { { itemID = "bad" }, { itemID = 1, quantity = 1, buyout = 2 } } } } })["Horde|R"]) == "y"
         and #P.CleanAuctions({ ["Horde|R"] = { y = { time = 5, list = { { itemID = "bad" },
-            { itemID = 1, quantity = 1, unit = 2, total = 2 } } } } })["Horde|R"].y.list == 1
+            { itemID = 1, quantity = 1, buyout = 2 }, { itemID = 2, quantity = 1, buyout = 2, endsAt = "soon" } } } } })["Horde|R"].y.list == 1
         and next(P.CleanAuctions("junk")) == nil)
+    Check("totals: a bid-only auction counts, with nothing to add", P.OwnedTotals({ { quantity = 1 } }, 0.05).active == 1)
 end
 
 if failed > 0 then

@@ -119,6 +119,8 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1, arg2)
             Price.joined = {}
         end
         Buy.RefreshOverview()
+        -- The house the window reads may have changed (a goblin auctioneer), and time has passed.
+        Auctions.Render()
         return
     end
 

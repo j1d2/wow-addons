@@ -2780,34 +2780,49 @@ PriceLedger.OWNED_BUYOUT_EACH = true
 -- Under this many seconds left, the tab marks an auction as ending soon.
 PriceLedger.OWNED_SOON = 2 * 60 * 60
 
---- The game's owned auctions as saved entries: item, how many, price each and in all, whether it
--- sold, and when it ends. Auctions without a buyout (bid only) are left out.
+--- The game's owned auctions as saved entries: item, how many, the buyout as the game gave it
+-- (nil for bid only) and whether it's a stackable, whether it sold, and when it ends. The price
+-- each and in all are worked out when shown (OwnedPrice), so OWNED_BUYOUT_EACH also fixes saved
+-- lists.
 -- @param owned the list from C_AuctionHouse.GetOwnedAuctions
 -- @param now the current time
--- @param isCommodity function(itemKey) true for a stackable
+-- @param isCommodity function(info) true for a stackable
 -- @param soldStatus the game's status number for a sold auction (Enum.AuctionStatus.Sold)
 -- @return the entries
 function PriceLedger.OwnedEntries(owned, now, isCommodity, soldStatus)
     local entries = {}
     for _, info in ipairs(type(owned) == "table" and owned or {}) do
         local itemID = type(info.itemKey) == "table" and info.itemKey.itemID
-        local buyout, quantity = info.buyoutAmount, info.quantity or 1
-        if type(itemID) == "number" and type(buyout) == "number" and buyout > 0 and quantity > 0 then
-            local each = isCommodity(info.itemKey) and PriceLedger.OWNED_BUYOUT_EACH
+        local quantity = info.quantity or 1
+        if type(itemID) == "number" and quantity > 0 then
+            local buyout = info.buyoutAmount
             local sold = info.status == soldStatus
             entries[#entries + 1] = {
                 itemID = itemID,
                 link = info.itemLink,
                 name = type(info.itemLink) == "string" and info.itemLink:match("%[(.-)%]") or nil,
                 quantity = quantity,
-                unit = each and buyout or Round(buyout / quantity),
-                total = each and buyout * quantity or buyout,
+                buyout = type(buyout) == "number" and buyout > 0 and buyout or nil,
+                commodity = isCommodity(info) or nil,
                 sold = sold or nil,
                 endsAt = not sold and type(info.timeLeftSeconds) == "number" and now + info.timeLeftSeconds or nil,
             }
         end
     end
     return entries
+end
+
+--- A saved auction's price each and in all, from the buyout the game gave.
+-- @param entry a saved entry
+-- @return unit and total copper, or nil for a bid-only auction
+function PriceLedger.OwnedPrice(entry)
+    if type(entry.buyout) ~= "number" then
+        return nil
+    end
+    if entry.commodity and PriceLedger.OWNED_BUYOUT_EACH then
+        return entry.buyout, entry.buyout * entry.quantity
+    end
+    return Round(entry.buyout / entry.quantity), entry.buyout
 end
 
 --- Saves one character's auctions at a house, replacing what was saved for it.
@@ -2852,6 +2867,7 @@ function PriceLedger.OwnedView(db, houseKey, who, now)
                 for key, value in pairs(entry) do
                     row[key] = value
                 end
+                row.unit, row.total = PriceLedger.OwnedPrice(entry)
                 if entry.endsAt then
                     row.left = math.max(0, entry.endsAt - now)
                     row.ended = row.left == 0 or nil
@@ -2890,7 +2906,7 @@ end
 -- @return nil for a sold auction; else { unknown } when the scan never saw it, or { cheapest,
 --   undercut = copper under this price, vsTypical = fraction above (+) or under (-) the typical }
 function PriceLedger.OwnedVerdict(row, saved, stats)
-    if row.sold then
+    if row.sold or row.unit == nil then
         return nil
     end
     if type(saved) ~= "table" or type(saved.unit) ~= "number" then
@@ -2916,10 +2932,11 @@ end
 function PriceLedger.OwnedTotals(rows, cut)
     local totals = { active = 0, value = 0, sold = 0, soldValue = 0 }
     for _, row in ipairs(rows) do
+        local total = row.total or 0 -- a bid-only auction counts, with no buyout to add
         if row.sold then
-            totals.sold, totals.soldValue = totals.sold + 1, totals.soldValue + row.total
+            totals.sold, totals.soldValue = totals.sold + 1, totals.soldValue + total
         elseif not row.ended then
-            totals.active, totals.value = totals.active + 1, totals.value + row.total
+            totals.active, totals.value = totals.active + 1, totals.value + total
         end
     end
     if cut then
@@ -2943,7 +2960,8 @@ function PriceLedger.CleanAuctions(value)
                 local list = {}
                 for _, entry in ipairs(saved.list) do
                     if type(entry) == "table" and type(entry.itemID) == "number" and type(entry.quantity) == "number"
-                        and type(entry.unit) == "number" and type(entry.total) == "number" then
+                        and entry.quantity > 0 and (entry.buyout == nil or type(entry.buyout) == "number")
+                        and (entry.endsAt == nil or type(entry.endsAt) == "number") then
                         list[#list + 1] = entry
                     end
                 end

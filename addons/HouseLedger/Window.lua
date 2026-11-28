@@ -24,7 +24,6 @@ local tabsLinked = false
 --- Shows the Buy, Sell or Market tab.
 -- @param id BUY_TAB, SELL_TAB or MARKET_TAB
 local function SelectTab(id)
-    local previous = state.currentTab
     if id ~= state.currentTab then
         -- Another tab leaves an item's listings and drops a price the house quoted.
         Purchase.Close()
@@ -61,9 +60,8 @@ local function SelectTab(id)
     end
     if shown == ui.historyPanel then
         History.Render()
-    elseif shown == ui.auctionsPanel and id ~= previous then
-        -- Opening the tab is the click that may ask the house for this character's auctions.
-        Auctions.OnShow()
+    elseif shown == ui.auctionsPanel then
+        Auctions.Render()
     elseif shown == ui.buyPanel then
         if (id == C.MARKET_TAB) ~= (ui.buyPanel.marketMode == true) then
             Buy.SetMarketMode(id == C.MARKET_TAB)
@@ -117,6 +115,12 @@ local function BuildTabs()
     local historyTab = PlainTab(HISTORY_TAB, "History")
     local settingsTab = PlainTab(SETTINGS_TAB, "Settings")
     local auctionsTab = PlainTab(AUCTIONS_TAB, "Auctions")
+    -- Only this click asks the house for the player's auctions; showing the tab any other way
+    -- (after combat, the house reopening) just redraws it.
+    auctionsTab:SetScript("OnClick", function()
+        SelectTab(AUCTIONS_TAB)
+        Auctions.Ask()
+    end)
     ui.frame.Tabs = { buyTab, sellTab, marketTab, historyTab, settingsTab, auctionsTab }
     if type(PanelTemplates_TabResize) == "function" then
         for _, tab in ipairs(ui.frame.Tabs) do

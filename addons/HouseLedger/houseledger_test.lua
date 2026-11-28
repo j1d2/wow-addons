@@ -465,6 +465,7 @@ local function Setup(opts)
             world.ownedSorts = sorts
         end,
         GetOwnedAuctions = function() return world.owned or {} end,
+        HasFullOwnedAuctionResults = function() return world.ownedPartial ~= true end,
         SendBrowseQuery = function(query)
             world.browseQueries[#world.browseQueries + 1] = query
         end,
@@ -4375,6 +4376,30 @@ do
     world.throttleReady = false
     tab:GetScript("OnClick")(tab)
     Check("auctions: a busy house isn't asked; the saved list shows", world.ownedQueries == 1 and panel.shown)
+    -- A list still arriving doesn't replace the saved one.
+    world.ownedPartial, world.owned = true, {}
+    Fire("OWNED_AUCTIONS_UPDATED")
+    Check("auctions: a partial answer keeps the saved list", #HouseLedgerDB.auctions["Alliance|TestRealm"]["Tester Vale"].list == 3)
+    world.ownedPartial = false
+
+    -- Shown again without a click on it (the house reopening): redrawn, not asked.
+    world.throttleReady = true
+    tab:GetScript("OnClick")(tab)
+    local asked = world.ownedQueries
+    CloseHouse()
+    world.now = world.now + 600
+    OpenHouse()
+    local first
+    for _, row in ipairs(panel.rows) do
+        if row.shown and row.cells.left.text ~= "Sold" then
+            first = first or row
+        end
+    end
+    Check("auctions: the house reopening redraws the time left, asking nothing", world.ownedQueries == asked
+        and first ~= nil and first.cells.left.text == "50m")
+    tab:GetScript("OnClick")(tab)
+    Check("auctions: each click on the tab asks once", world.ownedQueries == asked + 1)
+
     CloseHouse()
     world.owned = {}
     Fire("OWNED_AUCTIONS_UPDATED")
@@ -4395,6 +4420,8 @@ do
         world.owned[index] = { auctionID = index, itemKey = { itemID = 7000 + index }, status = 0, quantity = 1,
             timeLeftSeconds = 50000 + index, buyoutAmount = 100 }
     end
+    world.owned[31] = { auctionID = 31, itemKey = { itemID = 4307 }, status = 0, quantity = 1, timeLeftSeconds = 99999,
+        bidAmount = 50 }
     OpenHouse()
     local tab = TabNamed("Auctions")
     tab:GetScript("OnClick")(tab)
@@ -4403,6 +4430,15 @@ do
     Check("auctions: minutes and under a minute", panel.rows[1].cells.left.text == "under 1m"
         and panel.rows[2].cells.left.text == "30m")
     Check("auctions: an item the last scan never saw", panel.rows[3].cells.market.text == "not seen")
+    panel:GetScript("OnMouseWheel")(panel, -10)
+    local bidOnly
+    for _, row in ipairs(panel.rows) do
+        if row.shown and row.cells.each.text == "bid only" then
+            bidOnly = row
+        end
+    end
+    Check("auctions: a bid-only auction shows as one, with no comparison", bidOnly ~= nil and bidOnly.cells.market.text == "")
+    panel:GetScript("OnMouseWheel")(panel, 10)
     local lines = {}
     _G.GameTooltip.AddLine = function(_, text) lines[#lines + 1] = text end
     panel.rows[2]:GetScript("OnEnter")(panel.rows[2])
