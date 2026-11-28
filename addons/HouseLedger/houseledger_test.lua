@@ -4355,6 +4355,9 @@ do
         rows[1].cells.each.justifyH == "RIGHT" and panel.header.cells.each.justifyH == "RIGHT"
         and rows[1].cells.market.justifyH == "RIGHT" and panel.header.cells.left.justifyH == "RIGHT"
         and rows[1].cells.name.justifyH == "LEFT" and rows[1].cells.who.justifyH == "LEFT")
+    local namePoints = rows[1].cells.name.points
+    Check("auctions: Character is second, right after the item", rows[1].cells.who.shown
+        and namePoints[#namePoints][2] == rows[1].cells.who)
     Check("auctions: under 2 hours left is orange", rows[1].cells.left.color[1] == 1 and rows[1].cells.left.color[3] < 0.5)
     Check("auctions: totals with the house's cut and sold gold waiting", panel.totals.text
         == "2 up for <money 5500> (<money 5225> after the house's cut).\n1 sold: <money 143> waiting in the mail.")

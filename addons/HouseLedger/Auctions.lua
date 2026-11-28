@@ -26,11 +26,11 @@ local ROWS = math.floor((C.HOUSE_HEIGHT - History.INSET_BOTTOM - 2 - LIST_TOP - 
 local WHO_MIN_WIDTH = 540
 local COLUMNS = {
     { key = "name", label = "Item" },
+    { key = "who", label = "Character" },
     { key = "count", label = "Qty" },
     { key = "each", label = "Each" },
     { key = "market", label = "Last scan" },
     { key = "left", label = "Left" },
-    { key = "who", label = "Character" },
 }
 -- Space between two columns.
 local COLUMN_GAP = 12
@@ -142,9 +142,10 @@ local function LayOut(row, showWho)
     end
     cells.who:SetShown(showWho)
     local right, point = row, "RIGHT"
+    -- Right to left: Left, Last scan, Each, Qty, then Character, second after the item.
     local columns = { { "left", 62 }, { "market", 84 }, { "each", 78 }, { "count", 30 } }
     if showWho then
-        table.insert(columns, 1, { "who", 80 })
+        columns[#columns + 1] = { "who", 80 }
     end
     for _, column in ipairs(columns) do
         local cell = cells[column[1]]
@@ -154,7 +155,7 @@ local function LayOut(row, showWho)
     end
     -- The name starts after the icon's room on every row and the headings, so they line up.
     cells.name:SetPoint("LEFT", row, "LEFT", 4 + C.ICON_SIZE + 4, 0)
-    cells.name:SetPoint("RIGHT", cells.count, "LEFT", -COLUMN_GAP, 0)
+    cells.name:SetPoint("RIGHT", showWho and cells.who or cells.count, "LEFT", -COLUMN_GAP, 0)
 end
 
 --- The totals line: what's up and its worth, and sold gold waiting in the mail.

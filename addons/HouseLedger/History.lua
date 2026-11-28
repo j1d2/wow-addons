@@ -33,10 +33,10 @@ local KIND_CHOICES = {
 local COLUMNS = {
     { key = "when", label = "When" },
     { key = "name", label = "Item" },
+    { key = "who", label = "Character" },
     { key = "count", label = "Qty" },
     { key = "amount", label = "Amount" },
     { key = "profit", label = "Profit" },
-    { key = "who", label = "Character" },
 }
 local EMPTY_TEXT = "Nothing recorded yet. Buys made in HouseLedger show at once. Open your mailbox to add"
     .. " sales, other buys, and auctions that came back."
@@ -183,19 +183,19 @@ local function LayOut(row, showWho)
     cells.when:SetWidth(70)
     local right = row
     local point = "RIGHT"
+    -- Right to left: Profit, Amount, Qty, then Character, second after the item.
+    local columns = { { "profit", 84 }, { "amount", 92 }, { "count", 34 } }
     if showWho then
-        cells.who:SetPoint("RIGHT", row, "RIGHT", -4, 0)
-        cells.who:SetWidth(84)
-        right, point = cells.who, "LEFT"
+        columns[#columns + 1] = { "who", 84 }
     end
-    for _, column in ipairs({ { "profit", 84 }, { "amount", 92 }, { "count", 34 } }) do
+    for _, column in ipairs(columns) do
         local cell = cells[column[1]]
         cell:SetPoint("RIGHT", right, point, right == row and -4 or -6, 0)
         cell:SetWidth(column[2])
         right, point = cell, "LEFT"
     end
     cells.name:SetPoint("LEFT", cells.when, "RIGHT", 4, 0)
-    cells.name:SetPoint("RIGHT", cells.count, "LEFT", -6, 0)
+    cells.name:SetPoint("RIGHT", showWho and cells.who or cells.count, "LEFT", -6, 0)
 end
 
 --- The totals line for what's shown.
