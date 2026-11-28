@@ -61,8 +61,11 @@ local BUDGETS = {
     -- Counting the player's own disenchant results, after each disenchant (2026-11-22).
     ["Tally, full history"] = { kb = 70, ms = 2000 },
     -- HouseLedger's History tab at LEDGER_KEPT entries, worked out when the history changes (2026-11-23).
-    ["LedgerProfits, full"] = { kb = 200, ms = 2000 },
+    -- 300 since every sale has a profit (2026-11-27; measured 201, was 181 with flips only).
+    ["LedgerProfits, full"] = { kb = 300, ms = 2000 },
     ["LedgerView + totals"] = { kb = 120, ms = 2000 },
+    -- The History stats block and its 14-day chart, on every redraw of the tab (2026-11-27).
+    ["Ledger stats + chart"] = { kb = 10, ms = 2000 },
 }
 
 --- The memory in use now, in KB, after a full collection.
@@ -207,6 +210,11 @@ local function BenchHouseLedger(items, days, maxScans)
     Step("LedgerProfits, full", function() profits = P.LedgerProfits(db.ledger.entries) end,
         #db.ledger.entries .. " entries")
     Step("LedgerView + totals", function() P.LedgerTotals(P.LedgerView(db.ledger.entries), profits) end)
+    Step("Ledger stats + chart", function()
+        P.LedgerPeriods(db.ledger.entries, profits, Synth.NOW, nil)
+        P.LedgerLifetime(db.ledger, nil)
+        P.LedgerChartDays(db.ledger.entries, profits, Synth.NOW, nil)
+    end)
     Step("FindByName", function() P.FindByName(house, "bench item 1", 100) end)
     Step("HouseOverview", function() P.HouseOverview(house) end)
     Step("ChartDays, every item", function()

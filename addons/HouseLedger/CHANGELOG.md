@@ -26,6 +26,7 @@ All notable changes to HouseLedger. The format follows [Keep a Changelog](https:
 
 ### Changed
 
+- **History** profit: every sale now has one, what it sold for after the house's cut, less the average you paid when you bought it on the auction house; a looted, farmed or made item counts in full (its hover says which). Under the list, like the Buy tab's details: your gold for today, 3, 7 and 14 days and lifetime (sold, bought, profit), for all characters or the one picked under Who, and a 14-day profit chart. Lifetime counts everything recorded, also entries the list has since dropped. The list shows 15 rows instead of 18.
 - One far-off day or scan no longer flattens a price chart: the chart's height stops at 3 times the usual low price (or the top of the normal range, if higher), and a bar past it reaches the top with a white tip. Hover the chart for its real price.
 - The Buy tab's price chart and the house overview chart are bigger: as tall as the space under the list, centred in it, and as wide as the room beside the price lines.
 - The 1, 3, 7 and 14-day lines and the std dev leave out the copper on amounts of 1 gold or more, so they show two coins at most ("12g 34s"), and so do a chart's top price and its projection. The current price and the price you'd pay stay exact.

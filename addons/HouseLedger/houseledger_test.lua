@@ -4000,9 +4000,13 @@ do
     -- Sold 40 for 1000 less 50 cut = 950; paid 620 for 50 = 12.4 each, 496 for 40: profit 454.
     Check("history: newest first; a sale shows what came in and its profit", #rows == 3
         and rows[1] == "Item 2589|40|<money 950>|<money 454>|Tester Vale" and rows[3] == "Silver Rod|1|Expired||Tester Vale")
-    Check("history: the totals line", panel.totals.text:find("Bought 50 for <money 620>", 1, true)
-        and panel.totals.text:find("sold 40 for <money 950> after the house's cut", 1, true)
-        and panel.totals.text:find("1 came back", 1, true) and panel.totals.text:find("Profit on 1 sale", 1, true))
+    local function Stat(index)
+        local line = panel.statLines[index]
+        return line.label.text .. "|" .. line.sold.text .. "|" .. line.bought.text .. "|" .. line.profit.text
+    end
+    Check("history: the stats block: today's gold, and lifetime the same so far", panel.statHeader.sold.text == "Sold"
+        and Stat(1) == "Today|<money 950>|<money 620>|<money 454>" and Stat(5) == "Lifetime|<money 950>|<money 620>|<money 454>"
+        and Stat(2):find("^3 days|") ~= nil and Stat(4):find("^14 days|") ~= nil)
 
     Pick(panel.kindDropdown, "Sold")
     rows = Rows()
@@ -4225,19 +4229,19 @@ do
     tab:GetScript("OnClick")(tab)
     local panel = frame.historyPanel
     local inset = frame.Inset.points[#frame.Inset.points]
-    Check("history: the dark box reaches down to the totals on this tab", inset[1] == "BOTTOMRIGHT"
-        and inset[5] == 88)
+    Check("history: the dark box ends above the stats block, like Buy's details", inset[1] == "BOTTOMRIGHT"
+        and inset[5] == 148)
     local lastRow = panel.rows[#panel.rows]
-    Check("history: 18 rows, the last still inside the box", #panel.rows == 18
-        and 538 + lastRow.points[1][5] - 18 >= 88)
-    Check("history: the totals sit under the box", panel.totals.points[1][5] + 26 <= 88)
+    Check("history: 15 rows, the last still inside the box", #panel.rows == 15
+        and 538 + lastRow.points[1][5] - 18 >= 148)
+    Check("history: the stats sit under the box", panel.statHeader.label.points[1][5] <= 148)
     local bar = panel.scrollBar
     Check("history: a scroll bar shows, at the top", bar.shown and bar.percentage == 0
         and panel.rows[1].cells.name.text == "Thing 30")
     panel:GetScript("OnMouseWheel")(panel, -1)
-    Check("history: the wheel moves the bar too", bar.percentage == 3 / 12)
+    Check("history: the wheel moves the bar too", bar.percentage == 3 / 15)
     bar:SetScrollPercentage(1)
-    Check("history: dragging the bar down shows the oldest", panel.rows[18].cells.name.text == "Thing 01")
+    Check("history: dragging the bar down shows the oldest", panel.rows[15].cells.name.text == "Thing 01")
     TabNamed("Buy"):GetScript("PostClick")(TabNamed("Buy"))
     inset = frame.Inset.points[#frame.Inset.points]
     Check("history: other tabs get the box back above their details", inset[5] == 148)
@@ -4483,6 +4487,12 @@ do
     Load()
     HouseLedgerDB.ledger.entries[1] = { time = world.now - 100, who = "Tester Vale", realm = "TestRealm",
         kind = "bought", name = "Thing", count = 1, bid = 100, source = "mail" }
+    -- Looted, never bought: it counts in full.
+    HouseLedgerDB.ledger.entries[2] = { time = world.now - 50, who = "Tester Vale", realm = "TestRealm",
+        kind = "sold", name = "Gem", count = 1, bid = 200, cut = 10, source = "mail" }
+    -- Yesterday: the Thing bought for 100 sold for 50 less a 2 cut, a loss of 52.
+    table.insert(HouseLedgerDB.ledger.entries, 2, { time = world.now - 24 * 60 * 60, who = "Tester Vale",
+        realm = "TestRealm", kind = "sold", name = "Thing", count = 1, bid = 50, cut = 2, source = "mail" })
     OpenHouse()
     local tab = TabNamed("History")
     tab:GetScript("OnClick")(tab)
@@ -4490,6 +4500,19 @@ do
     local whoPoint = header.cells.who.points[1]
     Check("history: Who is the second column, right after When", header.cells.who.shown
         and whoPoint[2] == header.cells.when and header.cells.who.text == "Who")
+    local chart = MainFrame().historyPanel.chart
+    Check("history: a wide window shows the 14-day profit chart, today's gain in gold", chart.shown
+        and #chart.bars == 14 and chart.bars[14].shown and chart.bars[14].colorTexture[1] == 1
+        and chart.topText.text == "<money 190>")
+    local loss, gain = chart.bars[13], chart.bars[14]
+    Check("history: a day's loss is a red bar hanging below the zero line", loss.shown and loss.colorTexture[1] > 0.8
+        and loss.colorTexture[2] < 0.5 and loss.points[1][5] + loss.height == gain.points[1][5] and not chart.bars[12].shown)
+    local rows = MainFrame().historyPanel.rows
+    local lines = {}
+    _G.GameTooltip.AddLine = function(_, text) lines[#lines + 1] = text end
+    rows[1]:GetScript("OnEnter")(rows[1])
+    Check("history: a sale with no buy counts in full, and the hover says why",
+        rows[1].cells.profit.text == "<money 190>" and table.concat(lines, "|"):find("counts in full", 1, true) ~= nil)
 end
 
 -- Saved auctions survive a load; damaged ones are dropped.

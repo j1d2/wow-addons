@@ -14,13 +14,24 @@ LedgerTotals, LedgerProfits); this file reads the game and draws the tab.
 local _, ns = ...
 local C, ui, Price, U, History = ns.C, ns.ui, ns.Price, ns.U, ns.History
 
--- The dark box's bottom on this tab: it takes the details block's space, down to just above the
--- totals (two lines) and the scan line. Window.lua moves the box when the tab shows.
+-- The dark box's bottom on the Auctions and Settings tabs: down to just above two totals lines
+-- and the scan line (Window.lua moves the box when a tab shows). History keeps the box above its
+-- stats block, like Buy's details.
 History.INSET_BOTTOM = C.STATUS_HEIGHT + 40
 -- Where the headings sit, under the dropdowns.
 local LIST_TOP = C.LIST_TOP + C.FILTER_HEIGHT + 4
--- The rows that fit between the headings and the box's bottom: 18.
-local ROWS = math.floor((C.HOUSE_HEIGHT - History.INSET_BOTTOM - 2 - LIST_TOP - C.ROW_HEIGHT) / C.ROW_HEIGHT)
+-- The rows that fit between the headings and the box's bottom: 15.
+local ROWS = math.floor((C.HOUSE_HEIGHT - C.LIST_BOTTOM - 2 - LIST_TOP - C.ROW_HEIGHT) / C.ROW_HEIGHT)
+-- The stats block under the list: a heading line, then Today, 3, 7 and 14 days, and Lifetime, each
+-- with Sold, Bought and Profit; the profit chart right of it from STATS_CHART_LEFT, when the
+-- window is at least STATS_CHART_MIN_WIDTH wide.
+local STATS_COLUMNS = { { key = "label", x = 24, width = 70, justify = "LEFT" },
+    { key = "sold", x = 98, width = 88, justify = "RIGHT", label = "Sold" },
+    { key = "bought", x = 190, width = 88, justify = "RIGHT", label = "Bought" },
+    { key = "profit", x = 282, width = 88, justify = "RIGHT", label = "Profit" } }
+local STATS_CHART_LEFT, STATS_CHART_MIN_WIDTH = 380, 560
+local CHART_DAYS = 14
+local GAIN, LOSS, TODAY = { 0.35, 0.8, 0.35, 0.9 }, { 0.9, 0.3, 0.3, 0.9 }, { 1, 0.82, 0, 1 }
 -- Below this window width the Who column hides (the hover still says whose).
 local WHO_MIN_WIDTH = 540
 local KIND_CHOICES = {
@@ -46,7 +57,7 @@ local view = {}
 local offset = 0
 local filter = { who = nil, kind = nil }
 local sort = { key = nil, ascending = false }
-local profits, profitsStamp = {}, nil
+local profits, flips, profitsStamp = {}, {}, nil
 
 --- Records a buy HouseLedger made, the moment the house says it went through.
 -- @param itemID the item
@@ -122,7 +133,8 @@ local function Profits()
     local last = entries[#entries]
     local stamp = #entries .. ":" .. tostring(last and last.time)
     if stamp ~= profitsStamp then
-        profits, profitsStamp = Price.LedgerProfits(entries), stamp
+        profits, flips = Price.LedgerProfits(entries)
+        profitsStamp = stamp
     end
     return profits
 end
@@ -200,29 +212,84 @@ local function LayOut(row, showWho)
     cells.name:SetPoint("RIGHT", cells.count, "LEFT", -6, 0)
 end
 
---- The totals line for what's shown.
--- @param totals from PriceLedger.LedgerTotals
--- @return the text
-local function TotalsText(totals)
-    local parts = {}
-    if totals.boughtCount > 0 then
-        parts[#parts + 1] = string.format("Bought %d for %s", totals.boughtCount, U.CopperToText(totals.boughtCopper))
+--- One stat line: Sold (after the house's cut), Bought, and Profit in green or red.
+-- @param line the line's cells
+-- @param label the period's name
+-- @param sums { soldCopper, boughtCopper, profit }
+local function SetStatLine(line, label, sums)
+    line.label:SetText(label)
+    local width = STATS_COLUMNS[2].width
+    U.FitMoney(line.sold, width, function(coins) return sums.soldCopper > 0 and coins(sums.soldCopper) or "-" end)
+    U.FitMoney(line.bought, width, function(coins) return sums.boughtCopper > 0 and coins(sums.boughtCopper) or "-" end)
+    local profit = sums.profit
+    U.FitMoney(line.profit, width, function(coins)
+        if profit == 0 then
+            return "-"
+        end
+        return (profit < 0 and "-" or "") .. coins(math.abs(profit))
+    end)
+    if profit < 0 then
+        line.profit:SetTextColor(1, 0.5, 0.5)
+    else
+        line.profit:SetTextColor(0.4, 1, 0.4)
     end
-    if totals.soldCount > 0 then
-        parts[#parts + 1] = string.format("sold %d for %s after the house's cut", totals.soldCount,
-            U.CopperToText(totals.soldCopper))
+end
+
+--- Draws the profit chart: one bar per day for 14 days, gains up in green and losses down in red
+-- from a zero line, today in gold.
+-- @param days the profit of each day, today last
+local function DrawChart(days)
+    local chart = panel.chart
+    local high, low = 0, 0
+    for _, value in ipairs(days) do
+        high, low = math.max(high, value), math.min(low, value)
     end
-    if totals.returnedCount > 0 then
-        parts[#parts + 1] = string.format("%d came back", totals.returnedCount)
+    local area = chart.barArea
+    local span = math.max(1, high - low)
+    -- The zero line sits as far up as the losses need.
+    local zero = math.floor(-low / span * area + 0.5)
+    local slot = chart.chartWidth / CHART_DAYS
+    for index, value in ipairs(days) do
+        local bar = chart.bars[index]
+        bar:ClearAllPoints()
+        local height = math.floor(math.abs(value) / span * area + 0.5)
+        if value == 0 or height < 1 then
+            bar:Hide()
+        else
+            local color = index == CHART_DAYS and TODAY or (value < 0 and LOSS or GAIN)
+            bar:SetColorTexture(color[1], color[2], color[3], color[4])
+            bar:SetWidth(math.max(2, math.floor(slot) - 2))
+            bar:SetHeight(height)
+            bar:SetPoint("BOTTOMLEFT", chart, "BOTTOMLEFT", math.floor((index - 1) * slot) + 1,
+                2 + (value < 0 and zero - height or zero))
+            bar:Show()
+        end
     end
-    local text = table.concat(parts, "; ")
-    text = text:sub(1, 1):upper() .. text:sub(2)
-    if totals.profitSales > 0 then
-        local profit = ProfitText(totals.profit)
-        text = text .. string.format(".\nProfit on %d sale%s with a recorded buy: %s", totals.profitSales,
-            totals.profitSales == 1 and "" or "s", profit)
+    chart.zeroLine:ClearAllPoints()
+    chart.zeroLine:SetPoint("BOTTOMLEFT", chart, "BOTTOMLEFT", 0, 2 + zero)
+    chart.zeroLine:SetPoint("RIGHT", chart, "RIGHT", 0, 0)
+    chart.topText:SetText(high > 0 and U.CopperToText(Price.RoundCoins(high, 100)) or "")
+    chart.days = days
+end
+
+--- The stats block under the list: today, 3, 7 and 14 days from the entries, lifetime from the
+-- running totals, and the 14-day profit chart, for the character the Who dropdown picked.
+function History.RenderStats()
+    local entries = HouseLedgerDB.ledger.entries
+    local now = time()
+    local periods = Price.LedgerPeriods(entries, profits, now, filter.who)
+    for index, period in ipairs(periods) do
+        SetStatLine(panel.statLines[index], period.label, period)
     end
-    return text
+    SetStatLine(panel.statLines[#periods + 1], "Lifetime", Price.LedgerLifetime(HouseLedgerDB.ledger, filter.who))
+    local wide = (ui.frame:GetWidth() or 0) >= STATS_CHART_MIN_WIDTH
+    panel.chart:SetShown(wide)
+    if wide then
+        local width = (ui.frame:GetWidth() or 0) - STATS_CHART_LEFT - 16
+        panel.chart:SetWidth(width)
+        panel.chart.chartWidth = width
+        DrawChart(Price.LedgerChartDays(entries, profits, now, filter.who).days)
+    end
 end
 
 --- Draws the History tab from the saved history: filters, sort, rows and totals.
@@ -233,7 +300,6 @@ function History.Render()
     local entries = HouseLedgerDB.ledger.entries
     Profits()
     view = Price.LedgerView(entries, filter.who, filter.kind)
-    local totals = Price.LedgerTotals(view, profits)
     if sort.key or sort.ascending then
         view = Price.SortList(view, function(entry) return SortValue(entry, sort.key) end, sort.ascending)
     end
@@ -265,7 +331,7 @@ function History.Render()
     end
     panel.empty:SetShown(#view == 0)
     panel.empty:SetText(#entries == 0 and EMPTY_TEXT or "Nothing recorded for this choice.")
-    panel.totals:SetText(#view > 0 and TotalsText(totals) or "")
+    History.RenderStats()
     for key, heading in pairs(panel.headings) do
         local label = heading.labelText
         if sort.key == key or (sort.key == nil and key == "when") then
@@ -298,8 +364,10 @@ local function ShowEntryTooltip(row)
         GameTooltip:AddLine("House cut " .. U.CopperToText(entry.cut or 0) .. "; you got "
             .. U.CopperToText(Price.SaleProceeds(entry)) .. " (and the deposit back)", 1, 1, 1)
         local profit = profits[entry]
-        GameTooltip:AddLine(profit and ("Profit: " .. ProfitText(profit) .. ", against the average you paid before")
-            or "No recorded buy of this item before it, so no profit shown.", 0.8, 0.8, 0.8, true)
+        GameTooltip:AddLine("Profit: " .. ProfitText(profit) .. (flips[entry]
+            and ", against the average you paid for it on the auction house before"
+            or ". No auction house buy of it recorded, so it counts in full (looted, farmed or made)."),
+            0.8, 0.8, 0.8, true)
     else
         GameTooltip:AddLine(string.format("%s: %d came back by mail", Price.LEDGER_KINDS[entry.kind], entry.count),
             1, 1, 1)
@@ -424,8 +492,59 @@ function History.BuildPanel()
     panel.empty:SetPoint("TOPLEFT", panel, "TOPLEFT", 22, top - C.ROW_HEIGHT - 8)
     panel.empty:SetPoint("RIGHT", panel, "RIGHT", -22, 0)
     panel.empty:SetWordWrap(true)
-    panel.totals = U.Cell(panel, "GameFontNormalSmall", "LEFT")
-    panel.totals:SetPoint("BOTTOMLEFT", panel, "BOTTOMLEFT", 20, C.STATUS_HEIGHT + 8)
-    panel.totals:SetPoint("RIGHT", panel, "RIGHT", -20, 0)
-    panel.totals:SetWordWrap(true)
+
+    -- The stats block, where Buy has its details: a heading line, then one line per period.
+    panel.statLines = {}
+    for index = 0, #Price.LEDGER_PERIODS + 1 do
+        local y = C.LIST_BOTTOM - 6 - index * C.DETAIL_LINE_HEIGHT
+        local line = {}
+        for _, column in ipairs(STATS_COLUMNS) do
+            local cell = U.Cell(panel, index == 0 and "GameFontNormal" or "GameFontHighlightSmall", column.justify)
+            cell:SetPoint("TOPLEFT", panel, "BOTTOMLEFT", column.x, y)
+            cell:SetWidth(column.width)
+            line[column.key] = cell
+        end
+        if index == 0 then
+            line.label:SetText("Gold")
+            for _, column in ipairs(STATS_COLUMNS) do
+                if column.label then
+                    line[column.key]:SetText(column.label)
+                end
+            end
+            panel.statHeader = line
+        else
+            panel.statLines[index] = line
+        end
+    end
+
+    -- Profit per day for 14 days, right of the stats, as tall as the block.
+    local chart = CreateFrame("Frame", nil, panel)
+    chart:SetPoint("BOTTOMRIGHT", panel, "BOTTOMRIGHT", -16, C.STATUS_HEIGHT + C.DETAIL_CHART_MARGIN)
+    chart:SetHeight(C.DETAIL_CHART_HEIGHT)
+    local background = chart:CreateTexture(nil, "BACKGROUND")
+    background:SetAllPoints(chart)
+    background:SetColorTexture(0, 0, 0, 0.3)
+    chart.barArea = C.DETAIL_CHART_HEIGHT - 18
+    chart.topText = U.Cell(chart, "GameFontHighlightSmall", "LEFT")
+    chart.topText:SetPoint("TOPLEFT", chart, "TOPLEFT", 3, -2)
+    chart.zeroLine = chart:CreateTexture(nil, "BORDER")
+    chart.zeroLine:SetHeight(1)
+    chart.zeroLine:SetColorTexture(1, 1, 1, 0.25)
+    chart.bars = {}
+    for index = 1, CHART_DAYS do
+        chart.bars[index] = chart:CreateTexture(nil, "ARTWORK")
+        chart.bars[index]:Hide()
+    end
+    chart:EnableMouse(true)
+    chart:SetScript("OnEnter", function(self)
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText("Profit per day, 14 days", 1, 1, 1)
+        local today = self.days and self.days[CHART_DAYS] or 0
+        GameTooltip:AddLine("Today: " .. (today < 0 and "-" or "") .. U.CopperToText(math.abs(today)), 0.8, 0.8, 0.8)
+        GameTooltip:AddLine("Green: a day's profit. Red: a loss. Gold: today. It follows the Who choice.",
+            0.8, 0.8, 0.8, true)
+        GameTooltip:Show()
+    end)
+    chart:SetScript("OnLeave", U.HideRowTooltip)
+    panel.chart = chart
 end

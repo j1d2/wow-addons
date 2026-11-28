@@ -763,19 +763,75 @@ do
         { time = 4, kind = "sold", name = "Gem", count = 1, bid = 500, cut = 25 },
         { time = 5, kind = "expired", name = "Rod", count = 1 },
     }
-    local profits = P.LedgerProfits(entries)
-    Check("profit: proceeds less the average paid (600 each), the deposit not counted", profits[entries[3]] == 350)
-    Check("profit: none without a recorded buy", profits[entries[4]] == nil)
+    local profits, flips = P.LedgerProfits(entries)
+    Check("profit: proceeds less the average paid (600 each), the deposit not counted", profits[entries[3]] == 350
+        and flips[entries[3]] == true)
+    Check("profit: a sale with no recorded buy (looted, farmed, made) counts in full, after the cut",
+        profits[entries[4]] == 475 and not flips[entries[4]])
     local view = P.LedgerView(entries)
     Check("view: newest first", view[1].time == 5 and #view == 5)
     Check("view: by kind, returned is expired and cancelled", #P.LedgerView(entries, nil, "sold") == 2
         and #P.LedgerView(entries, nil, "returned") == 1)
     local totals = P.LedgerTotals(view, profits)
     Check("totals: bought, sold after the cut, returned, profit", totals.boughtCount == 4 and totals.boughtCopper == 2400
-        and totals.soldCount == 2 and totals.soldCopper == 1425 and totals.returnedCount == 1 and totals.profit == 350
-        and totals.profitSales == 1)
+        and totals.soldCount == 2 and totals.soldCopper == 1425 and totals.returnedCount == 1 and totals.profit == 825
+        and totals.profitSales == 2)
     Check("characters: A to Z, once each", table.concat(P.LedgerCharacters({ { who = "b" }, { who = "a" }, { who = "b" } }),
         ",") == "a,b")
+end
+
+-- History stats: today, 3, 7 and 14 days from the entries, lifetime from running totals, and a
+-- 14-day profit chart.
+do
+    local NOW = At(0)
+    local ledger = P.CleanLedger(nil)
+    P.RecordBuy(ledger, { time = At(-20), who = "Mira", name = "Rod", count = 2, bid = 1000 })
+    local function Sale(day, who, name, bid)
+        return { kind = "sold", name = name, count = 1, bid = bid, cut = bid / 20, expires = At(day) + P.MAIL_LIFE }
+    end
+    P.RecordMail(ledger, { Sale(-10, "Mira", "Rod", 1000) }, NOW, "Mira", "R")
+    P.RecordMail(ledger, { Sale(-2, "Mira", "Gem", 400), Sale(0, "Mira", "Gem", 200) }, NOW, "Mira", "R")
+    P.RecordMail(ledger, { Sale(0, "Tam", "Ore", 100) }, NOW, "Tam", "R")
+    local profits = P.LedgerProfits(ledger.entries)
+    local periods = P.LedgerPeriods(ledger.entries, profits, NOW, nil)
+    local function Period(label)
+        for _, period in ipairs(periods) do
+            if period.label == label then
+                return period
+            end
+        end
+    end
+    Check("periods: today, 3, 7 and 14 days, like Buy's", #periods == 4 and periods[1].label == "Today"
+        and periods[4].label == "14 days")
+    Check("periods: today's sales after the cut and their profit", Period("Today").soldCopper == 190 + 95
+        and Period("Today").profit == 190 + 95 and Period("Today").soldCount == 2)
+    Check("periods: 3 days takes in the day before yesterday", Period("3 days").soldCopper == 190 + 95 + 380)
+    Check("periods: 14 days takes in the flip, its profit less what was paid", Period("14 days").profit
+        == 190 + 95 + 380 + (950 - 500))
+    Check("periods: one character", P.LedgerPeriods(ledger.entries, profits, NOW, "Tam")[1].soldCopper == 95)
+
+    local chart = P.LedgerChartDays(ledger.entries, profits, NOW, nil)
+    Check("chart: 14 days of profit, today last", #chart.days == 14 and chart.days[14] == 190 + 95
+        and chart.days[12] == 380 and chart.days[4] == 450 and chart.days[1] == 0)
+    local life = P.LedgerLifetime(ledger, nil)
+    Check("lifetime: running totals of every entry recorded", life.soldCount == 4 and life.boughtCopper == 1000
+        and life.soldCopper == 950 + 380 + 190 + 95 and life.profit == 450 + 380 + 190 + 95)
+    Check("lifetime: one character", P.LedgerLifetime(ledger, "Tam").soldCopper == 95)
+    local kept = P.LEDGER_KEPT
+    P.LEDGER_KEPT = 2
+    P.RecordMail(ledger, { Sale(0, "Tam", "Ore", 120) }, NOW + 60, "Tam", "R")
+    P.LEDGER_KEPT = kept
+    Check("lifetime: dropping old entries from the list doesn't lower it", #ledger.entries == 2
+        and P.LedgerLifetime(ledger, nil).soldCount == 5)
+    P.RecordMail(ledger, { Sale(0, "Tam", "Ore", 120) }, NOW + 60, "Tam", "R")
+    Check("lifetime: the same mail read again isn't counted twice", P.LedgerLifetime(ledger, nil).soldCount == 5)
+
+    local old = P.CleanLedger({ entries = { { time = 1, who = "A", kind = "sold", name = "X", count = 1, bid = 100,
+        cut = 5 } } })
+    Check("lifetime: a history saved before it existed starts from its entries", P.LedgerLifetime(old, "A").soldCopper == 95
+        and P.LedgerLifetime(old, "A").profit == 95)
+    Check("lifetime: damaged totals are dropped", next(P.CleanLedger({ entries = {}, lifetime = { A = "x" } }).lifetime) == nil)
+
 end
 
 -- Posting: the price Post starts from, its warnings and the house's cut

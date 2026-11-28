@@ -51,11 +51,11 @@ local function SelectTab(id)
         end
     end
     shown:Show()
-    -- The dark box ends above the details block. History, Auctions and Settings have no details
-    -- block, so it reaches down to the totals there (on Settings, that space would be an empty band).
+    -- The dark box ends above the details block (on History, its stats block). Auctions and Settings
+    -- have none, so it reaches down to the totals there (on Settings, that space would be empty).
     local inset = ui.frame.Inset
     if type(inset) == "table" then
-        local tall = shown == ui.historyPanel or shown == ui.auctionsPanel or shown == ui.settingsPanel
+        local tall = shown == ui.auctionsPanel or shown == ui.settingsPanel
         inset:SetPoint("BOTTOMRIGHT", ui.frame, "BOTTOMRIGHT", -6, tall and History.INSET_BOTTOM or C.LIST_BOTTOM)
     end
     if shown == ui.historyPanel then
