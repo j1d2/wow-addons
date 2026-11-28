@@ -4355,9 +4355,10 @@ do
         rows[1].cells.each.justifyH == "RIGHT" and panel.header.cells.each.justifyH == "RIGHT"
         and rows[1].cells.market.justifyH == "RIGHT" and panel.header.cells.left.justifyH == "RIGHT"
         and rows[1].cells.name.justifyH == "LEFT" and rows[1].cells.who.justifyH == "LEFT")
-    local namePoints = rows[1].cells.name.points
-    Check("auctions: Character is second, right after the item", rows[1].cells.who.shown
-        and namePoints[#namePoints][2] == rows[1].cells.who)
+    local whoPoint, iconPoint = rows[1].cells.who.points[1], rows[1].icon.points[#rows[1].icon.points]
+    Check("auctions: Who is the first column, then the item's icon and name", rows[1].cells.who.shown
+        and whoPoint[1] == "LEFT" and whoPoint[4] == 4 and iconPoint[4] == 4 + 80 + 12
+        and panel.header.cells.who.text == "Who")
     Check("auctions: under 2 hours left is orange", rows[1].cells.left.color[1] == 1 and rows[1].cells.left.color[3] < 0.5)
     Check("auctions: totals with the house's cut and sold gold waiting", panel.totals.text
         == "2 up for <money 5500> (<money 5225> after the house's cut).\n1 sold: <money 143> waiting in the mail.")
@@ -4474,6 +4475,21 @@ do
     end
     Check("auctions: one that has run out shows as ended, at the end of the list", ended ~= nil
         and ended == panel.rows[#panel.rows])
+end
+
+-- On a wide window History shows Who, second, right after When.
+do
+    Setup({ screenRight = 1400 })
+    Load()
+    HouseLedgerDB.ledger.entries[1] = { time = world.now - 100, who = "Tester Vale", realm = "TestRealm",
+        kind = "bought", name = "Thing", count = 1, bid = 100, source = "mail" }
+    OpenHouse()
+    local tab = TabNamed("History")
+    tab:GetScript("OnClick")(tab)
+    local header = MainFrame().historyPanel.header
+    local whoPoint = header.cells.who.points[1]
+    Check("history: Who is the second column, right after When", header.cells.who.shown
+        and whoPoint[2] == header.cells.when and header.cells.who.text == "Who")
 end
 
 -- Saved auctions survive a load; damaged ones are dropped.

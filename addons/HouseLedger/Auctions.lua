@@ -22,18 +22,18 @@ local C, ui, state, Price, U, Scan, History, Auctions = ns.C, ns.ui, ns.state, n
 -- The list's top (under the dropdown) and how many rows fit above the totals, like History.
 local LIST_TOP = C.LIST_TOP + C.FILTER_HEIGHT + 4
 local ROWS = math.floor((C.HOUSE_HEIGHT - History.INSET_BOTTOM - 2 - LIST_TOP - C.ROW_HEIGHT) / C.ROW_HEIGHT)
--- Below this window width the Character column hides (the hover still says whose).
+-- Below this window width the Who column hides (the hover still says whose).
 local WHO_MIN_WIDTH = 540
 local COLUMNS = {
+    { key = "who", label = "Who" },
     { key = "name", label = "Item" },
-    { key = "who", label = "Character" },
     { key = "count", label = "Qty" },
     { key = "each", label = "Each" },
     { key = "market", label = "Last scan" },
     { key = "left", label = "Left" },
 }
--- Space between two columns.
-local COLUMN_GAP = 12
+-- Space between two columns, and the Who column's width.
+local COLUMN_GAP, WHO_WIDTH = 12, 80
 local GREEN, RED, GREY, ORANGE = { 0.4, 1, 0.4 }, { 1, 0.45, 0.45 }, { 0.62, 0.62, 0.62 }, { 1, 0.6, 0.15 }
 local EMPTY_TEXT = "No auctions read yet. Open this tab at the auction house (or Blizzard's Auctions tab) "
     .. "to read this character's auctions."
@@ -132,30 +132,36 @@ local function Saved(itemID)
     return saved, U.SavedStats(itemID)
 end
 
---- Places the columns for the window's width: Character hides on a narrow window.
+--- Places the columns for the window's width: Who (first) hides on a narrow window.
 -- @param row a row
--- @param showWho true to show the Character column
+-- @param showWho true to show the Who column
 local function LayOut(row, showWho)
     local cells = row.cells
     for _, cell in pairs(cells) do
         cell:ClearAllPoints()
     end
     cells.who:SetShown(showWho)
-    local right, point = row, "RIGHT"
-    -- Right to left: Left, Last scan, Each, Qty, then Character, second after the item.
-    local columns = { { "left", 62 }, { "market", 84 }, { "each", 78 }, { "count", 30 } }
+    -- Who first, then the item (its icon, then its name), then the numbers from the right.
+    local itemLeft = 4
     if showWho then
-        columns[#columns + 1] = { "who", 80 }
+        cells.who:SetPoint("LEFT", row, "LEFT", 4, 0)
+        cells.who:SetWidth(WHO_WIDTH)
+        itemLeft = 4 + WHO_WIDTH + COLUMN_GAP
     end
-    for _, column in ipairs(columns) do
+    if row.icon then
+        row.icon:ClearAllPoints()
+        row.icon:SetPoint("LEFT", row, "LEFT", itemLeft, 0)
+    end
+    local right, point = row, "RIGHT"
+    for _, column in ipairs({ { "left", 62 }, { "market", 84 }, { "each", 78 }, { "count", 30 } }) do
         local cell = cells[column[1]]
         cell:SetPoint("RIGHT", right, point, right == row and -4 or -COLUMN_GAP, 0)
         cell:SetWidth(column[2])
         right, point = cell, "LEFT"
     end
     -- The name starts after the icon's room on every row and the headings, so they line up.
-    cells.name:SetPoint("LEFT", row, "LEFT", 4 + C.ICON_SIZE + 4, 0)
-    cells.name:SetPoint("RIGHT", showWho and cells.who or cells.count, "LEFT", -COLUMN_GAP, 0)
+    cells.name:SetPoint("LEFT", row, "LEFT", itemLeft + C.ICON_SIZE + 4, 0)
+    cells.name:SetPoint("RIGHT", cells.count, "LEFT", -COLUMN_GAP, 0)
 end
 
 --- The totals line: what's up and its worth, and sold gold waiting in the mail.

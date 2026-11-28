@@ -21,7 +21,7 @@ History.INSET_BOTTOM = C.STATUS_HEIGHT + 40
 local LIST_TOP = C.LIST_TOP + C.FILTER_HEIGHT + 4
 -- The rows that fit between the headings and the box's bottom: 18.
 local ROWS = math.floor((C.HOUSE_HEIGHT - History.INSET_BOTTOM - 2 - LIST_TOP - C.ROW_HEIGHT) / C.ROW_HEIGHT)
--- Below this window width the Character column hides (the hover still says whose).
+-- Below this window width the Who column hides (the hover still says whose).
 local WHO_MIN_WIDTH = 540
 local KIND_CHOICES = {
     { key = nil, label = "Everything" },
@@ -32,8 +32,8 @@ local KIND_CHOICES = {
 -- Column headings and what each sorts by; nil sorts by time.
 local COLUMNS = {
     { key = "when", label = "When" },
+    { key = "who", label = "Who" },
     { key = "name", label = "Item" },
-    { key = "who", label = "Character" },
     { key = "count", label = "Qty" },
     { key = "amount", label = "Amount" },
     { key = "profit", label = "Profit" },
@@ -170,9 +170,9 @@ local function SortValue(entry, key)
     return entry.time
 end
 
---- Places the columns for the window's width: Character hides on a narrow window.
+--- Places the columns for the window's width: Who (second) hides on a narrow window.
 -- @param row a row
--- @param showWho true to show the Character column
+-- @param showWho true to show the Who column
 local function LayOut(row, showWho)
     local cells = row.cells
     for _, cell in pairs(cells) do
@@ -181,21 +181,23 @@ local function LayOut(row, showWho)
     cells.who:SetShown(showWho)
     cells.when:SetPoint("LEFT", row, "LEFT", 4, 0)
     cells.when:SetWidth(70)
+    -- When, then Who, then the item; the numbers from the right.
+    local itemAfter = cells.when
+    if showWho then
+        cells.who:SetPoint("LEFT", cells.when, "RIGHT", 4, 0)
+        cells.who:SetWidth(84)
+        itemAfter = cells.who
+    end
     local right = row
     local point = "RIGHT"
-    -- Right to left: Profit, Amount, Qty, then Character, second after the item.
-    local columns = { { "profit", 84 }, { "amount", 92 }, { "count", 34 } }
-    if showWho then
-        columns[#columns + 1] = { "who", 84 }
-    end
-    for _, column in ipairs(columns) do
+    for _, column in ipairs({ { "profit", 84 }, { "amount", 92 }, { "count", 34 } }) do
         local cell = cells[column[1]]
         cell:SetPoint("RIGHT", right, point, right == row and -4 or -6, 0)
         cell:SetWidth(column[2])
         right, point = cell, "LEFT"
     end
-    cells.name:SetPoint("LEFT", cells.when, "RIGHT", 4, 0)
-    cells.name:SetPoint("RIGHT", showWho and cells.who or cells.count, "LEFT", -6, 0)
+    cells.name:SetPoint("LEFT", itemAfter, "RIGHT", 4, 0)
+    cells.name:SetPoint("RIGHT", cells.count, "LEFT", -6, 0)
 end
 
 --- The totals line for what's shown.
