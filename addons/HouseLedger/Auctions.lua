@@ -168,11 +168,17 @@ end
 -- @param totals from PriceLedger.OwnedTotals
 -- @return the text
 local function TotalsText(totals)
-    local text = string.format("%d up for %s", totals.active, U.CopperToText(totals.value))
-    if totals.afterCut then
-        text = text .. string.format(" (%s after the house's cut)", U.CopperToText(totals.afterCut))
+    -- In game "0 up for - (- after the house's cut)" read like a fault: say it plainly.
+    local text = "Nothing up right now."
+    if totals.active > 0 and totals.value == 0 then
+        text = string.format("%d up, bids only.", totals.active)
+    elseif totals.active > 0 then
+        text = string.format("%d up for %s", totals.active, U.CopperToText(totals.value))
+        if totals.afterCut then
+            text = text .. string.format(" (%s after the house's cut)", U.CopperToText(totals.afterCut))
+        end
+        text = text .. "."
     end
-    text = text .. "."
     if totals.sold > 0 then
         text = text .. string.format("\n%d sold: %s waiting in the mail.", totals.sold, U.CopperToText(totals.soldGold))
     end

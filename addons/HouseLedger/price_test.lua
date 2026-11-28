@@ -768,6 +768,24 @@ do
         and flips[entries[3]] == true)
     Check("profit: a sale with no recorded buy (looted, farmed, made) counts in full, after the cut",
         profits[entries[4]] == 475 and not flips[entries[4]])
+    -- Only as many as were bought have a cost: in game, 3 of 40 bought Linen Cloth sold, then 20
+    -- looted ones; the looted ones count in full.
+    local stock = {
+        { time = 1, kind = "bought", name = "Cloth", count = 2, bid = 50 },
+        { time = 2, kind = "sold", name = "Cloth", count = 1, bid = 30, cut = 0 },
+        { time = 3, kind = "sold", name = "Cloth", count = 3, bid = 90, cut = 0 },
+        { time = 4, kind = "sold", name = "Cloth", count = 1, bid = 30, cut = 0 },
+    }
+    -- Sold before any buy: looted, so it doesn't use up a later buy.
+    local early = { { time = 0, kind = "sold", name = "Cloth", count = 5, bid = 100, cut = 0 },
+        { time = 1, kind = "bought", name = "Cloth", count = 2, bid = 50 },
+        { time = 2, kind = "sold", name = "Cloth", count = 2, bid = 60, cut = 0 } }
+    Check("profit: a sale before any buy doesn't use up a later buy", P.LedgerProfits(early)[early[3]] == 10
+        and P.LedgerProfits(early)[early[1]] == 100)
+    local stockProfits, stockFlips = P.LedgerProfits(stock)
+    Check("profit: only as many as were bought carry a cost; the rest count in full", stockProfits[stock[2]] == 5
+        and stockProfits[stock[3]] == 90 - 25 and stockProfits[stock[4]] == 30 and stockFlips[stock[3]]
+        and not stockFlips[stock[4]])
     local view = P.LedgerView(entries)
     Check("view: newest first", view[1].time == 5 and #view == 5)
     Check("view: by kind, returned is expired and cancelled", #P.LedgerView(entries, nil, "sold") == 2
@@ -830,6 +848,12 @@ do
     local sale = later.entries[1]
     Check("lifetime: a buy after a sale isn't its cost, the same as the row", sale.kind == "sold"
         and P.LedgerProfits(later.entries)[sale] == 95 and P.LedgerLifetime(later, "Mira").profit == 95)
+    local few = P.CleanLedger(nil)
+    P.RecordBuy(few, { time = At(-5), who = "Mira", name = "Cloth", count = 1, bid = 20 })
+    P.RecordMail(few, { { kind = "sold", name = "Cloth", count = 3, bid = 90, cut = 0, expires = At(-1) + P.MAIL_LIFE } },
+        NOW, "Mira", "R")
+    Check("lifetime: only as many as were bought carry a cost, the same as the row",
+        P.LedgerLifetime(few, "Mira").profit == 70 and P.LedgerProfits(few.entries)[few.entries[2]] == 70)
 
     local old = P.CleanLedger({ entries = { { time = 1, who = "A", kind = "sold", name = "X", count = 1, bid = 100,
         cut = 5 } } })

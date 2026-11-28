@@ -2404,20 +2404,40 @@ function PriceLedger.CleanLedger(ledger)
     return ledger
 end
 
---- What the account paid on average for one of an item, from the recorded buys up to a time (as
--- LedgerProfits counts a sale's cost: a buy after the sale isn't its cost).
--- @param entries the history's entries
--- @param name the item's name (a sale's mail gives no item ID)
--- @param before the sale's time
--- @return copper each, or nil without a recorded buy
-local function AveragePaid(entries, name, before)
-    local copper, count = 0, 0
+--- One entry's effect on an item's auction house stock, by one rule for the rows and lifetime: a
+-- buy adds to the stock and its cost; a sale takes from the stock first, at its average cost, and
+-- whatever the stock can't cover came from elsewhere (looted, farmed, made) and cost nothing.
+-- @param stock { count, copper } for one item; changed in place
+-- @param entry a bought or sold entry of that item
+-- @return for a sale: its cost in copper and how many of it the stock covered
+local function StockStep(stock, entry)
+    if entry.kind == "bought" then
+        stock.count, stock.copper = stock.count + entry.count, stock.copper + (entry.bid or 0)
+        return 0, 0
+    end
+    local covered = math.min(entry.count, stock.count)
+    if covered == 0 then
+        return 0, 0
+    end
+    local cost = stock.copper / stock.count * covered
+    stock.count, stock.copper = stock.count - covered, stock.copper - cost
+    return cost, covered
+end
+
+--- A sale's cost from the history (StockStep over the item's entries before it), for the lifetime
+-- totals.
+-- @param entries the history's entries, oldest first
+-- @param sale the sold entry, not yet in the list
+-- @return the cost in copper
+local function CostFromHistory(entries, sale)
+    local stock = { count = 0, copper = 0 }
     for _, entry in ipairs(entries) do
-        if entry.kind == "bought" and entry.bid and entry.name == name and entry.time <= before then
-            copper, count = copper + entry.bid, count + entry.count
+        if entry.name == sale.name and entry.time <= sale.time and (entry.kind == "bought" and entry.bid
+            or entry.kind == "sold" and stock.count > 0) then
+            StockStep(stock, entry)
         end
     end
-    return count > 0 and copper / count or nil
+    return (StockStep(stock, sale))
 end
 
 --- Adds one entry to its character's lifetime totals, which never drop old entries.
@@ -2433,9 +2453,8 @@ local function AddToLifetime(ledger, entry)
         life.boughtCount, life.boughtCopper = life.boughtCount + entry.count, life.boughtCopper + (entry.bid or 0)
     elseif entry.kind == "sold" then
         local proceeds = PriceLedger.SaleProceeds(entry)
-        local paid = AveragePaid(ledger.entries, entry.name, entry.time)
         life.soldCount, life.soldCopper = life.soldCount + entry.count, life.soldCopper + proceeds
-        life.profit = life.profit + math.floor(proceeds - (paid and paid * entry.count or 0) + 0.5)
+        life.profit = life.profit + math.floor(proceeds - CostFromHistory(ledger.entries, entry) + 0.5)
     end
 end
 
@@ -2579,9 +2598,9 @@ function PriceLedger.SaleProceeds(entry)
     return (entry.bid or 0) - (entry.cut or 0)
 end
 
---- The profit of each sale: its proceeds (after the house's cut) less what the account paid for that
--- many, at the average price of the recorded buys of that item up to then. A sale with no recorded
--- buy before it (looted, farmed or made) counts in full.
+--- The profit of each sale: its proceeds (after the house's cut) less its cost (StockStep: the
+-- average paid on the auction house, for as many as the bought stock still holds). A sale with
+-- nothing bought left to cover it (looted, farmed or made) counts in full.
 -- @param entries the history's entries, oldest first
 -- @return table entry -> copper (rounded) for every sold entry, and table entry -> true for the
 --   sales that had a recorded buy (flips)
@@ -2589,16 +2608,18 @@ function PriceLedger.LedgerProfits(entries)
     -- By name: a sale's mail names the item but gives no item ID.
     local paid, profits, flips = {}, {}, {}
     for _, entry in ipairs(entries) do
+        -- Only items bought on the auction house have a stock to track.
+        local stock = paid[entry.name]
         if entry.kind == "bought" and entry.bid then
-            local sum = paid[entry.name] or { copper = 0, count = 0 }
-            sum.copper, sum.count = sum.copper + entry.bid, sum.count + entry.count
-            paid[entry.name] = sum
+            stock = stock or { count = 0, copper = 0 }
+            paid[entry.name] = stock
+            StockStep(stock, entry)
         elseif entry.kind == "sold" then
-            local sum = paid[entry.name]
-            local cost = 0
-            if sum and sum.count > 0 then
-                cost, flips[entry] = sum.copper / sum.count * entry.count, true
+            local cost, covered = 0, 0
+            if stock then
+                cost, covered = StockStep(stock, entry)
             end
+            flips[entry] = covered > 0 or nil
             profits[entry] = math.floor(PriceLedger.SaleProceeds(entry) - cost + 0.5)
         end
     end

@@ -4385,7 +4385,7 @@ do
 
     -- Another character's auctions, saved before, show in All characters and through the dropdown.
     P.SaveOwned(HouseLedgerDB, "Alliance|TestRealm", "Alt", { { itemID = 2575, name = "Red Linen Shirt",
-        quantity = 1, unit = 900, total = 900, endsAt = world.now + 99999 } }, world.now - 100)
+        quantity = 1, buyout = 900, endsAt = world.now + 99999 } }, world.now - 100)
     Pick(panel.whoDropdown, "Alt")
     local shown = 0
     for _, row in ipairs(panel.rows) do
@@ -4398,6 +4398,23 @@ do
     world.throttleReady = false
     tab:GetScript("OnClick")(tab)
     Check("auctions: a busy house isn't asked; the saved list shows", world.ownedQueries == 1 and panel.shown)
+    -- Only sold ones left: the totals say nothing is up, not "0 up for -".
+    world.owned = { world.owned[3] }
+    tab:GetScript("OnClick")(tab)
+    Fire("OWNED_AUCTIONS_UPDATED")
+    Pick(panel.whoDropdown, "Tester Vale")
+    Check("auctions: with only sold ones, the totals say nothing is up", panel.totals.text
+        == "Nothing up right now.\n1 sold: <money 143> waiting in the mail.")
+    Pick(panel.whoDropdown, "All characters")
+    world.owned = {
+        { auctionID = 1, itemKey = { itemID = 2589 }, itemLink = "|cffffffff|Hitem:2589|h[Linen Cloth]|h|r", status = 0,
+            quantity = 20, timeLeftSeconds = 3600, buyoutAmount = 25 },
+        { auctionID = 2, itemKey = { itemID = 2575 }, itemLink = "|cff1eff00|Hitem:2575|h[Red Linen Shirt]|h|r",
+            status = 0, quantity = 1, timeLeftSeconds = 40000, buyoutAmount = 5000 },
+        { auctionID = 3, itemKey = { itemID = 2589 }, status = 1, quantity = 5, buyoutAmount = 150 },
+    }
+    tab:GetScript("OnClick")(tab)
+    Fire("OWNED_AUCTIONS_UPDATED")
     -- A list still arriving doesn't replace the saved one.
     world.ownedPartial, world.owned = true, {}
     Fire("OWNED_AUCTIONS_UPDATED")
@@ -4502,7 +4519,7 @@ do
         and whoPoint[2] == header.cells.when and header.cells.who.text == "Who")
     local chart = MainFrame().historyPanel.chart
     Check("history: a wide window shows the 14-day profit chart, today's gain in gold", chart.shown
-        and #chart.bars == 14 and chart.bars[14].shown and chart.bars[14].colorTexture[1] == 1
+        and #chart.bars == 15 and chart.bars[14].shown and not chart.bars[15].shown and chart.bars[14].colorTexture[1] == 1
         and chart.topText.text == "<money 190>")
     local loss, gain = chart.bars[13], chart.bars[14]
     Check("history: a day's loss is a red bar hanging below the zero line", loss.shown and loss.colorTexture[1] > 0.8
@@ -4513,6 +4530,38 @@ do
     rows[1]:GetScript("OnEnter")(rows[1])
     Check("history: a sale with no buy counts in full, and the hover says why",
         rows[1].cells.profit.text == "<money 190>" and table.concat(lines, "|"):find("counts in full", 1, true) ~= nil)
+end
+
+-- The History profit chart gets the price charts' trend line, normal range and projection.
+do
+    Setup({ screenRight = 1400 })
+    Load()
+    -- 14 days of sales, each day's profit 10c more than the day before, with a little wobble.
+    for back = 13, 0, -1 do
+        local bid = 1000 + (13 - back) * 10 + (back % 2) * 4
+        table.insert(HouseLedgerDB.ledger.entries, { time = world.now - back * 24 * 60 * 60, who = "Tester Vale",
+            realm = "TestRealm", kind = "sold", name = "Gem", count = 1, bid = bid, cut = 0, source = "mail" })
+    end
+    OpenHouse()
+    local tab = TabNamed("History")
+    tab:GetScript("OnClick")(tab)
+    local chart = MainFrame().historyPanel.chart
+    Check("history chart: a trend line from the first day to the projection", chart.line ~= nil and chart.line.shown
+        and chart.line.endPoint[3] > chart.line.startPoint[3] and chart.line.endPoint[4] > chart.line.startPoint[4])
+    local projection = chart.bars[15]
+    Check("history chart: a purple projection for tomorrow, a gap after today", projection.shown
+        and projection.colorTexture[1] == 0.72 and projection.points[1][4] > chart.bars[14].points[1][4])
+    local bands = 0
+    for _, band in ipairs(chart.bands) do
+        bands = bands + (band.shown and 1 or 0)
+    end
+    Check("history chart: a shaded normal-range band", bands > 0)
+    local lines = {}
+    _G.GameTooltip.AddLine = function(_, text) lines[#lines + 1] = text end
+    chart:GetScript("OnEnter")(chart)
+    local tip = table.concat(lines, "|")
+    Check("history chart: the hover names the line, the band and the projection", tip:find("White line", 1, true)
+        and tip:find("Shaded band", 1, true) and tip:find("Purple: a projection for tomorrow", 1, true))
 end
 
 -- Saved auctions survive a load; damaged ones are dropped.

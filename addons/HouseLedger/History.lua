@@ -12,7 +12,7 @@ LedgerProfits, LedgerPeriods, LedgerLifetime, LedgerChartDays); this file reads 
 ]]
 
 local _, ns = ...
-local C, ui, Price, U, History = ns.C, ns.ui, ns.Price, ns.U, ns.History
+local C, ui, Price, U, Chart, History = ns.C, ns.ui, ns.Price, ns.U, ns.Chart, ns.History
 
 -- The dark box's bottom on the Auctions and Settings tabs: down to just above two totals lines
 -- and the scan line (Window.lua moves the box when a tab shows). History keeps the box above its
@@ -239,41 +239,105 @@ local function SetStatLine(line, label, sums)
     end
 end
 
+--- The profit chart's trend, like the price charts': a line that one odd day can't tilt (Theil-Sen,
+-- PriceLedger.ChartFit), its normal range, and a projection for tomorrow. Only from
+-- CHART_FIT_MIN_POINTS days with sales: fewer days say nothing about a trend.
+-- @param days the profit of each day, today last
+-- @return the fit (with estimate set to tomorrow's line value, losses too), or nil
+local function ProfitFit(days)
+    local selling = 0
+    local slots = {}
+    for index, value in ipairs(days) do
+        slots[index] = { low = value }
+        selling = selling + (value ~= 0 and 1 or 0)
+    end
+    if selling < Price.CHART_FIT_MIN_POINTS then
+        return nil
+    end
+    local fit = Price.ChartFit(slots)
+    if fit then
+        -- A projected loss is still a projection: keep it below zero.
+        fit.estimate = math.floor(fit.fit(#days + 1) + 0.5)
+    end
+    return fit
+end
+
 --- Draws the profit chart: one bar per day for 14 days, gains up in green and losses down in red
--- from a zero line, today in gold.
+-- from a zero line, today in gold; with enough days of sales, the trend line, its normal range
+-- and a purple projection for tomorrow, a gap after today.
 -- @param days the profit of each day, today last
 local function DrawChart(days)
     local chart = panel.chart
+    local fit = ProfitFit(days)
+    local count = CHART_DAYS + (fit and 1 or 0)
     local high, low = 0, 0
     for _, value in ipairs(days) do
         high, low = math.max(high, value), math.min(low, value)
     end
+    if fit then
+        for _, x in ipairs({ fit.first, count }) do
+            high = math.max(high, fit.fit(x) + fit.spread)
+            low = math.min(low, fit.fit(x) - fit.spread)
+        end
+    end
     local area = chart.barArea
     local span = math.max(1, high - low)
-    -- The zero line sits as far up as the losses need.
-    local zero = math.floor(-low / span * area + 0.5)
-    local slot = chart.chartWidth / CHART_DAYS
-    for index, value in ipairs(days) do
+    --- The height in pixels of an amount on this axis (0 at the bottom of the losses).
+    local function Y(value)
+        return math.max(0, math.min(area, (value - low) / span * area))
+    end
+    local zero = math.floor(Y(0) + 0.5)
+    -- One more slot, and a small gap, for the projection.
+    local gap = fit and 3 or 0
+    local slot = (chart.chartWidth - gap) / count
+    local barWidth = math.max(2, math.floor(slot) - 2)
+    --- The x of a slot's left edge.
+    local function Left(index)
+        return math.floor((index - 1) * slot + (index > CHART_DAYS and gap or 0)) + 1
+    end
+    for index = 1, #chart.bars do
         local bar = chart.bars[index]
+        local value = index <= CHART_DAYS and days[index] or (index == count and fit and fit.estimate) or nil
         bar:ClearAllPoints()
-        local height = math.floor(math.abs(value) / span * area + 0.5)
-        if value == 0 or height < 1 then
+        local top = value and math.floor(Y(value) + 0.5)
+        if value == nil or value == 0 or top == zero then
             bar:Hide()
         else
-            local color = index == CHART_DAYS and TODAY or (value < 0 and LOSS or GAIN)
+            local color = index > CHART_DAYS and Chart.ESTIMATE_COLOR
+                or index == CHART_DAYS and TODAY or (value < 0 and LOSS or GAIN)
             bar:SetColorTexture(color[1], color[2], color[3], color[4])
-            bar:SetWidth(math.max(2, math.floor(slot) - 2))
-            bar:SetHeight(height)
-            bar:SetPoint("BOTTOMLEFT", chart, "BOTTOMLEFT", math.floor((index - 1) * slot) + 1,
-                2 + (value < 0 and zero - height or zero))
+            bar:SetWidth(barWidth)
+            bar:SetHeight(math.abs(top - zero))
+            bar:SetPoint("BOTTOMLEFT", chart, "BOTTOMLEFT", Left(index), 2 + math.min(top, zero))
             bar:Show()
+        end
+    end
+    for index, band in ipairs(chart.bands) do
+        band:Hide()
+        if fit and fit.spread > 0 and index <= count then
+            local from = math.floor(Y(fit.fit(index) - fit.spread) + 0.5)
+            local to = math.floor(Y(fit.fit(index) + fit.spread) + 0.5)
+            if to > from then
+                band:ClearAllPoints()
+                band:SetPoint("BOTTOMLEFT", chart, "BOTTOMLEFT", Left(index) - 1, 2 + from)
+                band:SetWidth((index < count and Left(index + 1) or Left(index) + barWidth + 2) - Left(index))
+                band:SetHeight(to - from)
+                band:Show()
+            end
+        end
+    end
+    if chart.line then
+        chart.line:SetShown(fit ~= nil)
+        if fit then
+            chart.line:SetStartPoint("BOTTOMLEFT", chart, Left(1) + barWidth / 2, 2 + Y(fit.fit(1)))
+            chart.line:SetEndPoint("BOTTOMLEFT", chart, Left(count) + barWidth / 2, 2 + Y(fit.fit(count)))
         end
     end
     chart.zeroLine:ClearAllPoints()
     chart.zeroLine:SetPoint("BOTTOMLEFT", chart, "BOTTOMLEFT", 0, 2 + zero)
     chart.zeroLine:SetPoint("RIGHT", chart, "RIGHT", 0, 0)
-    chart.topText:SetText(high > 0 and U.CopperToText(Price.RoundCoins(high, 100)) or "")
-    chart.days = days
+    chart.topText:SetText(high > 0 and U.CopperToText(Price.RoundCoins(math.ceil(high), 100)) or "")
+    chart.days, chart.fit = days, fit
 end
 
 --- The stats block under the list: today, 3, 7 and 14 days from the entries, lifetime from the
@@ -534,10 +598,22 @@ function History.BuildPanel()
     chart.zeroLine = chart:CreateTexture(nil, "BORDER")
     chart.zeroLine:SetHeight(1)
     chart.zeroLine:SetColorTexture(1, 1, 1, 0.25)
-    chart.bars = {}
-    for index = 1, CHART_DAYS do
+    -- 14 days and the projection; the normal range behind them, the trend line over them.
+    chart.bars, chart.bands = {}, {}
+    local band = Chart.TREND_BAND_COLOR
+    for index = 1, CHART_DAYS + 1 do
         chart.bars[index] = chart:CreateTexture(nil, "ARTWORK")
         chart.bars[index]:Hide()
+        chart.bands[index] = chart:CreateTexture(nil, "BORDER")
+        chart.bands[index]:SetColorTexture(band[1], band[2], band[3], band[4])
+        chart.bands[index]:Hide()
+    end
+    if type(chart.CreateLine) == "function" then
+        local color = Chart.TREND_LINE_COLOR
+        chart.line = chart:CreateLine(nil, "OVERLAY")
+        chart.line:SetThickness(2)
+        chart.line:SetColorTexture(color[1], color[2], color[3], color[4])
+        chart.line:Hide()
     end
     chart:EnableMouse(true)
     chart:SetScript("OnEnter", function(self)
@@ -547,6 +623,20 @@ function History.BuildPanel()
         GameTooltip:AddLine("Today: " .. (today < 0 and "-" or "") .. U.CopperToText(math.abs(today)), 0.8, 0.8, 0.8)
         GameTooltip:AddLine("Green: a day's profit. Red: a loss. Gold: today. It follows the Who choice.",
             0.8, 0.8, 0.8, true)
+        local fit = self.fit
+        if fit then
+            GameTooltip:AddLine("White line: which way your profit is going. One odd day can't tilt it.",
+                0.8, 0.8, 0.8, true)
+            if fit.spread > 0 then
+                GameTooltip:AddLine("Shaded band: its normal range.", 0.8, 0.8, 0.8)
+            end
+            local color = Chart.ESTIMATE_COLOR
+            GameTooltip:AddLine("Purple: a projection for tomorrow, " .. (fit.estimate < 0 and "-" or "")
+                .. U.CopperToText(Price.RoundCoins(math.abs(fit.estimate), 100)) .. ".", color[1], color[2], color[3])
+        else
+            GameTooltip:AddLine("The trend line and projection show once " .. Price.CHART_FIT_MIN_POINTS
+                .. " of the 14 days have sales.", 0.6, 0.6, 0.6, true)
+        end
         GameTooltip:Show()
     end)
     chart:SetScript("OnLeave", U.HideRowTooltip)
