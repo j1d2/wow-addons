@@ -504,6 +504,7 @@ function PriceLedger.EnsureDB(db)
     db.lastPosts = PriceLedger.CleanLastPosts(db.lastPosts)
     db.recentSearches = PriceLedger.CleanRecent(db.recentSearches)
     db.ledger = PriceLedger.CleanLedger(db.ledger)
+    db.auctions = PriceLedger.CleanAuctions(db.auctions)
     PriceLedger.DAYS_KEPT = db.settings.historyDays or PriceLedger.HISTORY_CHOICES[1]
     if db.settings.chartView ~= nil and PriceLedger.ChartView(db) ~= db.settings.chartView then
         db.settings.chartView = nil
@@ -2765,6 +2766,216 @@ function PriceLedger.PostWarnings(price, stats, cheapestOther, vendor, cut)
         warnings[#warnings + 1] = "under what a vendor pays (" .. coins(vendor) .. ")"
     end
     return warnings
+end
+
+-- ---------------------------------------------------------------------
+-- The Auctions tab: the player's own auctions. Read from the game's owned-auction list, saved per
+-- house and character (so every character's show, away from the house too), and compared with
+-- the last scan. The other player's name in a bid is never kept.
+-- ---------------------------------------------------------------------
+
+-- A stackable's owned-auction buyout is read as the price of one (as its listings show it).
+-- UNVERIFIED on Forever: if the game gives the whole auction's price, set this to false.
+PriceLedger.OWNED_BUYOUT_EACH = true
+-- Under this many seconds left, the tab marks an auction as ending soon.
+PriceLedger.OWNED_SOON = 2 * 60 * 60
+
+--- The game's owned auctions as saved entries: item, how many, the buyout as the game gave it
+-- (nil for bid only) and whether it's a stackable, whether it sold, and when it ends. The price
+-- each and in all are worked out when shown (OwnedPrice), so OWNED_BUYOUT_EACH also fixes saved
+-- lists.
+-- @param owned the list from C_AuctionHouse.GetOwnedAuctions
+-- @param now the current time
+-- @param describe function(info) returning whether it's a stackable, and its name and quality
+--   from the game's item data (a stackable's auction has no item link)
+-- @param soldStatus the game's status number for a sold auction (Enum.AuctionStatus.Sold)
+-- @return the entries
+function PriceLedger.OwnedEntries(owned, now, describe, soldStatus)
+    local entries = {}
+    for _, info in ipairs(type(owned) == "table" and owned or {}) do
+        local itemID = type(info.itemKey) == "table" and info.itemKey.itemID
+        local quantity = info.quantity or 1
+        if type(itemID) == "number" and quantity > 0 then
+            local buyout = info.buyoutAmount
+            local sold = info.status == soldStatus
+            local commodity, name, quality = describe(info)
+            entries[#entries + 1] = {
+                itemID = itemID,
+                link = info.itemLink,
+                name = type(info.itemLink) == "string" and info.itemLink:match("%[(.-)%]") or name,
+                quality = quality,
+                quantity = quantity,
+                buyout = type(buyout) == "number" and buyout > 0 and buyout or nil,
+                commodity = commodity or nil,
+                sold = sold or nil,
+                endsAt = not sold and type(info.timeLeftSeconds) == "number" and now + info.timeLeftSeconds or nil,
+            }
+        end
+    end
+    return entries
+end
+
+--- A saved auction's price each and in all, from the buyout the game gave. An open stackable's is
+-- the price of one; a sold one's is what it sold for in all (in game: 20 Linen Cloth sold at 21c
+-- each read 420, while open ones read their price each).
+-- @param entry a saved entry
+-- @return unit and total copper, or nil for a bid-only auction
+function PriceLedger.OwnedPrice(entry)
+    if type(entry.buyout) ~= "number" then
+        return nil
+    end
+    if entry.commodity and PriceLedger.OWNED_BUYOUT_EACH and not entry.sold then
+        return entry.buyout, entry.buyout * entry.quantity
+    end
+    return Round(entry.buyout / entry.quantity), entry.buyout
+end
+
+--- Saves one character's auctions at a house, replacing what was saved for it.
+-- @param db the saved data
+-- @param houseKey the house
+-- @param who the character's name
+-- @param entries from OwnedEntries
+-- @param now when they were read
+function PriceLedger.SaveOwned(db, houseKey, who, entries, now)
+    db.auctions = type(db.auctions) == "table" and db.auctions or {}
+    db.auctions[houseKey] = type(db.auctions[houseKey]) == "table" and db.auctions[houseKey] or {}
+    db.auctions[houseKey][who] = { time = now, list = entries }
+end
+
+--- The characters with saved auctions at a house, A to Z.
+-- @param db the saved data
+-- @param houseKey the house
+-- @return the names
+function PriceLedger.OwnedCharacters(db, houseKey)
+    local names = {}
+    for who in pairs(type(db.auctions) == "table" and db.auctions[houseKey] or {}) do
+        names[#names + 1] = who
+    end
+    table.sort(names)
+    return names
+end
+
+--- The rows the tab shows: one character's saved auctions, or every character's, each with who,
+-- the seconds left and whether it has ended since it was read. Soonest to end first; sold and
+-- ended ones last.
+-- @param db the saved data
+-- @param houseKey the house
+-- @param who a character's name, or nil for all
+-- @param now the current time
+-- @return the rows (new tables; the saved entries are not changed)
+function PriceLedger.OwnedView(db, houseKey, who, now)
+    local rows = {}
+    for name, saved in pairs(type(db.auctions) == "table" and db.auctions[houseKey] or {}) do
+        if who == nil or who == name then
+            for _, entry in ipairs(saved.list) do
+                local row = { who = name, seenAt = saved.time }
+                for key, value in pairs(entry) do
+                    row[key] = value
+                end
+                row.unit, row.total = PriceLedger.OwnedPrice(entry)
+                if entry.endsAt then
+                    row.left = math.max(0, entry.endsAt - now)
+                    row.ended = row.left == 0 or nil
+                end
+                rows[#rows + 1] = row
+            end
+        end
+    end
+    --- Sort key: open auctions by time left, then ended, then sold.
+    local function Rank(row)
+        if row.sold then
+            return 3, 0
+        elseif row.ended then
+            return 2, 0
+        end
+        return 1, row.left or math.huge
+    end
+    table.sort(rows, function(a, b)
+        local ra, la = Rank(a)
+        local rb, lb = Rank(b)
+        if ra ~= rb then
+            return ra < rb
+        elseif la ~= lb then
+            return la < lb
+        end
+        return (a.name or "") < (b.name or "")
+    end)
+    return rows
+end
+
+--- How an open auction compares: with the cheapest price at the last scan (which may be this very
+-- auction) and with the 7-day typical price.
+-- @param row a row from OwnedView
+-- @param saved the item's saved row at the house (its `unit` is the last scan's cheapest), or nil
+-- @param stats the item's saved stats, or nil
+-- @return nil for a sold auction; else { unknown } when the scan never saw it, or { cheapest,
+--   undercut = copper under this price, vsTypical = fraction above (+) or under (-) the typical }
+function PriceLedger.OwnedVerdict(row, saved, stats)
+    if row.sold or row.unit == nil then
+        return nil
+    end
+    if type(saved) ~= "table" or type(saved.unit) ~= "number" then
+        return { unknown = true }
+    end
+    local verdict = {}
+    if saved.unit < row.unit then
+        verdict.undercut = row.unit - saved.unit
+    else
+        verdict.cheapest = true
+    end
+    if type(stats) == "table" and type(stats.typical) == "number" and stats.typical > 0 then
+        verdict.vsTypical = row.unit / stats.typical - 1
+    end
+    return verdict
+end
+
+--- The totals line: open auctions and their value (after the house's cut when it is known), and
+-- sold ones with the gold waiting in the mail.
+-- @param rows from OwnedView
+-- @param cut the house's cut (0.05), or nil when not known
+-- @return { active, value, afterCut, sold, soldGold }
+function PriceLedger.OwnedTotals(rows, cut)
+    local totals = { active = 0, value = 0, sold = 0, soldValue = 0 }
+    for _, row in ipairs(rows) do
+        local total = row.total or 0 -- a bid-only auction counts, with no buyout to add
+        if row.sold then
+            totals.sold, totals.soldValue = totals.sold + 1, totals.soldValue + total
+        elseif not row.ended then
+            totals.active, totals.value = totals.active + 1, totals.value + total
+        end
+    end
+    if cut then
+        totals.afterCut = Round(totals.value * (1 - cut))
+        totals.soldGold = Round(totals.soldValue * (1 - cut))
+    else
+        totals.soldGold = totals.soldValue
+    end
+    return totals
+end
+
+--- Keeps only well-formed saved auctions: { [houseKey] = { [who] = { time, list = entries } } }.
+-- @param value the saved value, or anything
+-- @return a clean table
+function PriceLedger.CleanAuctions(value)
+    local clean = {}
+    for houseKey, characters in pairs(type(value) == "table" and value or {}) do
+        for who, saved in pairs(type(characters) == "table" and characters or {}) do
+            if type(houseKey) == "string" and type(who) == "string" and type(saved) == "table"
+                and type(saved.time) == "number" and type(saved.list) == "table" then
+                local list = {}
+                for _, entry in ipairs(saved.list) do
+                    if type(entry) == "table" and type(entry.itemID) == "number" and type(entry.quantity) == "number"
+                        and entry.quantity > 0 and (entry.buyout == nil or type(entry.buyout) == "number")
+                        and (entry.endsAt == nil or type(entry.endsAt) == "number") then
+                        list[#list + 1] = entry
+                    end
+                end
+                clean[houseKey] = clean[houseKey] or {}
+                clean[houseKey][who] = { time = saved.time, list = list }
+            end
+        end
+    end
+    return clean
 end
 
 return PriceLedger

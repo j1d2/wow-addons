@@ -21,7 +21,7 @@ History.INSET_BOTTOM = C.STATUS_HEIGHT + 40
 local LIST_TOP = C.LIST_TOP + C.FILTER_HEIGHT + 4
 -- The rows that fit between the headings and the box's bottom: 18.
 local ROWS = math.floor((C.HOUSE_HEIGHT - History.INSET_BOTTOM - 2 - LIST_TOP - C.ROW_HEIGHT) / C.ROW_HEIGHT)
--- Below this window width the Who column hides (the hover still says who).
+-- Below this window width the Who column hides (the hover still says whose).
 local WHO_MIN_WIDTH = 540
 local KIND_CHOICES = {
     { key = nil, label = "Everything" },
@@ -32,11 +32,11 @@ local KIND_CHOICES = {
 -- Column headings and what each sorts by; nil sorts by time.
 local COLUMNS = {
     { key = "when", label = "When" },
+    { key = "who", label = "Who" },
     { key = "name", label = "Item" },
     { key = "count", label = "Qty" },
     { key = "amount", label = "Amount" },
     { key = "profit", label = "Profit" },
-    { key = "who", label = "Who" },
 }
 local EMPTY_TEXT = "Nothing recorded yet. Buys made in HouseLedger show at once. Open your mailbox to add"
     .. " sales, other buys, and auctions that came back."
@@ -48,31 +48,13 @@ local filter = { who = nil, kind = nil }
 local sort = { key = nil, ascending = false }
 local profits, profitsStamp = {}, nil
 
---- This character's name, with its Forever surname when the game gives one.
--- @return the name
-local function CharacterName()
-    local name, surname = UnitName("player")
-    if type(surname) == "string" and surname ~= "" then
-        local consts = type(Constants) == "table" and Constants.CharacterNameSeparatorConsts
-        local separator = type(consts) == "table" and consts.CHARACTERNAME_SURNAME_SEPARATOR or " "
-        return name .. separator .. surname
-    end
-    return name
-end
-
---- This character's realm, as prices are filed.
--- @return the realm
-local function RealmName()
-    return Price.RealmFor(HouseLedgerDB, GetRealmName())
-end
-
 --- Records a buy HouseLedger made, the moment the house says it went through.
 -- @param itemID the item
 -- @param name its plain name
 -- @param count how many
 -- @param copper what was paid in all
 function History.RecordBuy(itemID, name, count, copper)
-    Price.RecordBuy(HouseLedgerDB.ledger, { time = time(), who = CharacterName(), realm = RealmName(),
+    Price.RecordBuy(HouseLedgerDB.ledger, { time = time(), who = U.CharacterName(), realm = U.RealmName(),
         itemID = itemID, name = name, count = count, bid = copper })
     History.Render()
 end
@@ -128,7 +110,7 @@ function History.ReadInbox()
             mails[#mails + 1] = mail
         end
     end
-    if #mails > 0 and Price.RecordMail(HouseLedgerDB.ledger, mails, now, CharacterName(), RealmName()) > 0 then
+    if #mails > 0 and Price.RecordMail(HouseLedgerDB.ledger, mails, now, U.CharacterName(), U.RealmName()) > 0 then
         History.Render()
     end
 end
@@ -188,7 +170,7 @@ local function SortValue(entry, key)
     return entry.time
 end
 
---- Places the columns for the window's width: Who hides on a narrow window.
+--- Places the columns for the window's width: Who (second) hides on a narrow window.
 -- @param row a row
 -- @param showWho true to show the Who column
 local function LayOut(row, showWho)
@@ -199,20 +181,22 @@ local function LayOut(row, showWho)
     cells.who:SetShown(showWho)
     cells.when:SetPoint("LEFT", row, "LEFT", 4, 0)
     cells.when:SetWidth(70)
+    -- When, then Who, then the item; the numbers from the right.
+    local itemAfter = cells.when
+    if showWho then
+        cells.who:SetPoint("LEFT", cells.when, "RIGHT", 4, 0)
+        cells.who:SetWidth(84)
+        itemAfter = cells.who
+    end
     local right = row
     local point = "RIGHT"
-    if showWho then
-        cells.who:SetPoint("RIGHT", row, "RIGHT", -4, 0)
-        cells.who:SetWidth(84)
-        right, point = cells.who, "LEFT"
-    end
     for _, column in ipairs({ { "profit", 84 }, { "amount", 92 }, { "count", 34 } }) do
         local cell = cells[column[1]]
         cell:SetPoint("RIGHT", right, point, right == row and -4 or -6, 0)
         cell:SetWidth(column[2])
         right, point = cell, "LEFT"
     end
-    cells.name:SetPoint("LEFT", cells.when, "RIGHT", 4, 0)
+    cells.name:SetPoint("LEFT", itemAfter, "RIGHT", 4, 0)
     cells.name:SetPoint("RIGHT", cells.count, "LEFT", -6, 0)
 end
 

@@ -79,6 +79,8 @@ function FrameMethods:SetAttribute(key, value) NoteIfBlocked(self) self.attribut
 function FrameMethods:GetAttribute(key) return self.attributes[key] end
 function FrameMethods:IsEnabled() return self.enabled end
 function FrameMethods:SetText(text) self.text = text end
+function FrameMethods:SetID(id) self.id = id end
+function FrameMethods:SetJustifyH(justify) self.justifyH = justify end
 function FrameMethods:GetText() return self.text end
 function FrameMethods:SetPoint(...) NoteIfBlocked(self) self.points[#self.points + 1] = { ... } end
 function FrameMethods:ClearAllPoints() NoteIfBlocked(self) self.points = {} end
@@ -268,7 +270,8 @@ local function Setup(opts)
             Cooking = 5, Alchemy = 6, FirstAid = 7, Enchanting = 8, Fishing = 9, Jewelcrafting = 10, Inscription = 11 },
         Profession = { FirstAid = 0, Blacksmithing = 1, Leatherworking = 2, Alchemy = 3, Herbalism = 4, Cooking = 5,
             Mining = 6, Tailoring = 7, Engineering = 8, Enchanting = 9, Fishing = 10, Skinning = 11 },
-        AuctionHouseSortOrder = { Price = 0, Name = 1, Bid = 3, Buyout = 4 },
+        AuctionHouseSortOrder = { Price = 0, Name = 1, Bid = 3, Buyout = 4, TimeRemaining = 5 },
+        AuctionStatus = { Active = 0, Sold = 1 },
         TooltipDataType = { Item = 0 },
         ItemCommodityStatus = { Unknown = 0, Item = 1, Commodity = 2 },
     }
@@ -458,6 +461,13 @@ local function Setup(opts)
                 "SellerBob", "SellerBob-TestRealm", 0, row.itemID, true
         end,
         IsThrottledMessageSystemReady = function() return world.throttleReady end,
+        -- The player's own auctions (world.owned); each ask is recorded.
+        QueryOwnedAuctions = function(sorts)
+            world.ownedQueries = (world.ownedQueries or 0) + 1
+            world.ownedSorts = sorts
+        end,
+        GetOwnedAuctions = function() return world.owned or {} end,
+        HasFullOwnedAuctionResults = function() return world.ownedPartial ~= true end,
         SendBrowseQuery = function(query)
             world.browseQueries[#world.browseQueries + 1] = query
         end,
@@ -1639,8 +1649,8 @@ do
     Load()
     OpenHouse()
     local frame = MainFrame()
-    Check("window has Buy, Sell, Market, History and Settings tabs", TabNamed("Buy") ~= nil and TabNamed("Sell") ~= nil
-        and TabNamed("History") ~= nil and frame.numTabs == 5)
+    Check("window has Buy, Sell, Market, History, Settings and Auctions tabs", TabNamed("Buy") ~= nil and TabNamed("Sell") ~= nil
+        and TabNamed("History") ~= nil and TabNamed("Auctions") ~= nil and frame.numTabs == 6)
     Check("Buy tab is open first", frame.selectedTab == 1 and frame.buyPanel.shown and not frame.sellPanel.shown)
     Click("Sell")
     Check("Sell tab click opens the Sell panel", frame.selectedTab == 2 and frame.sellPanel.shown and not frame.buyPanel.shown)
@@ -2118,14 +2128,14 @@ do
     local queries, scans = #world.browseQueries, world.replicateCalls
 
     local market = TabNamed("Market")
-    Check("the window has a Market tab", market ~= nil and frame.numTabs == 5)
+    Check("the window has a Market tab", market ~= nil and frame.numTabs == 6)
     Check("Market is a plain tab that presses nothing on Blizzard's window",
         market and not market.template:find("SecureActionButtonTemplate", 1, true)
         and market.attributes.clickbutton == nil)
     Click("Market")
     local panel = frame.buyPanel
     local rows = ResultRows()
-    Check("Market shows the list without the search box", frame.selectedTab == 3 and panel.shown
+    Check("Market shows the list without the search box", frame.selectedTab == 4 and panel.shown
         and not SearchBox().shown and panel.marketLabel.shown and panel.marketDropdown.shown)
     Check("it opens on deals at the last scan", Picked(panel.marketDropdown) == "Deals"
         and panel.marketLabel.text == "at last scan (2 h ago)" and panel.marketDropdown.shown)
@@ -2170,7 +2180,7 @@ do
     Check("in combat: nothing protected is changed by the Market tab", (world.blocked or 0) == 0)
     world.inCombat = false
     Fire("PLAYER_REGEN_ENABLED")
-    Check("after combat: Market is the open tab", frame.selectedTab == 3 and panel.marketLabel.shown)
+    Check("after combat: Market is the open tab", frame.selectedTab == 4 and panel.marketLabel.shown)
 
     -- A new scan refreshes the list. The game hasn't loaded this item's name: the old one stays.
     Advance(15 * 60)
@@ -2343,11 +2353,11 @@ do
     RunTimers()
     local frame = MainFrame()
     local tab = TabNamed("Settings")
-    Check("the window has a Settings tab, a plain one", tab ~= nil and frame.numTabs == 5
+    Check("the window has a Settings tab, a plain one", tab ~= nil and frame.numTabs == 6
         and not tab.template:find("SecureActionButtonTemplate", 1, true))
     Click("Settings")
     local panel = frame.settingsPanel
-    Check("Settings shows its own panel", frame.selectedTab == 5 and panel.shown and not frame.buyPanel.shown
+    Check("Settings shows its own panel", frame.selectedTab == 6 and panel.shown and not frame.buyPanel.shown
         and not frame.sellPanel.shown)
     local boxes = panel.boxes
     Check("each box shows its saved setting", boxes.tooltipPrices.checked == true and boxes.tooltipDetails.checked == false)
@@ -3926,7 +3936,7 @@ do
     tab:GetScript("OnClick")(tab)
     local panel = frame.historyPanel
     Check("history: a plain tab with its own panel", panel.shown and not frame.buyPanel.shown
-        and frame.selectedTab == 4)
+        and frame.selectedTab == 5)
     Check("history: newest first by default, with the game's down arrow on When",
         panel.headings.when.label.text:find("When |A:NPE_ArrowDown", 1, true) == 1)
     Check("history: empty, it says where entries come from", panel.empty.shown
@@ -4289,6 +4299,205 @@ do
     Check("reminder: only with the start message, never over results", not reminder.shown)
     Click("Clear")
     Check("reminder: back with the start message after Clear", reminder.shown)
+end
+
+-- The Auctions tab: this character's auctions, read when the tab opens or Blizzard's tab asks.
+do
+    Setup()
+    Load()
+    world.throttleReady = true
+    world.commodities = { [2589] = true }
+    local P = HouseLedgerPrice
+    -- The last scan: Linen Cloth's cheapest was 22c; the shirt's 6000.
+    local best = {}
+    P.Consider(best, 2589, 1, 22)
+    P.Consider(best, 2575, 1, 6000)
+    P.Commit(HouseLedgerDB, "Alliance|TestRealm", best, world.now - 600)
+    world.owned = {
+        { auctionID = 1, itemKey = { itemID = 2589 }, itemLink = "|cffffffff|Hitem:2589|h[Linen Cloth]|h|r", status = 0,
+            quantity = 20, timeLeftSeconds = 3600, buyoutAmount = 25, bidder = "Someone Else" },
+        { auctionID = 2, itemKey = { itemID = 2575 }, itemLink = "|cff1eff00|Hitem:2575|h[Red Linen Shirt]|h|r",
+            status = 0, quantity = 1, timeLeftSeconds = 40000, buyoutAmount = 5000 },
+        { auctionID = 3, itemKey = { itemID = 2589 }, status = 1, quantity = 5, buyoutAmount = 150 },
+    }
+    OpenHouse()
+    local frame = MainFrame()
+    local tab = TabNamed("Auctions")
+    local order = {}
+    for index, each in ipairs(frame.Tabs) do
+        order[index] = each.text
+        order.ids = (order.ids or "") .. each.id
+    end
+    Check("auctions: a plain tab right after Sell", tab ~= nil and frame.numTabs == 6
+        and table.concat(order, ",") == "Buy,Sell,Auctions,Market,History,Settings" and order.ids == "123456"
+        and not tab.template:find("SecureActionButtonTemplate", 1, true))
+    tab:GetScript("OnClick")(tab)
+    local panel = frame.auctionsPanel
+    Check("auctions: opening the tab asks the house once, by time left", panel.shown and world.ownedQueries == 1
+        and world.ownedSorts[1].sortOrder == 5)
+    Check("auctions: the dark box reaches down to the totals", frame.Inset.points[#frame.Inset.points][5] == 88)
+    Fire("OWNED_AUCTIONS_UPDATED")
+    local rows = {}
+    for _, row in ipairs(panel.rows) do
+        if row.shown then
+            rows[#rows + 1] = row
+        end
+    end
+    Check("auctions: the answer shows, soonest to end first, sold last", #rows == 3
+        and rows[1].cells.name.text:find("Linen Cloth", 1, true) and rows[3].cells.left.text == "Sold")
+    Check("auctions: each, time left and the last scan", rows[1].cells.each.text == "<money 25>"
+        and rows[1].cells.count.text == "20" and rows[1].cells.left.text == "1h 0m"
+        and rows[1].cells.market.text == "<money 3> under" and rows[2].cells.market.text == "cheapest")
+    Check("auctions: a stackable without a link still gets its name, icon and color, no brackets",
+        rows[3].cells.name.text == "Item 2589" and rows[3].icon.texture == 134400 and rows[3].cells.name.color ~= nil
+        and rows[2].cells.name.text == "Red Linen Shirt")
+    Check("auctions: numbers line up on the right under their headings, item and who on the left",
+        rows[1].cells.each.justifyH == "RIGHT" and panel.header.cells.each.justifyH == "RIGHT"
+        and rows[1].cells.market.justifyH == "RIGHT" and panel.header.cells.left.justifyH == "RIGHT"
+        and rows[1].cells.name.justifyH == "LEFT" and rows[1].cells.who.justifyH == "LEFT")
+    local whoPoint, iconPoint = rows[1].cells.who.points[1], rows[1].icon.points[#rows[1].icon.points]
+    Check("auctions: Who is the first column, then the item's icon and name", rows[1].cells.who.shown
+        and whoPoint[1] == "LEFT" and whoPoint[4] == 4 and iconPoint[4] == 4 + 80 + 12
+        and panel.header.cells.who.text == "Who")
+    Check("auctions: under 2 hours left is orange", rows[1].cells.left.color[1] == 1 and rows[1].cells.left.color[3] < 0.5)
+    Check("auctions: totals with the house's cut and sold gold waiting", panel.totals.text
+        == "2 up for <money 5500> (<money 5225> after the house's cut).\n1 sold: <money 143> waiting in the mail.")
+    local saved = HouseLedgerDB.auctions["Alliance|TestRealm"]["Tester Vale"]
+    local leaked = false
+    for _, entry in ipairs(saved.list) do
+        for _, value in pairs(entry) do
+            leaked = leaked or value == "Someone Else"
+        end
+    end
+    Check("auctions: saved for this character, never the bidder's name", #saved.list == 3 and not leaked)
+    Check("auctions: reading sends nothing else", #world.browseQueries == 0 and world.replicateCalls == 0)
+    local lines = {}
+    _G.GameTooltip.AddLine = function(_, text) lines[#lines + 1] = text end
+    rows[1]:GetScript("OnEnter")(rows[1])
+    local tip = table.concat(lines, "|")
+    Check("auctions: the hover says whose, the last scan's cheapest and the 7-day average",
+        tip:find("Tester Vale's, 20 for <money 500>", 1, true) ~= nil
+        and tip:find("the cheapest was <money 22>, <money 3> under yours", 1, true) ~= nil)
+
+    -- Another character's auctions, saved before, show in All characters and through the dropdown.
+    P.SaveOwned(HouseLedgerDB, "Alliance|TestRealm", "Alt", { { itemID = 2575, name = "Red Linen Shirt",
+        quantity = 1, unit = 900, total = 900, endsAt = world.now + 99999 } }, world.now - 100)
+    Pick(panel.whoDropdown, "Alt")
+    local shown = 0
+    for _, row in ipairs(panel.rows) do
+        shown = shown + (row.shown and 1 or 0)
+    end
+    Check("auctions: one character's", shown == 1 and Picked(panel.whoDropdown) == "Alt")
+    Pick(panel.whoDropdown, "All characters")
+
+    Click("Buy")
+    world.throttleReady = false
+    tab:GetScript("OnClick")(tab)
+    Check("auctions: a busy house isn't asked; the saved list shows", world.ownedQueries == 1 and panel.shown)
+    -- A list still arriving doesn't replace the saved one.
+    world.ownedPartial, world.owned = true, {}
+    Fire("OWNED_AUCTIONS_UPDATED")
+    Check("auctions: a partial answer keeps the saved list", #HouseLedgerDB.auctions["Alliance|TestRealm"]["Tester Vale"].list == 3)
+    world.ownedPartial = false
+
+    -- Shown again without a click on it (the house reopening): redrawn, not asked.
+    world.throttleReady = true
+    tab:GetScript("OnClick")(tab)
+    local asked = world.ownedQueries
+    CloseHouse()
+    world.now = world.now + 600
+    OpenHouse()
+    local first
+    for _, row in ipairs(panel.rows) do
+        if row.shown and row.cells.left.text ~= "Sold" then
+            first = first or row
+        end
+    end
+    Check("auctions: the house reopening redraws the time left, asking nothing", world.ownedQueries == asked
+        and first ~= nil and first.cells.left.text == "50m")
+    tab:GetScript("OnClick")(tab)
+    Check("auctions: each click on the tab asks once", world.ownedQueries == asked + 1)
+
+    CloseHouse()
+    world.owned = {}
+    Fire("OWNED_AUCTIONS_UPDATED")
+    Check("auctions: an answer after the house closed is not read", #HouseLedgerDB.auctions["Alliance|TestRealm"]["Tester Vale"].list == 3)
+end
+
+-- A long list: minutes left, ended, not in the last scan, the 7-day average, and scrolling.
+do
+    Setup()
+    Load()
+    world.throttleReady = true
+    SaveDailyHistory(7) -- item 4306 at 100c a day: a 7-day average
+    world.owned = {
+        { auctionID = 1, itemKey = { itemID = 4306 }, status = 0, quantity = 1, timeLeftSeconds = 1800, buyoutAmount = 120 },
+        { auctionID = 2, itemKey = { itemID = 4306 }, status = 0, quantity = 1, timeLeftSeconds = 30, buyoutAmount = 90 },
+    }
+    for index = 3, 30 do
+        world.owned[index] = { auctionID = index, itemKey = { itemID = 7000 + index }, status = 0, quantity = 1,
+            timeLeftSeconds = 50000 + index, buyoutAmount = 100 }
+    end
+    world.owned[31] = { auctionID = 31, itemKey = { itemID = 4307 }, status = 0, quantity = 1, timeLeftSeconds = 99999,
+        bidAmount = 50 }
+    OpenHouse()
+    local tab = TabNamed("Auctions")
+    tab:GetScript("OnClick")(tab)
+    Fire("OWNED_AUCTIONS_UPDATED")
+    local panel = MainFrame().auctionsPanel
+    Check("auctions: minutes and under a minute", panel.rows[1].cells.left.text == "under 1m"
+        and panel.rows[2].cells.left.text == "30m")
+    Check("auctions: an item the last scan never saw", panel.rows[3].cells.market.text == "not seen")
+    panel:GetScript("OnMouseWheel")(panel, -10)
+    local bidOnly
+    for _, row in ipairs(panel.rows) do
+        if row.shown and row.cells.each.text == "bid only" then
+            bidOnly = row
+        end
+    end
+    Check("auctions: a bid-only auction shows as one, with no comparison", bidOnly ~= nil and bidOnly.cells.market.text == "")
+    panel:GetScript("OnMouseWheel")(panel, 10)
+    local lines = {}
+    _G.GameTooltip.AddLine = function(_, text) lines[#lines + 1] = text end
+    panel.rows[2]:GetScript("OnEnter")(panel.rows[2])
+    Check("auctions: the hover compares with the 7-day average", table.concat(lines, "|"):find("20% over your 7-day average", 1, true) ~= nil)
+    Check("auctions: a long list has a scroll bar", panel.scrollBar.shown)
+    panel:GetScript("OnMouseWheel")(panel, -1)
+    Check("auctions: the wheel moves the list, sending nothing", panel.rows[1].cells.left.text ~= "under 1m"
+        and world.ownedQueries == 1)
+    world.now = world.now + 100
+    panel:GetScript("OnMouseWheel")(panel, -10)
+    local ended
+    for _, row in ipairs(panel.rows) do
+        if row.shown and row.cells.left.text == "Ended" then
+            ended = row
+        end
+    end
+    Check("auctions: one that has run out shows as ended, at the end of the list", ended ~= nil
+        and ended == panel.rows[#panel.rows])
+end
+
+-- On a wide window History shows Who, second, right after When.
+do
+    Setup({ screenRight = 1400 })
+    Load()
+    HouseLedgerDB.ledger.entries[1] = { time = world.now - 100, who = "Tester Vale", realm = "TestRealm",
+        kind = "bought", name = "Thing", count = 1, bid = 100, source = "mail" }
+    OpenHouse()
+    local tab = TabNamed("History")
+    tab:GetScript("OnClick")(tab)
+    local header = MainFrame().historyPanel.header
+    local whoPoint = header.cells.who.points[1]
+    Check("history: Who is the second column, right after When", header.cells.who.shown
+        and whoPoint[2] == header.cells.when and header.cells.who.text == "Who")
+end
+
+-- Saved auctions survive a load; damaged ones are dropped.
+do
+    Setup({ savedDB = { version = 4, houses = {}, auctions = { ["Alliance|TestRealm"] = { ["Tester Vale"] = { time = 5,
+        list = { { itemID = 1, quantity = 1, unit = 2, total = 2 }, { itemID = "bad" } } } } } } })
+    Load()
+    Check("auctions: saved ones load, damaged ones dropped", #HouseLedgerDB.auctions["Alliance|TestRealm"]["Tester Vale"].list == 1)
 end
 
 -- Money that can't fit its cell is rounded (amounts of 1 gold or more lose copper, then silver)
